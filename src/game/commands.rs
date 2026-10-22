@@ -60,6 +60,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             create_save_path,
             no_cache,
         } => handle_add(AddGameOptions {
+            discovery_launch_hint: None,
             name,
             description,
             launch_command,
@@ -298,6 +299,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
         crate::menu_utils::DialogOutcome::Submitted(item) => {
             // Pre-fill add game with discovered details
             handle_add(AddGameOptions {
+                discovery_launch_hint: None,
                 name: Some(item.game_name),
                 description: None,
                 launch_command: None,

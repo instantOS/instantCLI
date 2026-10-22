@@ -8,123 +8,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use super::DiscoveredGame;
-use crate::common::TildePath;
+use super::prefix::{PrefixDiscoveredGame, PrefixSource};
 use crate::game::platforms::ludusavi::{
     WinePrefixScanOptions, choose_primary_save, stream_wine_prefix_saves,
 };
 use crate::game::utils::path::is_valid_wine_prefix;
-use crate::menu::protocol::FzfPreview;
-use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
-
-#[derive(Debug, Clone)]
-pub struct WineDiscoveredGame {
-    pub display_name: String,
-    pub prefix_path: PathBuf,
-    pub save_path: PathBuf,
-    pub is_existing: bool,
-    pub tracked_name: Option<String>,
-}
-
-impl WineDiscoveredGame {
-    pub fn new(display_name: String, prefix_path: PathBuf, save_path: PathBuf) -> Self {
-        Self {
-            display_name,
-            prefix_path,
-            save_path,
-            is_existing: false,
-            tracked_name: None,
-        }
-    }
-}
-
-impl DiscoveredGame for WineDiscoveredGame {
-    fn display_name(&self) -> &str {
-        &self.display_name
-    }
-
-    fn save_path(&self) -> &PathBuf {
-        &self.save_path
-    }
-
-    fn game_path(&self) -> Option<&PathBuf> {
-        None
-    }
-
-    fn prefix_path(&self) -> Option<&PathBuf> {
-        Some(&self.prefix_path)
-    }
-
-    fn platform_name(&self) -> &'static str {
-        "Wine Prefix"
-    }
-
-    fn platform_short(&self) -> &'static str {
-        "Wine"
-    }
-
-    fn unique_key(&self) -> String {
-        format!(
-            "wine:{}|{}",
-            self.prefix_path.to_string_lossy(),
-            self.save_path.to_string_lossy()
-        )
-    }
-
-    fn is_existing(&self) -> bool {
-        self.is_existing
-    }
-
-    fn tracked_name(&self) -> Option<&str> {
-        self.tracked_name.as_deref()
-    }
-
-    fn set_existing(&mut self, tracked_name: String) {
-        self.is_existing = true;
-        self.tracked_name = Some(tracked_name);
-    }
-
-    fn build_preview(&self) -> FzfPreview {
-        let prefix_display = TildePath::new(self.prefix_path.clone()).display_string();
-        let save_display = TildePath::new(self.save_path.clone()).display_string();
-        let header_name = self.tracked_name.as_deref().unwrap_or(&self.display_name);
-
-        let mut builder = PreviewBuilder::new()
-            .header(
-                if self.is_existing {
-                    NerdFont::Check
-                } else {
-                    NerdFont::Wine
-                },
-                header_name,
-            )
-            .text("Platform: Wine Prefix")
-            .blank()
-            .separator()
-            .blank()
-            .text("Prefix:")
-            .bullet(&prefix_display)
-            .blank()
-            .text("Save path:")
-            .bullet(&save_display)
-            .blank()
-            .separator()
-            .blank();
-
-        if self.is_existing {
-            builder = builder.subtext("Already tracked — press Enter to open game menu");
-        } else {
-            builder = builder.subtext("Auto-discovered from generic Wine prefix");
-        }
-
-        builder.build()
-    }
-
-    fn clone_box(&self) -> Box<dyn DiscoveredGame> {
-        Box::new(self.clone())
-    }
-}
 
 pub fn is_wine_installed() -> bool {
     dirs::home_dir().is_some_and(|home| {
@@ -136,7 +24,7 @@ pub fn is_wine_installed() -> bool {
 
 pub fn stream_discover_wine_games<F>(mut on_game: F) -> Result<()>
 where
-    F: FnMut(WineDiscoveredGame) -> Result<()>,
+    F: FnMut(PrefixDiscoveredGame) -> Result<()>,
 {
     let Some(home) = dirs::home_dir() else {
         return Ok(());
@@ -151,7 +39,7 @@ where
 
 pub fn stream_discover_wine_games_in_prefix<F>(prefix: &Path, mut on_game: F) -> Result<()>
 where
-    F: FnMut(WineDiscoveredGame) -> Result<()>,
+    F: FnMut(PrefixDiscoveredGame) -> Result<()>,
 {
     stream_wine_prefix_saves(WinePrefixScanOptions::new(prefix), |game_saves| {
         if let Some(save) = choose_primary_save(game_saves) {
@@ -161,7 +49,8 @@ where
                 save.game_name
             };
 
-            on_game(WineDiscoveredGame::new(
+            on_game(PrefixDiscoveredGame::new(
+                PrefixSource::Wine,
                 display_name,
                 prefix.to_path_buf(),
                 PathBuf::from(save.save_path),

@@ -1,4 +1,5 @@
 mod detect;
+mod emulator;
 mod parse;
 mod render;
 mod tests;
@@ -89,7 +90,8 @@ pub struct EmulatorLaunchCommand {
     pub options: EmulatorOptions,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EmulatorPlatform {
     Dolphin,
     Eden,
@@ -113,6 +115,10 @@ pub struct EmulatorOptions {
 }
 
 impl LaunchCommand {
+    pub fn executable(path: &std::path::Path) -> Self {
+        Self::manual(render::shell_escape(&path.to_string_lossy()))
+    }
+
     pub fn manual(command: impl Into<String>) -> Self {
         Self {
             wrappers: LaunchWrappers::default(),

@@ -22,7 +22,7 @@ use crate::ui::preview::FzfPreview;
 
 use super::manager::GameCreationContext;
 
-const DISCOVERY_CACHE_VERSION: u32 = 2;
+const DISCOVERY_CACHE_VERSION: u32 = 3;
 const DISCOVERY_CACHE_FILE: &str = "game-discovery-cache.json";
 const DISCOVERY_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -34,6 +34,7 @@ pub struct DiscoveredGameRecord {
     pub unique_key: String,
     pub save_path: String,
     pub game_path: Option<String>,
+    pub launch_hint: Option<crate::game::platforms::discovery::DiscoveryLaunchHint>,
     pub prefix_path: Option<String>,
     pub existing: bool,
     pub tracked_name: Option<String>,
@@ -46,6 +47,7 @@ pub struct MenuSelectionPayload {
     pub tracked_name: Option<String>,
     pub save_path: Option<String>,
     pub game_path: Option<String>,
+    pub launch_hint: Option<crate::game::platforms::discovery::DiscoveryLaunchHint>,
     pub platform_short: Option<String>,
 }
 
@@ -105,6 +107,7 @@ pub fn print_streaming_menu_rows(
                         tracked_name: game.record.tracked_name.clone(),
                         save_path: Some(game.record.save_path.clone()),
                         game_path: game.record.game_path.clone(),
+                        launch_hint: game.record.launch_hint.clone(),
                         platform_short: Some(game.record.platform_short.clone()),
                     },
                 )
@@ -152,21 +155,8 @@ fn emit_discovered_games_as_json(
     use_cache: bool,
 ) -> Result<()> {
     let discovered = load_discovered_games_with_preview(sources, scan_path, use_cache)?;
-    let games_json: Vec<serde_json::Value> = discovered
-        .iter()
-        .map(|game| {
-            json!({
-                "name": game.record.name,
-                "platform": game.record.platform,
-                "platform_short": game.record.platform_short,
-                "unique_key": game.record.unique_key,
-                "save_path": game.record.save_path,
-                "game_path": game.record.game_path,
-                "existing": game.record.existing,
-                "tracked_name": game.record.tracked_name,
-            })
-        })
-        .collect();
+    let games_json: Vec<&DiscoveredGameRecord> =
+        discovered.iter().map(|game| &game.record).collect();
 
     emit(
         Level::Info,
@@ -502,7 +492,8 @@ where
         let existing_name =
             context.and_then(|ctx| find_existing_game(&display_name, save_path.as_path(), ctx));
 
-        let mut game = crate::game::platforms::discovery::wine::WineDiscoveredGame::new(
+        let mut game = crate::game::platforms::discovery::prefix::PrefixDiscoveredGame::new(
+            crate::game::platforms::discovery::prefix::PrefixSource::Wine,
             display_name,
             prefix.to_path_buf(),
             save_path,
@@ -548,6 +539,7 @@ fn into_record_with_preview(
     DiscoveredGameWithPreview {
         preview_text: preview_to_text(game.build_preview()),
         record: DiscoveredGameRecord {
+            launch_hint: game.launch_hint(),
             name: game.display_name().to_string(),
             platform: game.platform_name().to_string(),
             platform_short: game.platform_short().to_string(),
@@ -838,6 +830,7 @@ mod tests {
                 tracked_name: None,
                 save_path: Some("/tmp/save".to_string()),
                 game_path: None,
+                launch_hint: None,
                 platform_short: None,
             },
         )
@@ -903,6 +896,7 @@ mod tests {
             unique_key: "wine:test".to_string(),
             save_path: "/definitely/missing".to_string(),
             game_path: None,
+            launch_hint: None,
             prefix_path: None,
             existing: false,
             tracked_name: None,
@@ -920,6 +914,7 @@ mod tests {
             unique_key: "epic:test".to_string(),
             save_path: "/tmp/save".to_string(),
             game_path: None,
+            launch_hint: None,
             prefix_path: None,
             existing: false,
             tracked_name: None,
@@ -946,6 +941,7 @@ mod tests {
             unique_key: "wine:test".to_string(),
             save_path: "/tmp/save".to_string(),
             game_path: None,
+            launch_hint: None,
             prefix_path: Some("/tmp/prefix".to_string()),
             existing: false,
             tracked_name: None,
@@ -972,6 +968,7 @@ mod tests {
             unique_key: "wine:test".to_string(),
             save_path: "/tmp/save".to_string(),
             game_path: None,
+            launch_hint: None,
             prefix_path: Some("/tmp/prefix".to_string()),
             existing: true,
             tracked_name: Some("Under the Waves".to_string()),
@@ -1003,6 +1000,7 @@ mod tests {
             unique_key: "wine:test".to_string(),
             save_path: "/tmp/save".to_string(),
             game_path: Some(install.to_string_lossy().to_string()),
+            launch_hint: None,
             prefix_path: Some(prefix.to_string_lossy().to_string()),
             existing: false,
             tracked_name: None,

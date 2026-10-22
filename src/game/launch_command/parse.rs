@@ -126,96 +126,40 @@ fn parse_wine_command(
 }
 
 fn parse_emulator_command(tokens: &[String]) -> Option<LaunchCommandKind> {
-    if let Some(tail) = matches_flatpak_app(tokens, "org.DolphinEmu.dolphin-emu") {
-        return parse_dolphin(
-            EmulatorLauncher::Flatpak {
-                app_id: "org.DolphinEmu.dolphin-emu",
-            },
-            tail,
-        );
+    for platform in EmulatorPlatform::ALL {
+        let parsed = if let Some(app_id) = platform.flatpak_id()
+            && let Some(tail) = matches_flatpak_app(tokens, app_id)
+        {
+            Some((EmulatorLauncher::Flatpak { app_id }, tail))
+        } else if let Some(command) = platform.native_command()
+            && tokens.first().is_some_and(|token| token == command)
+        {
+            Some((EmulatorLauncher::Native { command }, &tokens[1..]))
+        } else {
+            tokens
+                .first()
+                .filter(|path| matches_appimage(path, platform))
+                .map(|path| {
+                    (
+                        EmulatorLauncher::AppImage {
+                            path: PathBuf::from(path),
+                        },
+                        &tokens[1..],
+                    )
+                })
+        };
+        if let Some((launcher, tail)) = parsed {
+            return match platform {
+                EmulatorPlatform::Dolphin => parse_dolphin(launcher, tail),
+                EmulatorPlatform::Eden => parse_eden(launcher, tail),
+                EmulatorPlatform::Azahar => parse_azahar(launcher, tail),
+                EmulatorPlatform::Mgba => parse_mgba(launcher, tail),
+                EmulatorPlatform::Pcsx2 => parse_pcsx2(launcher, tail),
+                EmulatorPlatform::DuckStation => parse_duckstation(launcher, tail),
+            };
+        }
     }
-    if let Some(tail) = matches_flatpak_app(tokens, "org.azahar_emu.Azahar") {
-        return parse_azahar(
-            EmulatorLauncher::Flatpak {
-                app_id: "org.azahar_emu.Azahar",
-            },
-            tail,
-        );
-    }
-    if let Some(tail) = matches_flatpak_app(tokens, "net.pcsx2.PCSX2") {
-        return parse_pcsx2(
-            EmulatorLauncher::Flatpak {
-                app_id: "net.pcsx2.PCSX2",
-            },
-            tail,
-        );
-    }
-    if let Some(tail) = matches_flatpak_app(tokens, "org.duckstation.DuckStation") {
-        return parse_duckstation(
-            EmulatorLauncher::Flatpak {
-                app_id: "org.duckstation.DuckStation",
-            },
-            tail,
-        );
-    }
-
-    let launcher = match tokens.first().map(String::as_str) {
-        Some("mgba-qt") => Some((
-            EmulatorPlatform::Mgba,
-            EmulatorLauncher::Native { command: "mgba-qt" },
-            &tokens[1..],
-        )),
-        Some("azahar") => Some((
-            EmulatorPlatform::Azahar,
-            EmulatorLauncher::Native { command: "azahar" },
-            &tokens[1..],
-        )),
-        Some("pcsx2-qt") => Some((
-            EmulatorPlatform::Pcsx2,
-            EmulatorLauncher::Native {
-                command: "pcsx2-qt",
-            },
-            &tokens[1..],
-        )),
-        Some("duckstation-qt") => Some((
-            EmulatorPlatform::DuckStation,
-            EmulatorLauncher::Native {
-                command: "duckstation-qt",
-            },
-            &tokens[1..],
-        )),
-        Some(path) if matches_appimage(path, EmulatorPlatform::Eden) => Some((
-            EmulatorPlatform::Eden,
-            EmulatorLauncher::AppImage {
-                path: PathBuf::from(path),
-            },
-            &tokens[1..],
-        )),
-        Some(path) if matches_appimage(path, EmulatorPlatform::Pcsx2) => Some((
-            EmulatorPlatform::Pcsx2,
-            EmulatorLauncher::AppImage {
-                path: PathBuf::from(path),
-            },
-            &tokens[1..],
-        )),
-        Some(path) if matches_appimage(path, EmulatorPlatform::DuckStation) => Some((
-            EmulatorPlatform::DuckStation,
-            EmulatorLauncher::AppImage {
-                path: PathBuf::from(path),
-            },
-            &tokens[1..],
-        )),
-        _ => None,
-    }?;
-
-    match launcher.0 {
-        EmulatorPlatform::Dolphin => unreachable!(),
-        EmulatorPlatform::Eden => parse_eden(launcher.1, launcher.2),
-        EmulatorPlatform::Azahar => parse_azahar(launcher.1, launcher.2),
-        EmulatorPlatform::Mgba => parse_mgba(launcher.1, launcher.2),
-        EmulatorPlatform::Pcsx2 => parse_pcsx2(launcher.1, launcher.2),
-        EmulatorPlatform::DuckStation => parse_duckstation(launcher.1, launcher.2),
-    }
+    None
 }
 
 fn parse_dolphin(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchCommandKind> {

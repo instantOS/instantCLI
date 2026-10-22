@@ -1,24 +1,15 @@
 //! Interactive launch command builder for games
 //!
-//! Supports building launch commands for:
-//! - umu-run (Wine/Proton games)
-//! - Eden (Switch emulator)
-//! - Dolphin via Flatpak (GameCube/Wii emulator)
-//! - PCSX2 via Flatpak (PlayStation 2 emulator)
-//! - mGBA-Qt (Game Boy Advance emulator)
-//! - DuckStation (PlayStation 1 emulator)
+//! Emulator identities, supported inputs, and launcher commands are defined in
+//! `launch_command::EmulatorPlatform`; all emulators use the same builder.
 
 pub(crate) mod appimage_finder;
-mod azahar;
 pub(crate) mod deps;
 pub mod discovery;
-mod dolphin;
 mod duckstation;
-mod eden;
+mod emulator;
 mod flatpak;
 pub mod ludusavi;
-mod mgba;
-mod pcsx2;
 mod prompts;
 mod steam_launcher;
 mod umu;
@@ -40,12 +31,6 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-pub use azahar::AzaharBuilder;
-pub use dolphin::DolphinBuilder;
-pub use duckstation::DuckStationBuilder;
-pub use eden::EdenBuilder;
-pub use mgba::MgbaBuilder;
-pub use pcsx2::Pcsx2Builder;
 pub use steam_launcher::SteamBuilder;
 pub use umu::UmuBuilder;
 
@@ -54,6 +39,11 @@ pub struct LaunchCommandBuilderContext {
     pub save_path: Option<PathBuf>,
     pub executable_path: Option<PathBuf>,
     pub presets: Vec<LaunchCommandBuilderPreset>,
+    pub discovery_hint: Option<discovery::DiscoveryLaunchHint>,
+    pub emulator_launcher: Option<(
+        EmulatorPlatform,
+        crate::game::launch_command::EmulatorLauncher,
+    )>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +69,8 @@ impl LaunchCommandBuilderContext {
             save_path: save_path.map(Path::to_path_buf),
             executable_path: None,
             presets: Vec::new(),
+            discovery_hint: None,
+            emulator_launcher: None,
         };
 
         if let Some(command) = existing_launch_command {
@@ -105,7 +97,7 @@ impl LaunchCommandBuilderContext {
                 });
             } else if is_eden_save_path(path) {
                 context.push_preset(LaunchCommandBuilderPreset {
-                    launcher: LauncherType::Eden,
+                    launcher: LauncherType::Emulator(EmulatorPlatform::Eden),
                     reason: "save path matches the Eden NAND save layout".to_string(),
                     data: BuilderPresetData::None,
                 });
@@ -115,12 +107,45 @@ impl LaunchCommandBuilderContext {
         context
     }
 
+    pub fn add_discovery_hint(&mut self, hint: Option<&discovery::DiscoveryLaunchHint>) {
+        let Some(hint) = hint else {
+            return;
+        };
+        self.discovery_hint = Some(hint.clone());
+        let (launcher, data) = match hint {
+            discovery::DiscoveryLaunchHint::Wine { prefix } => (
+                LauncherType::UmuRun,
+                BuilderPresetData::WinePrefix(prefix.clone()),
+            ),
+            discovery::DiscoveryLaunchHint::Steam { app_id } => {
+                (LauncherType::Steam, BuilderPresetData::SteamAppId(*app_id))
+            }
+            discovery::DiscoveryLaunchHint::Emulator { platform, game, .. } => {
+                if self.executable_path.is_none() {
+                    self.executable_path = game.clone();
+                }
+                (LauncherType::Emulator(*platform), BuilderPresetData::None)
+            }
+        };
+        self.push_preset(LaunchCommandBuilderPreset {
+            launcher,
+            data,
+            reason: "Discovered installation".to_string(),
+        });
+    }
+
     fn push_preset(&mut self, preset: LaunchCommandBuilderPreset) {
-        if self
+        if let Some(existing) = self
             .presets
-            .iter()
-            .all(|existing| existing.launcher != preset.launcher)
+            .iter_mut()
+            .find(|existing| existing.launcher == preset.launcher)
         {
+            if matches!(existing.data, BuilderPresetData::None)
+                && !matches!(preset.data, BuilderPresetData::None)
+            {
+                *existing = preset;
+            }
+        } else {
             self.presets.push(preset);
         }
     }
@@ -171,16 +196,29 @@ impl LaunchCommandBuilderContext {
                 }
             }
             LaunchCommandKind::Emulator(emulator) => {
-                if let Some(launcher) = launcher_type_for_emulator(emulator.platform) {
-                    self.push_preset(LaunchCommandBuilderPreset {
-                        launcher,
-                        reason: format!(
-                            "current launch command already uses {}",
-                            launcher_recommendation_label(launcher)
-                        ),
-                        data: BuilderPresetData::None,
-                    });
-                }
+                self.executable_path = Some(emulator.game.clone());
+                self.emulator_launcher = Some((emulator.platform, emulator.launcher.clone()));
+                self.discovery_hint = Some(discovery::DiscoveryLaunchHint::Emulator {
+                    platform: emulator.platform,
+                    source: if matches!(
+                        emulator.launcher,
+                        crate::game::launch_command::EmulatorLauncher::Flatpak { .. }
+                    ) {
+                        discovery::EmulatorSaveSource::Flatpak
+                    } else {
+                        discovery::EmulatorSaveSource::Native
+                    },
+                    game: Some(emulator.game.clone()),
+                });
+                let launcher = LauncherType::Emulator(emulator.platform);
+                self.push_preset(LaunchCommandBuilderPreset {
+                    launcher,
+                    reason: format!(
+                        "current launch command already uses {}",
+                        launcher_recommendation_label(launcher)
+                    ),
+                    data: BuilderPresetData::None,
+                });
             }
             LaunchCommandKind::Manual { .. } => {}
         }
@@ -194,12 +232,7 @@ pub enum LauncherType {
     Executable,
     UmuRun,
     Steam,
-    Eden,
-    DolphinFlatpak,
-    Pcsx2Flatpak,
-    AzaharFlatpak,
-    MgbaQt,
-    DuckStation,
+    Emulator(EmulatorPlatform),
     Back,
 }
 
@@ -210,12 +243,7 @@ impl std::fmt::Display for LauncherType {
             LauncherType::Executable => write!(f, "executable"),
             LauncherType::UmuRun => write!(f, "umu-run"),
             LauncherType::Steam => write!(f, "steam"),
-            LauncherType::Eden => write!(f, "eden"),
-            LauncherType::DolphinFlatpak => write!(f, "dolphin-flatpak"),
-            LauncherType::Pcsx2Flatpak => write!(f, "pcsx2-flatpak"),
-            LauncherType::AzaharFlatpak => write!(f, "azahar-flatpak"),
-            LauncherType::MgbaQt => write!(f, "mgba-qt"),
-            LauncherType::DuckStation => write!(f, "duckstation"),
+            LauncherType::Emulator(platform) => write!(f, "{}", platform.id()),
             LauncherType::Back => write!(f, "back"),
         }
     }
@@ -246,14 +274,25 @@ impl FzfSelectable for LauncherItem {
 fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<LauncherItem> {
     let recommended_launcher = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
 
-    LAUNCHER_ORDER
-        .iter()
-        .map(|&launcher| LauncherItem {
-            launcher,
-            display: launcher_display(launcher, recommended_launcher == Some(launcher)),
-            preview: launcher_preview(launcher, context),
-        })
-        .collect()
+    [
+        LauncherType::Manual,
+        LauncherType::Executable,
+        LauncherType::UmuRun,
+        LauncherType::Steam,
+    ]
+    .into_iter()
+    .chain(
+        EmulatorPlatform::ALL
+            .into_iter()
+            .map(LauncherType::Emulator),
+    )
+    .chain([LauncherType::Back])
+    .map(|launcher| LauncherItem {
+        launcher,
+        display: launcher_display(launcher, recommended_launcher == Some(launcher)),
+        preview: launcher_preview(launcher, context),
+    })
+    .collect()
 }
 
 fn launcher_display(launcher: LauncherType, recommended: bool) -> String {
@@ -275,29 +314,11 @@ fn launcher_display(launcher: LauncherType, recommended: bool) -> String {
             "{} Steam{suffix}",
             format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
         ),
-        LauncherType::Eden => format!(
-            "{} Eden (Switch Emulator){suffix}",
-            format_icon_colored(NerdFont::Gamepad, colors::GREEN)
-        ),
-        LauncherType::DolphinFlatpak => format!(
-            "{} Dolphin Flatpak (GameCube/Wii)",
-            format_icon_colored(NerdFont::Fish, colors::BLUE)
-        ),
-        LauncherType::Pcsx2Flatpak => format!(
-            "{} PCSX2 (PlayStation 2)",
-            format_icon_colored(NerdFont::Disc, colors::SAPPHIRE)
-        ),
-        LauncherType::AzaharFlatpak => format!(
-            "{} Azahar Flatpak (Nintendo 3DS)",
-            format_icon_colored(NerdFont::Gamepad, colors::YELLOW)
-        ),
-        LauncherType::MgbaQt => format!(
-            "{} mGBA-Qt (Game Boy Advance)",
-            format_icon_colored(NerdFont::Gamepad, colors::LAVENDER)
-        ),
-        LauncherType::DuckStation => format!(
-            "{} DuckStation (PlayStation 1)",
-            format_icon_colored(NerdFont::Disc, colors::PEACH)
+        LauncherType::Emulator(platform) => format!(
+            "{} {} ({}){suffix}",
+            format_icon_colored(NerdFont::Gamepad, colors::GREEN),
+            platform.name(),
+            platform.system_name(),
         ),
         LauncherType::Back => format!("{} Back", format_back_icon()),
     }
@@ -402,153 +423,31 @@ fn launcher_preview(
                 )
                 .build()
         }
-        LauncherType::Eden => {
-            let eden_preset = context.and_then(|c| c.preset_for(LauncherType::Eden));
+        LauncherType::Emulator(platform) => {
+            let preset = context.and_then(|ctx| ctx.preset_for(launcher));
             PreviewBuilder::new()
-                .header(NerdFont::Gamepad, "Eden")
-                .text("Nintendo Switch emulator.")
-                .blank()
-                .text("Runs Switch game files (.nsp, .xci, .nca)")
-                .text("via the Eden AppImage.")
-                .blank()
-                .separator()
-                .blank()
-                .text("Default location:")
-                .bullet("~/AppImages/eden.AppImage")
-                .blank()
-                .text("Supported formats:")
-                .bullet(".nsp - Nintendo Submission Package")
-                .bullet(".xci - NX Card Image")
-                .bullet(".nca - Nintendo Content Archive")
+                .header(NerdFont::Gamepad, platform.name())
+                .text(platform.system_name())
                 .blank()
                 .field(
+                    "Supported files",
+                    &validation::format_valid_extensions(platform.extensions()),
+                )
+                .text("Select an available native, Flatpak, or AppImage installation.")
+                .field(
                     "Reason",
-                    eden_preset
+                    preset
                         .map(|preset| preset.reason.as_str())
                         .unwrap_or("<none>"),
                 )
                 .build()
         }
-        LauncherType::DolphinFlatpak => PreviewBuilder::new()
-            .header(NerdFont::Fish, "Dolphin (Flatpak)")
-            .text("GameCube and Wii emulator.")
-            .blank()
-            .text("Runs GameCube/Wii games via the Flatpak")
-            .text("version of Dolphin Emulator.")
-            .blank()
-            .separator()
-            .blank()
-            .text("Supported formats:")
-            .bullet(".iso - Standard disc image")
-            .bullet(".wbfs - Wii Backup File System")
-            .bullet(".gcm - GameCube Master disc")
-            .bullet(".ciso - Compressed ISO")
-            .bullet(".gcz - Dolphin compressed format")
-            .bullet(".wad - WiiWare/Virtual Console")
-            .bullet(".dol/.elf - Homebrew executables")
-            .blank()
-            .subtext("Requires: org.DolphinEmu.dolphin-emu flatpak")
-            .build(),
-        LauncherType::Pcsx2Flatpak => PreviewBuilder::new()
-            .header(NerdFont::Disc, "PCSX2")
-            .text("PlayStation 2 emulator.")
-            .blank()
-            .text("Runs PS2 games via EmuDeck AppImage")
-            .text("(auto-detected) or Flatpak fallback.")
-            .blank()
-            .separator()
-            .blank()
-            .text("Supported formats:")
-            .bullet(".iso - Standard disc image")
-            .bullet(".bin - Binary disc image")
-            .bullet(".chd - Compressed Hunks of Data")
-            .bullet(".cso - Compressed ISO")
-            .bullet(".gz - Gzip compressed")
-            .bullet(".elf/.irx - Executables")
-            .blank()
-            .separator()
-            .blank()
-            .text("Installation:")
-            .bullet("Preferred: EmuDeck (includes AppImage)")
-            .bullet("Fallback: flatpak install flathub net.pcsx2.PCSX2")
-            .build(),
-        LauncherType::AzaharFlatpak => PreviewBuilder::new()
-            .header(NerdFont::Gamepad, "Azahar (Flatpak)")
-            .text("Nintendo 3DS emulator.")
-            .blank()
-            .text("Runs 3DS games via the Flatpak")
-            .text("version of Azahar (Citra fork).")
-            .blank()
-            .separator()
-            .blank()
-            .text("Supported formats:")
-            .bullet(".3ds - Standard 3DS ROM")
-            .bullet(".3dsx - Homebrew format")
-            .bullet(".cia - CTR Importable Archive")
-            .bullet(".app/.elf - Executables")
-            .bullet(".cci/.cxi - Cartridge images")
-            .blank()
-            .subtext("Requires: org.azahar_emu.Azahar flatpak")
-            .build(),
-        LauncherType::MgbaQt => PreviewBuilder::new()
-            .header(NerdFont::Gamepad, "mGBA-Qt")
-            .text("Game Boy Advance emulator.")
-            .blank()
-            .text("Runs GBA, GB, and GBC games")
-            .text("via the mGBA-Qt application.")
-            .blank()
-            .separator()
-            .blank()
-            .text("Supported formats:")
-            .bullet(".gba - Game Boy Advance ROM")
-            .bullet(".gb - Game Boy ROM")
-            .bullet(".gbc - Game Boy Color ROM")
-            .bullet(".sgb - Super Game Boy ROM")
-            .bullet(".zip/.7z - Compressed archives")
-            .blank()
-            .subtext("Requires: mgba-qt package")
-            .build(),
-        LauncherType::DuckStation => PreviewBuilder::new()
-            .header(NerdFont::Disc, "DuckStation")
-            .text("PlayStation 1 emulator.")
-            .blank()
-            .text("Runs PS1 games via the DuckStation AppImage.")
-            .text("(Downloads automatically if not found)")
-            .blank()
-            .separator()
-            .blank()
-            .text("Default location:")
-            .bullet("~/AppImages/DuckStation-x64.AppImage")
-            .blank()
-            .text("Supported formats:")
-            .bullet(".bin/.cue - CD image + cue sheet")
-            .bullet(".iso - Standard ISO image")
-            .bullet(".chd - Compressed Hunks of Data")
-            .bullet(".pbp - PSP eboot format")
-            .bullet(".m3u - Multi-disc playlist")
-            .blank()
-            .subtext("x86_64 only - auto-downloads AppImage")
-            .build(),
         LauncherType::Back => PreviewBuilder::new()
             .header(NerdFont::ArrowLeft, "Back")
             .text("Return to previous menu.")
             .build(),
     }
 }
-
-const LAUNCHER_ORDER: [LauncherType; 11] = [
-    LauncherType::Manual,
-    LauncherType::Executable,
-    LauncherType::UmuRun,
-    LauncherType::Steam,
-    LauncherType::Eden,
-    LauncherType::DolphinFlatpak,
-    LauncherType::Pcsx2Flatpak,
-    LauncherType::AzaharFlatpak,
-    LauncherType::MgbaQt,
-    LauncherType::DuckStation,
-    LauncherType::Back,
-];
 
 /// Interactive launcher type selection
 pub fn select_launcher_type(
@@ -601,12 +500,7 @@ pub fn build_launch_command_with_context(
                     _ => None,
                 })
         })),
-        LauncherType::Eden => EdenBuilder::build_command(),
-        LauncherType::DolphinFlatpak => DolphinBuilder::build_command(),
-        LauncherType::Pcsx2Flatpak => Pcsx2Builder::build_command(),
-        LauncherType::AzaharFlatpak => AzaharBuilder::build_command(),
-        LauncherType::MgbaQt => MgbaBuilder::build_command(),
-        LauncherType::DuckStation => DuckStationBuilder::build_command(),
+        LauncherType::Emulator(platform) => emulator::build_command(platform, context),
         LauncherType::Back => Ok(None),
     }?;
 
@@ -675,29 +569,13 @@ fn is_eden_save_suffix(path: &Path) -> bool {
             ]
 }
 
-fn launcher_type_for_emulator(platform: EmulatorPlatform) -> Option<LauncherType> {
-    match platform {
-        EmulatorPlatform::Dolphin => Some(LauncherType::DolphinFlatpak),
-        EmulatorPlatform::Eden => Some(LauncherType::Eden),
-        EmulatorPlatform::Azahar => Some(LauncherType::AzaharFlatpak),
-        EmulatorPlatform::Mgba => Some(LauncherType::MgbaQt),
-        EmulatorPlatform::Pcsx2 => Some(LauncherType::Pcsx2Flatpak),
-        EmulatorPlatform::DuckStation => Some(LauncherType::DuckStation),
-    }
-}
-
 fn launcher_recommendation_label(launcher: LauncherType) -> &'static str {
     match launcher {
         LauncherType::Manual => "manual entry",
         LauncherType::Executable => "binary / script",
         LauncherType::UmuRun => "Wine / umu-run",
         LauncherType::Steam => "Steam",
-        LauncherType::Eden => "Eden",
-        LauncherType::DolphinFlatpak => "Dolphin",
-        LauncherType::Pcsx2Flatpak => "PCSX2",
-        LauncherType::AzaharFlatpak => "Azahar",
-        LauncherType::MgbaQt => "mGBA-Qt",
-        LauncherType::DuckStation => "DuckStation",
+        LauncherType::Emulator(platform) => platform.name(),
         LauncherType::Back => "back",
     }
 }
@@ -708,6 +586,47 @@ mod tests {
     use crate::game::launch_command::{
         EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, SteamLaunchCommand,
     };
+
+    #[test]
+    fn inferred_wine_prefix_enriches_existing_preset() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp.path().join("drive_c")).unwrap();
+        let executable = temp.path().join("drive_c/game.exe");
+        let command = LaunchCommand::from_shell_or_manual(format!("wine {}", executable.display()));
+        let context = LaunchCommandBuilderContext::from_game(None, Some(&command));
+        let preset = context.preset_for(LauncherType::UmuRun).unwrap();
+        assert!(matches!(&preset.data, BuilderPresetData::WinePrefix(path) if path == temp.path()));
+        assert_eq!(context.presets.len(), 1);
+    }
+
+    #[test]
+    fn explicit_wine_prefix_takes_priority_over_inferred_save_prefix() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp.path().join("drive_c")).unwrap();
+        let command =
+            LaunchCommand::from_shell_or_manual("WINEPREFIX=/explicit wine /games/game.exe");
+        let context = LaunchCommandBuilderContext::from_game(
+            Some(&temp.path().join("drive_c/save")),
+            Some(&command),
+        );
+        assert!(
+            matches!(&context.preset_for(LauncherType::UmuRun).unwrap().data, BuilderPresetData::WinePrefix(path) if path == Path::new("/explicit"))
+        );
+    }
+
+    #[test]
+    fn discovered_prefix_outside_save_directory_reaches_builder() {
+        let hint = discovery::DiscoveryLaunchHint::Wine {
+            prefix: "/prefixes/game".into(),
+        };
+        let mut context =
+            LaunchCommandBuilderContext::from_game(Some(Path::new("/elsewhere/save")), None);
+        context.add_discovery_hint(Some(&hint));
+        assert_eq!(context.recommended_launcher(), Some(LauncherType::UmuRun));
+        assert!(
+            matches!(&context.preset_for(LauncherType::UmuRun).unwrap().data, BuilderPresetData::WinePrefix(path) if path == Path::new("/prefixes/game"))
+        );
+    }
 
     #[test]
     fn recommends_eden_from_existing_launch_command() {
@@ -725,7 +644,10 @@ mod tests {
 
         let context = LaunchCommandBuilderContext::from_game(None, Some(&command));
 
-        assert_eq!(context.recommended_launcher(), Some(LauncherType::Eden));
+        assert_eq!(
+            context.recommended_launcher(),
+            Some(LauncherType::Emulator(EmulatorPlatform::Eden))
+        );
     }
 
     #[test]
@@ -735,7 +657,10 @@ mod tests {
 
         let context = LaunchCommandBuilderContext::from_game(Some(save_path), None);
 
-        assert_eq!(context.recommended_launcher(), Some(LauncherType::Eden));
+        assert_eq!(
+            context.recommended_launcher(),
+            Some(LauncherType::Emulator(EmulatorPlatform::Eden))
+        );
     }
 
     #[test]
@@ -793,8 +718,7 @@ fn prompt_executable_command(
 
     match builder.pick_one()? {
         crate::menu_utils::DialogOutcome::Submitted(path) => {
-            let command = format!("'{}'", path.display());
-            Ok(Some(LaunchCommand::from_shell_or_manual(command)))
+            Ok(Some(LaunchCommand::executable(&path)))
         }
         crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
     }

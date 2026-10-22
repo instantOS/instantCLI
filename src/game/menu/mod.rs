@@ -1126,6 +1126,7 @@ pub fn open_prefilled_add_editor(options: AddGameOptions) -> Result<()> {
     let game_index = game_config.games.len() - 1;
     let installation_index = Some(installations.installations.len() - 1);
     let mut state = EditState::new(game_config, installations, game_index, installation_index);
+    state.discovery_launch_hint = options.discovery_launch_hint;
     state.mark_dirty();
 
     edit_menu::run_edit_menu(&game_name, &mut state)

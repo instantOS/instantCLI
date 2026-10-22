@@ -10,6 +10,7 @@ pub struct EditState {
     pub game_index: usize,
     pub installation_index: Option<usize>,
     pub dirty: bool,
+    pub discovery_launch_hint: Option<crate::game::platforms::discovery::DiscoveryLaunchHint>,
 }
 
 impl EditState {
@@ -26,6 +27,7 @@ impl EditState {
             game_index,
             installation_index,
             dirty: false,
+            discovery_launch_hint: None,
         }
     }
 

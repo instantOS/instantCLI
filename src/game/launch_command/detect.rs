@@ -14,18 +14,8 @@ pub fn matches_flatpak_app<'a>(tokens: &'a [String], app_id: &str) -> Option<&'a
 }
 
 pub fn matches_appimage(path: &str, platform: EmulatorPlatform) -> bool {
-    let names = match platform {
-        EmulatorPlatform::Dolphin => &["dolphin"][..],
-        EmulatorPlatform::Eden => &["eden"][..],
-        EmulatorPlatform::Azahar => &["azahar"][..],
-        EmulatorPlatform::Mgba => &["mgba"][..],
-        EmulatorPlatform::Pcsx2 => &["pcsx2"][..],
-        EmulatorPlatform::DuckStation => &["duckstation"][..],
-    };
-
-    file_name_lower(path).is_some_and(|name| {
-        name.ends_with(".appimage") && names.iter().any(|needle| name.contains(needle))
-    })
+    file_name_lower(path)
+        .is_some_and(|name| name.ends_with(".appimage") && name.contains(platform.id()))
 }
 
 fn file_name_lower(path: &str) -> Option<String> {

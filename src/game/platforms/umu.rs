@@ -18,9 +18,7 @@ use crate::menu_utils::{
 use crate::ui::nerd_font::NerdFont;
 
 use super::LaunchCommandBuilderContext;
-use super::prompts::{
-    FileSelectionPrompt, ask_fullscreen, confirm_command, select_file_with_validation,
-};
+use super::prompts::{FileSelectionPrompt, confirm_command, select_file_with_validation};
 use super::validation::{WINDOWS_EXTENSIONS, has_valid_extension, validate_game_file};
 
 /// Upper bound for discovered executables so the menu stays navigable.
@@ -84,17 +82,9 @@ impl UmuBuilder {
             None => return Ok(None),
         };
 
-        // Step 4: Optional fullscreen flag
-        let fullscreen = ask_fullscreen()?;
-
         // Build the command
-        let command = Self::build_launch_command(
-            runner,
-            Some(wine_prefix),
-            proton_path,
-            &executable,
-            fullscreen,
-        );
+        let command =
+            Self::build_launch_command(runner, Some(wine_prefix), proton_path, &executable);
 
         // Show preview and confirm
         let confirmed = confirm_command(&command)?;
@@ -457,7 +447,6 @@ impl UmuBuilder {
         wine_prefix: Option<PathBuf>,
         proton_path: ProtonSelection,
         executable: &Path,
-        _fullscreen: bool,
     ) -> LaunchCommand {
         LaunchCommand {
             wrappers: Default::default(),

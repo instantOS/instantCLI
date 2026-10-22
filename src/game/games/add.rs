@@ -18,6 +18,7 @@ pub struct AddGameOptions {
     pub save_path: Option<String>,
     pub create_save_path: bool,
     pub no_cache: bool,
+    pub discovery_launch_hint: Option<crate::game::platforms::discovery::DiscoveryLaunchHint>,
 }
 
 pub(super) struct ResolvedGameDetails {
@@ -41,6 +42,7 @@ pub(super) fn resolve_add_game_details(
         save_path,
         create_save_path,
         no_cache: _,
+        discovery_launch_hint: _,
     } = options;
 
     let game_name = match name {

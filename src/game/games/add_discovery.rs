@@ -2,7 +2,6 @@ use super::add::AddGameOptions;
 use super::discover::MenuSelectionPayload;
 use super::manager::GameCreationContext;
 use crate::common::shell::resolve_current_binary;
-use crate::game::platforms::EdenBuilder;
 use crate::menu_utils::{
     DecodedStreamingMenuItem, FilePickerScope, FzfWrapper, Header, HeaderBuilder, PathInputBuilder,
     PathInputSelection, StreamingCommand, StreamingMenuItem,
@@ -68,6 +67,7 @@ fn manual_menu_item() -> StreamingMenuItem<MenuSelectionPayload> {
             tracked_name: None,
             save_path: None,
             game_path: None,
+            launch_hint: None,
             platform_short: None,
         },
     )
@@ -87,6 +87,7 @@ fn scan_directory_menu_item() -> StreamingMenuItem<MenuSelectionPayload> {
             tracked_name: None,
             save_path: None,
             game_path: None,
+            launch_hint: None,
             platform_short: None,
         },
     )
@@ -103,6 +104,7 @@ fn back_menu_row() -> Result<String> {
             tracked_name: None,
             save_path: None,
             game_path: None,
+            launch_hint: None,
             platform_short: None,
         },
     )
@@ -270,9 +272,16 @@ fn resolve_discovered_selection(
             })
         }
     } else {
-        let launch_command = prefilled_launch_command(&payload);
+        let launch_command = payload
+            .launch_hint
+            .as_ref()
+            .map(|hint| hint.prefilled_command())
+            .transpose()?
+            .flatten()
+            .map(|command| command.to_string());
         Ok(EmulatorPrefillResult::OpenPrefilledAddEditor(
             AddGameOptions {
+                discovery_launch_hint: payload.launch_hint,
                 name: payload.display_name,
                 description: None,
                 launch_command,
@@ -282,17 +291,6 @@ fn resolve_discovered_selection(
             },
         ))
     }
-}
-
-fn prefilled_launch_command(payload: &MenuSelectionPayload) -> Option<String> {
-    if payload.platform_short.as_deref() != Some("Switch") {
-        return None;
-    }
-
-    let game_path = payload.game_path.as_deref()?;
-    let eden_path = EdenBuilder::detected_eden_appimage()?;
-
-    Some(EdenBuilder::format_command_simple(&eden_path, game_path.as_ref()).to_string())
 }
 
 enum SelectedDiscovery {
@@ -365,6 +363,7 @@ mod tests {
                 tracked_name: None,
                 save_path: Some("/games/Sable".to_string()),
                 game_path: None,
+                launch_hint: None,
                 platform_short: None,
             },
         )
@@ -419,6 +418,7 @@ mod tests {
                 tracked_name: Some("Sable".to_string()),
                 save_path: Some("/games/Sable".to_string()),
                 game_path: None,
+                launch_hint: None,
                 platform_short: None,
             },
             &make_context(true),
@@ -438,6 +438,7 @@ mod tests {
                 tracked_name: Some("Sable".to_string()),
                 save_path: Some("/games/Sable".to_string()),
                 game_path: None,
+                launch_hint: None,
                 platform_short: None,
             },
             &make_context(false),

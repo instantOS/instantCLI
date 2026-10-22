@@ -2,13 +2,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, PathInputBuilder,
-    PathInputSelection, SuggestionProducer,
+    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
+    SuggestionProducer,
 };
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
 
 pub(super) struct FileSelectionPrompt {
     pub header: String,
@@ -172,77 +170,14 @@ fn push_path_if_absent(paths: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
-pub(super) fn ask_fullscreen() -> Result<bool> {
+pub(super) fn ask_fullscreen() -> Result<Option<bool>> {
     match FzfWrapper::confirm(&format!(
         "{} Run in fullscreen mode?",
         char::from(NerdFont::Fullscreen)
     ))? {
-        ConfirmResult::Yes => Ok(true),
-        _ => Ok(false),
-    }
-}
-
-pub(super) fn select_detected_appimage(
-    paths: &[PathBuf],
-    icon: NerdFont,
-    product_name: &str,
-) -> Result<Option<PathBuf>> {
-    match paths {
-        [] => Ok(None),
-        [path] => Ok(Some(path.clone())),
-        _ => {
-            let header = format!("Select {product_name} AppImage");
-            let preview_title = format!("Detected {product_name} AppImage");
-            let preview_text = format!("Multiple {product_name} AppImages were found.");
-
-            #[derive(Clone)]
-            struct AppImageItem {
-                path: PathBuf,
-                icon: NerdFont,
-                preview_title: String,
-                preview_text: String,
-            }
-
-            impl FzfSelectable for AppImageItem {
-                fn fzf_display_text(&self) -> String {
-                    format!("{} {}", char::from(self.icon), self.path.display())
-                }
-
-                fn fzf_key(&self) -> String {
-                    self.path.to_string_lossy().into_owned()
-                }
-
-                fn fzf_preview(&self) -> FzfPreview {
-                    PreviewBuilder::new()
-                        .header(self.icon, &self.preview_title)
-                        .text(&self.preview_text)
-                        .blank()
-                        .field("Path", &self.path.display().to_string())
-                        .build()
-                }
-            }
-
-            let items: Vec<AppImageItem> = paths
-                .iter()
-                .cloned()
-                .map(|path| AppImageItem {
-                    path,
-                    icon,
-                    preview_title: preview_title.to_string(),
-                    preview_text: preview_text.to_string(),
-                })
-                .collect();
-
-            match FzfWrapper::builder()
-                .header(HeaderBuilder::new(icon, &header).build())
-                .prompt(product_name)
-                .items(items)
-                .select_one()?
-            {
-                crate::menu_utils::DialogOutcome::Submitted(item) => Ok(Some(item.path)),
-                crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
-            }
-        }
+        ConfirmResult::Yes => Ok(Some(true)),
+        ConfirmResult::No => Ok(Some(false)),
+        ConfirmResult::Cancelled => Ok(None),
     }
 }
 

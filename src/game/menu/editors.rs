@@ -398,7 +398,7 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
         command: cmd,
         source_label: "device-specific override",
     });
-    let context = LaunchCommandBuilderContext::from_game(
+    let mut context = LaunchCommandBuilderContext::from_game(
         state
             .installation()
             .map(|install| install.save_path.as_path()),
@@ -408,6 +408,8 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
                 .and_then(|install| install.launch_command.as_ref())
         }),
     );
+
+    context.add_discovery_hint(state.discovery_launch_hint.as_ref());
 
     match select_launch_command_input_method(current, other)? {
         LaunchCommandInputMethod::Build => {
@@ -486,7 +488,7 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         command: cmd,
         source_label: "shared command",
     });
-    let context = LaunchCommandBuilderContext::from_game(
+    let mut context = LaunchCommandBuilderContext::from_game(
         state
             .installation()
             .map(|install| install.save_path.as_path()),
@@ -495,6 +497,8 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
             .and_then(|install| install.launch_command.as_ref())
             .or_else(|| state.game().launch_command.as_ref()),
     );
+
+    context.add_discovery_hint(state.discovery_launch_hint.as_ref());
 
     match select_launch_command_input_method(current, other)? {
         LaunchCommandInputMethod::Build => {

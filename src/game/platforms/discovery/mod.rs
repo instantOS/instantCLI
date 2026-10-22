@@ -4,13 +4,15 @@
 //! to discover games/saves that can be tracked.
 
 pub mod azahar;
-pub mod duckstation;
 pub mod eden;
 pub mod epic;
 pub mod faugus;
-pub mod pcsx2;
+mod launch_hint;
+mod memcard;
+pub(crate) mod prefix;
 pub mod steam;
 mod utils;
+pub use launch_hint::{DiscoveryLaunchHint, EmulatorSaveSource};
 pub mod wine;
 
 use std::path::PathBuf;
@@ -26,6 +28,11 @@ pub trait DiscoveredGame: std::fmt::Debug {
     fn game_path(&self) -> Option<&PathBuf>;
     fn prefix_path(&self) -> Option<&PathBuf> {
         None
+    }
+    fn launch_hint(&self) -> Option<DiscoveryLaunchHint> {
+        self.prefix_path().map(|prefix| DiscoveryLaunchHint::Wine {
+            prefix: prefix.clone(),
+        })
     }
     fn platform_name(&self) -> &'static str;
     fn platform_short(&self) -> &'static str;
@@ -139,16 +146,16 @@ where
                 eden::discover_eden_games,
                 &mut |game| on_event(DiscoveryEvent::GameFound(game)),
             )?,
-            DiscoverySource::Ps2 => emit_discovered_games(
-                pcsx2::is_pcsx2_installed,
-                pcsx2::discover_pcsx2_memcards,
-                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
-            )?,
-            DiscoverySource::Ps1 => emit_discovered_games(
-                duckstation::is_duckstation_installed,
-                duckstation::discover_duckstation_memcards,
-                &mut |game| on_event(DiscoveryEvent::GameFound(game)),
-            )?,
+            DiscoverySource::Ps2 | DiscoverySource::Ps1 => {
+                let platform = if source == DiscoverySource::Ps2 {
+                    crate::game::launch_command::EmulatorPlatform::Pcsx2
+                } else {
+                    crate::game::launch_command::EmulatorPlatform::DuckStation
+                };
+                for card in memcard::discover(platform)? {
+                    on_event(DiscoveryEvent::GameFound(Box::new(card)))?;
+                }
+            }
             DiscoverySource::ThreeDs => emit_discovered_games(
                 azahar::is_azahar_installed,
                 azahar::discover_azahar_games,
