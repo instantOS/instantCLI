@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use nix::fcntl::{FcntlArg, OFlag, fcntl};
 
-use super::sync::{SyncReport, sync_game_saves};
+use super::sync::SyncReport;
 
 /// Presentation policy is resolved once per workflow, independently of optional tools.
 pub(super) struct GameUi {
@@ -31,20 +31,35 @@ impl GameUi {
         }
     }
 
-    pub(super) fn sync(&self, title: &str, delay: Duration) -> Result<SyncReport> {
+    pub(super) fn sync_held_all(
+        &self,
+        title: &str,
+        owners: &[crate::game::ownership::OwnerId],
+    ) -> Result<SyncReport> {
+        let mut dialog = self.graphical.then(|| ProgressDialog::new(title)).flatten();
+        let result = super::sync::sync_held_all(owners, &mut |message| {
+            if let Some(dialog) = &mut dialog {
+                dialog.set_text(message);
+            }
+        });
+        if let Some(dialog) = dialog {
+            dialog.finish();
+        }
+        result
+    }
+
+    pub(super) fn sync_owner(
+        &self,
+        title: &str,
+        delay: Duration,
+        game: &str,
+        owner: &crate::game::ownership::OwnerId,
+    ) -> Result<SyncReport> {
         let mut dialog = self.graphical.then(|| ProgressDialog::new(title)).flatten();
         if !delay.is_zero() {
-            let message = format!(
-                "Waiting {} seconds before syncing saves...",
-                delay.as_secs()
-            );
-            println!("{message}");
-            if let Some(dialog) = &mut dialog {
-                dialog.set_text(&message);
-            }
             sleep(delay);
         }
-        let result = sync_game_saves(None, false, &mut |message| {
+        let result = super::sync::sync_held_owner(game.into(), owner, &mut |message| {
             if let Some(dialog) = &mut dialog {
                 dialog.set_text(message);
             }
@@ -75,7 +90,15 @@ impl GameUi {
         }
     }
 
+    pub(super) fn notify_conflicts(&self, report: &SyncReport) {
+        let messages = report.conflict_messages();
+        if !messages.is_empty() {
+            self.notify("Newest saves selected automatically", &messages.join("\n"));
+        }
+    }
+
     pub(super) fn completed(&self, report: &SyncReport) {
+        self.notify_conflicts(report);
         self.notify("Save sync results", &report.completion_message());
     }
 

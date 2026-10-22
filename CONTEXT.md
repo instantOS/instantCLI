@@ -27,3 +27,17 @@ _Avoid_: Wizard state, live session flag
 **Target relation**:
 A validated value naming how the install target relates to the running system — a different disk, the disk the system booted from, or the running root device. It decides what the installer may do to the target without endangering the system it is executing from.
 _Avoid_: Wizard state, disk answer
+
+## Game saves
+
+**Game**:
+A playable title with either private saves or membership in a shared save group. Several games may share the same save data.
+_Avoid_: Save owner, memory card
+
+**Save owner**:
+The game or shared save group whose save data is backed up, synchronized, and restored as one unit with one history. A game owns its private saves; a shared save group owns saves for all its members.
+_Avoid_: Save path, launcher, save collection
+
+**Shared save group**:
+A named owner of save data shared by several games. Restoring it rolls back the shared data for all participating games together.
+_Avoid_: Game, per-game save, save collection

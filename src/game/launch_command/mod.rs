@@ -108,10 +108,12 @@ pub enum EmulatorLauncher {
     AppImage { path: PathBuf },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EmulatorOptions {
     pub fullscreen: bool,
     pub batch_mode: bool,
+    pub data_path: Option<PathBuf>,
+    pub game_config: Option<PathBuf>,
 }
 
 impl LaunchCommand {

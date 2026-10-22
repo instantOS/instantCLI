@@ -393,20 +393,41 @@ fn save_repository(
     repository: &str,
     password: String,
 ) -> Result<()> {
+    let mut owner_locks = Vec::new();
     if config.repo.as_path().to_string_lossy() != repository {
         let mut installations = crate::game::config::InstallationsConfig::load()?;
         if installations
             .installations
             .iter()
-            .any(|installation| installation.pending_restore.is_some())
+            .filter_map(|installation| installation.saves.as_ref())
+            .chain(
+                installations
+                    .save_groups
+                    .iter()
+                    .map(|binding| &binding.saves),
+            )
+            .any(|saves| saves.pending_restore.is_some())
         {
             bail!(
                 "A game restore is incomplete. Finish `ins game setup` with the current repository before changing storage."
             );
         }
+        for id in config.bound_owner_ids(&installations) {
+            owner_locks.push(crate::game::save_runtime::SaveLock::owner(&id)?);
+        }
         // Bind legacy installations to the old location BEFORE saving the new
         // one. If either write fails, sync must not silently use the new storage.
-        for installation in &mut installations.installations {
+        for installation in installations
+            .installations
+            .iter_mut()
+            .filter_map(|installation| installation.saves.as_mut())
+            .chain(
+                installations
+                    .save_groups
+                    .iter_mut()
+                    .map(|binding| &mut binding.saves),
+            )
+        {
             if installation.sync_repository.is_none() {
                 installation.sync_repository =
                     Some(config.repo.as_path().to_string_lossy().to_string());

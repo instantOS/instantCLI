@@ -17,6 +17,7 @@ pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
         },
     };
 
+    let _lock = crate::game::save_runtime::SaveLock::owner(&config.owner_id(&game_name))?;
     let game_index = config.games.iter().position(|g| g.name.0 == game_name);
 
     if game_index.is_none() {
@@ -79,12 +80,14 @@ fn remove_game_entry(
     game_name: &str,
 ) -> Result<()> {
     config.games.remove(game_index);
-    config.save()?;
 
     installations
         .installations
         .retain(|inst| inst.game_name.0 != game_name);
+    // A crash here may leave an uninstalled game, which remains valid and can
+    // be removed again. Do not leave an orphaned shared override without saves.
     installations.save()?;
+    config.save()?;
 
     Ok(())
 }

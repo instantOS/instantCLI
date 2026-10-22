@@ -19,6 +19,10 @@ pub(super) enum EmulatorPrefillResult {
         discovered_save_path: Option<String>,
     },
     OpenPrefilledAddEditor(AddGameOptions),
+    ConfigureSharedDirectory {
+        path: String,
+        name: String,
+    },
     Cancelled,
 }
 
@@ -257,6 +261,25 @@ fn resolve_discovered_selection(
     context: &GameCreationContext,
     no_cache: bool,
 ) -> Result<EmulatorPrefillResult> {
+    if matches!(
+        &payload.launch_hint,
+        Some(
+            crate::game::platforms::discovery::DiscoveryLaunchHint::Emulator {
+                platform: crate::game::launch_command::EmulatorPlatform::Pcsx2,
+                game: None,
+                ..
+            }
+        )
+    ) && let Some(path) = &payload.save_path
+        && std::path::Path::new(path).is_dir()
+    {
+        return Ok(EmulatorPrefillResult::ConfigureSharedDirectory {
+            path: path.clone(),
+            name: payload
+                .display_name
+                .unwrap_or_else(|| "PS2 memory cards".into()),
+        });
+    }
     if payload.existing {
         let tracked_name = payload
             .tracked_name
@@ -404,8 +427,12 @@ mod tests {
                 repo_password: "instantgamepassword".to_string(),
                 games: vec![Game::new("Sable")],
                 retention_policy: Default::default(),
+                ..Default::default()
             },
-            installations: InstallationsConfig { installations },
+            installations: InstallationsConfig {
+                installations,
+                ..Default::default()
+            },
         }
     }
 

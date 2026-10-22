@@ -145,8 +145,8 @@ EOF
 	ps2_json="$(ins --output json game discover --source ps2)"
 	echo "${ps2_json}" | jq -e '
 		(.data.games | length) == 2 and
-		(.data.games | map(select(.name == "Native" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "native" and .launch_hint.game == null)) | length) == 1 and
-		(.data.games | map(select(.name == "Flatpak" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "flatpak")) | length) == 1
+		(.data.games | map(select(.name == "PS2 memory cards (Native/AppImage)" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "native" and .launch_hint.game == null)) | length) == 1 and
+		(.data.games | map(select(.name == "PS2 memory cards (Flatpak)" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "flatpak")) | length) == 1
 	' >/dev/null
 
 	local menu_output

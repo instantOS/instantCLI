@@ -191,6 +191,7 @@ fn parse_dolphin(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchCo
         options: EmulatorOptions {
             fullscreen,
             batch_mode,
+            ..Default::default()
         },
     }))
 }
@@ -219,6 +220,7 @@ fn parse_eden(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchComma
         options: EmulatorOptions {
             fullscreen,
             batch_mode: false,
+            ..Default::default()
         },
     }))
 }
@@ -228,7 +230,42 @@ fn parse_azahar(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchCom
 }
 
 fn parse_pcsx2(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchCommandKind> {
-    parse_separator_platform(EmulatorPlatform::Pcsx2, launcher, tail, "-fullscreen")
+    let mut filtered = Vec::new();
+    let mut data_path = None;
+    let mut game_config = None;
+    let mut index = 0;
+    while index < tail.len() {
+        match tail[index].as_str() {
+            "-datapath" | "-gamecfg" => {
+                let value = PathBuf::from(tail.get(index + 1)?);
+                let target = if tail[index] == "-datapath" {
+                    &mut data_path
+                } else {
+                    &mut game_config
+                };
+                if target.is_some() {
+                    return None;
+                }
+                *target = Some(value);
+                index += 2;
+            }
+            "--" => {
+                filtered.extend_from_slice(&tail[index..]);
+                break;
+            }
+            _ => {
+                filtered.push(tail[index].clone());
+                index += 1;
+            }
+        }
+    }
+    let mut parsed =
+        parse_separator_platform(EmulatorPlatform::Pcsx2, launcher, &filtered, "-fullscreen")?;
+    if let LaunchCommandKind::Emulator(emulator) = &mut parsed {
+        emulator.options.data_path = data_path;
+        emulator.options.game_config = game_config;
+    }
+    Some(parsed)
 }
 
 fn parse_duckstation(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchCommandKind> {
@@ -272,6 +309,7 @@ fn parse_separator_platform(
         options: EmulatorOptions {
             fullscreen,
             batch_mode,
+            ..Default::default()
         },
     }))
 }
@@ -303,6 +341,7 @@ fn parse_mgba(launcher: EmulatorLauncher, tail: &[String]) -> Option<LaunchComma
         options: EmulatorOptions {
             fullscreen,
             batch_mode: false,
+            ..Default::default()
         },
     }))
 }

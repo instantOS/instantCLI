@@ -108,9 +108,12 @@ pub fn create_dependency_tags(game_name: &str, dependency_id: &str) -> Vec<Strin
 /// The decoded game name if found, or None if not found/decodable
 pub fn extract_game_name_from_tags(tags: &[String]) -> Option<String> {
     // Find the tag that's not the primary instant game tag
+    if !tags.iter().any(|tag| tag == INSTANT_GAME_TAG) {
+        return None;
+    }
     tags.iter()
-        .find(|tag| *tag != INSTANT_GAME_TAG)
-        .and_then(|encoded_tag| decode_game_name_from_tag(encoded_tag).ok())
+        .filter(|tag| *tag != INSTANT_GAME_TAG)
+        .find_map(|encoded_tag| decode_game_name_from_tag(encoded_tag).ok())
 }
 
 /// Debug utility: Pretty print all snapshots with decoded game names

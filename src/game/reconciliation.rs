@@ -2,8 +2,6 @@
 use anyhow::{Context, Result, bail};
 
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
-use crate::game::restic::backup::{GameBackup, RestoreRequest};
-use crate::game::restic::cache;
 use crate::game::restic::snapshot_selection::{EnhancedSnapshot, SnapshotMenuEntry};
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::{format_system_time_for_display, get_save_directory_info};
@@ -48,6 +46,20 @@ pub(crate) fn choose_saves(
     installation: &GameInstallation,
     snapshots: &[Snapshot],
 ) -> Result<SaveChoice> {
+    choose_owned_saves(
+        &installation.game_name.0,
+        installation.owned()?,
+        snapshots,
+        "",
+    )
+}
+
+fn choose_owned_saves(
+    game_name: &str,
+    installation: &crate::game::config::OwnedSaves,
+    snapshots: &[Snapshot],
+    scope: &str,
+) -> Result<SaveChoice> {
     let local = get_save_directory_info(installation.save_path.as_path())?;
     let latest = snapshots.first();
     let backup_info = latest
@@ -63,7 +75,7 @@ pub(crate) fn choose_saves(
     });
     let summary = format!(
         "Game: {}\nLocal path: {}\nLocal files last modified: {}\nLocal contents: {} files, {} bytes\n{}{}\nModification time and backup creation time are different measurements, not proof of game progress.\nRestoring replaces local saves, including removing files absent from the backup. No recovery copy is kept.",
-        installation.game_name.0,
+        game_name,
         installation.save_path.display_string(),
         format_system_time_for_display(local.last_modified),
         local.file_count,
@@ -108,7 +120,7 @@ pub(crate) fn choose_saves(
         let action = match FzfWrapper::builder()
             .header(
                 HeaderBuilder::new(NerdFont::BackupRestore, "Choose which saves to use")
-                    .subtitle(&summary),
+                    .subtitle(format!("{scope}\n{summary}")),
             )
             .items(choices)
             .padded()
@@ -133,7 +145,7 @@ pub(crate) fn choose_saves(
                         SnapshotMenuEntry::Snapshot(EnhancedSnapshot {
                             snapshot,
                             local_save_info: Some(local.clone()),
-                            game_name: installation.game_name.0.clone(),
+                            game_name: game_name.into(),
                             nearest_checkpoint: installation.nearest_checkpoint.clone(),
                         })
                     })
@@ -152,114 +164,74 @@ pub(crate) fn choose_saves(
     }
 }
 
-/// Save the retry marker before touching live files. Clear it only after success.
+/// Private setup adapter: persist the binding, then use the same owner operation.
 pub(crate) fn apply_choice(
     config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
     index: usize,
     choice: SaveChoice,
 ) -> Result<()> {
-    let repository = config.repo.as_path().to_string_lossy().to_string();
-    let installation = &installations.installations[index];
-    ensure_safe_path(installation.save_path.as_path(), PathUsage::SaveDirectory)?;
-    let game_name = installation.game_name.0.clone();
-    let handler = GameBackup::new(config.clone());
-    match choice {
-        SaveChoice::Upload => {
-            let result = handler.backup_game(installation)?;
-            cache::invalidate_snapshot_cache();
-            let id = crate::game::checkpoint::resolve_backup_snapshot_id(
-                result.snapshot_id.as_deref(),
-                &game_name,
-                config,
-            )?
-            .context("Backup completed but no checkpoint could be resolved; run setup again")?;
-            installations.installations[index].note_backup(id);
-        }
-        SaveChoice::Restore(id) => {
-            let snapshots = cache::get_snapshots_for_game(&game_name, config)?;
-            let snapshot = snapshots
-                .iter()
-                .find(|snapshot| snapshot.matches_id(&id))
-                .context("Selected backup is no longer available")?;
-            // Persist any reselected path or newly-created installation before
-            // the managed restore writes its durable retry marker.
-            installations
-                .save()
-                .context("Could not save installation before restore; no files were restored")?;
-            let installation = &installations.installations[index];
-            handler
-                .restore_backup(RestoreRequest {
-                    game_name: &game_name,
-                    snapshot_id: &snapshot.id,
-                    path: installation.save_path.as_path(),
-                    save_path_type: installation.save_path_type,
-                    snapshot_source_path: snapshot.paths.first().map(String::as_str),
-                })
-                .context("Could not reconcile saves from the selected backup")?;
-            *installations = InstallationsConfig::load()
-                .context("Could not reload installation after restore")?;
-        }
-        SaveChoice::Cancel | SaveChoice::Reselect => bail!("No save action selected"),
-    }
-    installations.installations[index].sync_repository = Some(repository);
-    installations
-        .save()
-        .context("Could not save completed save choice; run setup again before playing")?;
-    cache::invalidate_snapshot_cache();
+    config.validate_ownership(installations)?;
+    installations.save()?;
+    let id = config.owner_id(&installations.installations[index].game_name.0);
+    let _lock = crate::game::save_runtime::SaveLock::owner(&id)?;
+    let owner = config.resolve_owner(installations, &id)?;
+    apply_owner_choice(config, &owner, choice)?;
+    *installations = InstallationsConfig::load()?;
     Ok(())
 }
 
-/// Pending operations and repository changes must be resolved before automatic sync.
+pub(crate) fn apply_owner_choice(
+    config: &InstantGameConfig,
+    owner: &crate::game::ownership::SaveOwner,
+    choice: SaveChoice,
+) -> Result<()> {
+    ensure_safe_path(owner.save_path.as_path(), PathUsage::SaveDirectory)?;
+    match choice {
+        SaveChoice::Upload => {
+            crate::game::operations::sync::execution::publish_local_choice(owner, config)
+        }
+        SaveChoice::Restore(id) => {
+            crate::game::operations::sync::execution::perform_restore(owner, config, &id)
+        }
+        SaveChoice::Cancel | SaveChoice::Reselect => bail!("No save action selected"),
+    }
+}
+
+pub(crate) fn reconcile_owner(
+    config: &InstantGameConfig,
+    id: &crate::game::ownership::OwnerId,
+) -> Result<bool> {
+    let _lock = crate::game::save_runtime::SaveLock::owner(id)?;
+    let local = InstallationsConfig::load()?;
+    config.validate_ownership(&local)?;
+    let owner = config.resolve_owner(&local, id)?;
+    let snapshots = crate::game::save_runtime::fresh_snapshots(config, id)?;
+    println!("{}", owner.scope());
+    match choose_owned_saves(&owner.name, &owner.saves, &snapshots, &owner.scope())? {
+        SaveChoice::Cancel => Ok(false),
+        SaveChoice::Reselect => bail!(
+            "Change this owner's save path with relocate (private saves) or group bind (shared saves), then reconcile again"
+        ),
+        choice => {
+            apply_owner_choice(config, &owner, choice)?;
+            Ok(true)
+        }
+    }
+}
+
 pub(crate) fn reconcile_configured_games(config: &InstantGameConfig) -> Result<bool> {
-    let mut installations = InstallationsConfig::load()?;
-    let repository = config.repo.as_path().to_string_lossy().to_string();
-    for index in 0..installations.installations.len() {
-        let installation = &installations.installations[index];
-        let mut unavailable_pending_restore = false;
-        if let Some(id) = installation.pending_restore.clone() {
-            let snapshots = cache::get_snapshots_for_game(&installation.game_name.0, config)?;
-            if snapshots.iter().any(|snapshot| snapshot.matches_id(&id)) {
-                if FzfWrapper::confirm(&format!(
-                    "Restore for '{}' was incomplete. Retry the selected backup now?",
-                    installation.game_name.0
-                ))? != crate::menu_utils::ConfirmResult::Yes
-                {
-                    return Ok(false);
-                }
-                apply_choice(config, &mut installations, index, SaveChoice::Restore(id))?;
-                continue;
-            }
-            FzfWrapper::message(&format!(
-                "The incomplete restore snapshot '{id}' for '{}' is no longer available. Choose another backup, or explicitly accept and upload the current local files.",
-                installation.game_name.0
-            ))?;
-            unavailable_pending_restore = true;
-        }
-        if !unavailable_pending_restore
-            && !installation.needs_repository_reconciliation(&repository)
+    let local = InstallationsConfig::load()?;
+    config.validate_ownership(&local)?;
+    let repository = config.repo.as_path().to_string_lossy().into_owned();
+    for id in config.bound_owner_ids(&local) {
+        let saves = local.owner_saves(&id)?;
+        if (saves.pending_restore.is_some()
+            || saves.needs_repository_reconciliation(&repository)
+            || saves.baseline.is_none())
+            && !reconcile_owner(config, &id)?
         {
-            continue;
-        }
-        loop {
-            let installation = &installations.installations[index];
-            let snapshots = cache::get_snapshots_for_game(&installation.game_name.0, config)?;
-            match choose_saves(installation, &snapshots)? {
-                SaveChoice::Cancel => return Ok(false),
-                SaveChoice::Reselect => {
-                    let selected =
-                        crate::game::setup::choose_reconciliation_path(&installation.game_name.0)?;
-                    let Some((path, kind)) = selected else {
-                        continue;
-                    };
-                    installations.installations[index].save_path = path;
-                    installations.installations[index].save_path_type = kind;
-                }
-                choice => {
-                    apply_choice(config, &mut installations, index, choice)?;
-                    break;
-                }
-            }
+            return Ok(false);
         }
     }
     Ok(true)

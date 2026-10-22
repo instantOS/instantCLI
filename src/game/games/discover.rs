@@ -751,7 +751,11 @@ fn find_existing_game_for_save(
         .installations
         .installations
         .iter()
-        .find(|inst| inst.save_path.as_path() == save_path)
+        .find(|inst| {
+            inst.saves
+                .as_ref()
+                .is_some_and(|saves| saves.save_path.as_path() == save_path)
+        })
         .map(|inst| inst.game_name.0.clone())
 }
 
@@ -1019,6 +1023,7 @@ mod tests {
                 repo_password: "instantgamepassword".to_string(),
                 games: vec![Game::new("STALKER Shadow of Chornobyl  (7.41 GB)")],
                 retention_policy: Default::default(),
+                ..Default::default()
             },
             installations: InstallationsConfig {
                 installations: vec![GameInstallation::with_kind(
@@ -1026,6 +1031,7 @@ mod tests {
                     TildePath::new(PathBuf::from("/tmp/other-save")),
                     crate::game::config::PathContentKind::Directory,
                 )],
+                ..Default::default()
             },
         };
 

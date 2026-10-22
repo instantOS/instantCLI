@@ -6,6 +6,21 @@ use clap_complete::engine::ArgValueCompleter;
 /// Game save management commands
 #[derive(Subcommand, Debug, Clone)]
 pub enum GameCommands {
+    /// Manage shared save ownership and device-specific bindings
+    Group {
+        #[command(subcommand)]
+        command: SaveGroupCommands,
+    },
+    /// Explicitly choose local saves or a backup after a conflict or migration
+    Reconcile {
+        game_name: String,
+        /// Accept local data and publish it as the chosen version
+        #[arg(long, conflicts_with = "snapshot")]
+        local: bool,
+        /// Restore this owner's snapshot and acknowledge the current remote head
+        #[arg(long)]
+        snapshot: Option<String>,
+    },
     /// Initialize restic repository for game saves
     Init {
         /// Restic repository path to use (non-interactive)
@@ -32,6 +47,9 @@ pub enum GameCommands {
         /// Save path for the game (non-interactive)
         #[arg(long)]
         save_path: Option<String>,
+        /// Shared save group instead of a private save path
+        #[arg(long, requires = "name", conflicts_with = "save_path")]
+        save_group: Option<String>,
         /// Create save path automatically when using --save-path
         #[arg(long)]
         create_save_path: bool,
@@ -247,5 +265,63 @@ pub enum DebugCommands {
         /// Show tags for specific game (optional, shows all if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum SaveGroupCommands {
+    /// Declare a shared group and bind its local save path
+    Create {
+        id: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        path: Option<String>,
+        /// Treat a missing save path as a single file
+        #[arg(long, requires = "path")]
+        file: bool,
+    },
+    /// Bind an existing group to this device (resets local sync baseline)
+    Bind {
+        id: String,
+        path: String,
+        #[arg(long)]
+        file: bool,
+    },
+    /// Assign a game to a group, retaining its previous snapshots
+    Join {
+        id: String,
+        game: String,
+        #[arg(long)]
+        discard_private_binding: bool,
+    },
+    /// Remove an unreferenced group without deleting any snapshots
+    Remove { id: String },
+    /// List groups and their bindings on this device
+    List,
+    /// Choose a baseline or resolve conflicting versions
+    Reconcile {
+        id: String,
+        #[arg(long, conflicts_with = "snapshot")]
+        local: bool,
+        #[arg(long)]
+        snapshot: Option<String>,
+    },
+    /// Sync this group once
+    Sync { id: String },
+    /// Restore all saves in the group together
+    Restore {
+        id: String,
+        snapshot: Option<String>,
+        #[arg(long)]
+        force: bool,
+    },
+    /// List this group's history
+    Snapshots { id: String },
+    /// Import an existing private game's snapshot as a new group baseline
+    Import {
+        id: String,
+        game: String,
+        snapshot: String,
     },
 }

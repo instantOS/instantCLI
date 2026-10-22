@@ -2,24 +2,28 @@ use anyhow::{Context, Result};
 use std::{fs, path::Path};
 
 use crate::game::checkpoint;
-use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
-use crate::game::restic::{cache, single_file, tags};
+use crate::game::config::{InstantGameConfig, PathContentKind};
+use crate::game::ownership::{OwnerId, SaveOwner};
+use crate::game::restic::{cache, single_file};
 use crate::restic::ResticWrapper;
 
 /// Request parameters for restoring a game backup
 pub struct RestoreRequest<'a> {
-    pub game_name: &'a str,
+    pub owner: &'a OwnerId,
     pub snapshot_id: &'a str,
+    pub snapshot_time: &'a str,
     pub path: &'a Path,
     pub save_path_type: PathContentKind,
     /// Optional hint for the snapshot source path (from cached snapshot metadata)
     pub snapshot_source_path: Option<&'a str>,
+    pub observed_head: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackupResult {
     pub snapshot_id: Option<String>,
     pub file_contents_changed: bool,
+    pub content_digest: String,
 }
 
 impl std::fmt::Display for BackupResult {
@@ -46,10 +50,13 @@ impl GameBackup {
         Self { config }
     }
 
-    /// Create a backup of a specific game's save directory
-    pub fn backup_game(&self, game_installation: &GameInstallation) -> Result<BackupResult> {
+    pub(crate) fn backup_owner(
+        &self,
+        owner: &SaveOwner,
+        extra_tags: &[String],
+    ) -> Result<BackupResult> {
         // Validate that save path exists
-        let save_path_buf = game_installation.save_path.as_path();
+        let save_path_buf = owner.save_path.as_path();
         if !save_path_buf.exists() {
             return Err(anyhow::anyhow!(
                 "Save path does not exist: {}",
@@ -57,14 +64,14 @@ impl GameBackup {
             ));
         }
 
-        if game_installation.save_path_type.is_directory() && !save_path_buf.is_dir() {
+        if owner.save_path_type.is_directory() && !save_path_buf.is_dir() {
             return Err(anyhow::anyhow!(
                 "Configured save path '{}' is not a directory",
                 save_path_buf.display()
             ));
         }
 
-        if game_installation.save_path_type.is_file() && !save_path_buf.is_file() {
+        if owner.save_path_type.is_file() && !save_path_buf.is_file() {
             return Err(anyhow::anyhow!(
                 "Configured save path '{}' is not a file",
                 save_path_buf.display()
@@ -77,11 +84,16 @@ impl GameBackup {
         )
         .context("Failed to initialize restic wrapper")?;
 
-        // Use the centralized restic wrapper which already includes
-        // --skip-if-unchanged for backups.
-        let tags = tags::create_game_tags(&game_installation.game_name.0);
+        // Save lineage requires a snapshot even when restic detects no changes.
+        let content = crate::game::save_runtime::content_digest(save_path_buf)?;
+        let modified = crate::game::save_runtime::latest_save_time(save_path_buf)?
+            .context("Save path has no modification time")?;
+        let mut tags = owner.id.tags();
+        tags.push(format!("instantgame-content:{content}"));
+        tags.push(format!("instantgame-save-time:{}", modified.to_rfc3339()));
+        tags.extend_from_slice(extra_tags);
 
-        let restic_paths: Vec<&Path> = match game_installation.save_path_type {
+        let restic_paths: Vec<&Path> = match owner.save_path_type {
             PathContentKind::Directory => vec![save_path_buf],
             PathContentKind::File => {
                 // For single files, backup the file directly
@@ -89,29 +101,35 @@ impl GameBackup {
             }
         };
 
+        cache::invalidate_snapshot_cache();
         let progress = restic
-            .backup(&restic_paths, tags, None)
+            .backup_saves(&restic_paths, tags)
             .context("Failed to perform restic backup")?;
 
-        let Some(summary) = progress.summary else {
-            return Ok(BackupResult {
-                snapshot_id: None,
-                file_contents_changed: true,
-            });
-        };
-
+        anyhow::ensure!(
+            content == crate::game::save_runtime::content_digest(save_path_buf)?,
+            "Saves changed during backup. Snapshot retained; local baseline was not advanced"
+        );
+        let summary = progress
+            .summary
+            .context("Restic backup returned no summary")?;
         Ok(BackupResult {
-            snapshot_id: summary.snapshot_id,
+            snapshot_id: Some(
+                summary
+                    .snapshot_id
+                    .context("Restic backup did not return a snapshot ID")?,
+            ),
             file_contents_changed: summary.files_new != 0 || summary.files_changed != 0,
+            content_digest: content,
         })
     }
 
     /// Restore a game backup
     fn restore_game_backup(
         &self,
-        game_name: &str,
         snapshot_id: &str,
         target_path: &Path,
+        source_path: Option<&str>,
     ) -> Result<String> {
         if !target_path.exists() {
             fs::create_dir_all(target_path).with_context(|| {
@@ -119,14 +137,9 @@ impl GameBackup {
             })?;
         }
 
-        let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &self.config)
-            .context("Failed to locate snapshot metadata")?;
-
-        // Exact directory restores must be scoped to the backed-up save tree.
-        // Falling back to the snapshot root would delete valid saves and restore
-        // the snapshot's absolute-path hierarchy inside the target instead.
-        let snapshot_path = snapshot
-            .and_then(|s| s.paths.first().cloned())
+        // The owner was checked when selecting this snapshot. Reuse its exact
+        // source path rather than querying repository metadata again.
+        let snapshot_path = source_path
             .filter(|path| !path.is_empty())
             .context("Snapshot has no source directory; refusing an unscoped restore")?;
 
@@ -137,7 +150,7 @@ impl GameBackup {
         .context("Failed to initialize restic wrapper")?;
 
         let progress = restic
-            .restore(snapshot_id, Some(&snapshot_path), target_path)
+            .restore(snapshot_id, Some(snapshot_path), target_path)
             .context("Failed to restore restic snapshot")?;
 
         if let Some(summary) = progress.summary {
@@ -149,24 +162,33 @@ impl GameBackup {
 
     /// Restore a game backup (handles both files and directories)
     pub fn restore_backup(&self, request: RestoreRequest<'_>) -> Result<String> {
-        checkpoint::mark_restore_pending(request.game_name, request.snapshot_id)?;
-        let summary = self.restore_backup_files(&request).with_context(|| {
+        checkpoint::mark_owner_restore_pending(request.owner, request.snapshot_id)?;
+        let summary = self.restore_untracked(&request).with_context(|| {
             format!(
                 "Restore incomplete. Do not play '{}'; retry the restore before syncing",
-                request.game_name
+                request.owner.label()
             )
         })?;
-        checkpoint::complete_restore(request.game_name, request.snapshot_id)
-            .context("Restore completed, but its state could not be saved; retry before syncing")?;
+        checkpoint::complete_owner_restore(
+            request.owner,
+            request.snapshot_id,
+            request.snapshot_time,
+            request.observed_head,
+            &self.config,
+        )
+        .context("Restore completed, but its state could not be saved; retry before syncing")?;
         Ok(summary)
     }
 
-    fn restore_backup_files(&self, request: &RestoreRequest<'_>) -> Result<String> {
+    pub(crate) fn restore_untracked(&self, request: &RestoreRequest<'_>) -> Result<String> {
         match request.save_path_type {
             PathContentKind::Directory => {
                 // For directories, use the standard restore
-                let summary =
-                    self.restore_game_backup(request.game_name, request.snapshot_id, request.path)?;
+                let summary = self.restore_game_backup(
+                    request.snapshot_id,
+                    request.path,
+                    request.snapshot_source_path,
+                )?;
                 Ok(summary)
             }
             PathContentKind::File => {
@@ -176,21 +198,9 @@ impl GameBackup {
                 )
                 .context("Failed to initialize restic wrapper")?;
 
-                // For single files, restore to temp directory then move to final location
-                let temp_restore = std::env::temp_dir().join(format!(
-                    "ins-restore-{}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis()
-                ));
-
-                fs::create_dir_all(&temp_restore).with_context(|| {
-                    format!(
-                        "Failed to create temp restore directory: {}",
-                        temp_restore.display()
-                    )
-                })?;
+                let temporary = tempfile::tempdir()
+                    .context("Creating isolated single-file restore directory")?;
+                let temp_restore = temporary.path();
 
                 let mut candidate_paths = Vec::new();
                 if let Some(source_path) = request.snapshot_source_path {
@@ -209,7 +219,7 @@ impl GameBackup {
                     &restic,
                     request.snapshot_id,
                     &resolved_snapshot_path,
-                    &temp_restore,
+                    temp_restore,
                     request.path,
                 )?;
 
@@ -221,7 +231,9 @@ impl GameBackup {
                 }
 
                 // Get the modification time from the restored file before copying
-                let source_mtime = fs::metadata(&restored_file).and_then(|m| m.modified()).ok();
+                let source_mtime = fs::metadata(&restored_file)
+                    .and_then(|metadata| metadata.modified())
+                    .context("Reading restored save modification time")?;
 
                 // Move the file to final location
                 fs::copy(&restored_file, request.path).with_context(|| {
@@ -232,16 +244,9 @@ impl GameBackup {
                     )
                 })?;
 
-                // Preserve the original modification time after copy
-                if let Some(mtime) = source_mtime
-                    && let Ok(file) = fs::File::options().write(true).open(request.path)
-                {
-                    let times = std::fs::FileTimes::new().set_modified(mtime);
-                    let _ = file.set_times(times);
-                }
-
-                // Cleanup temp directory
-                let _ = fs::remove_dir_all(&temp_restore);
+                fs::File::open(request.path)?
+                    .set_times(std::fs::FileTimes::new().set_modified(source_mtime))
+                    .context("Preserving restored save modification time")?;
 
                 Ok(single_file::summarize_restore(&progress)
                     .unwrap_or_else(|| "restore completed".to_string()))
@@ -273,6 +278,7 @@ mod tests {
         let result = BackupResult {
             snapshot_id: Some("snapshot-id".into()),
             file_contents_changed: false,
+            content_digest: "hash".into(),
         };
 
         assert_eq!(result.snapshot_id.as_deref(), Some("snapshot-id"));

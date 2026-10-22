@@ -1,206 +1,255 @@
-use crate::game::config::InstantGameConfig;
-use crate::game::restic::{cache, tags};
-use crate::game::utils::validation;
-use crate::restic::wrapper::{ResticWrapper, Snapshot};
-use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use std::collections::HashSet;
-use std::time::SystemTime;
 
-const REPO_MISSING_CONTEXT: &str = "Failed to load game configuration";
+use anyhow::{Context, Result, ensure};
+use chrono::{DateTime, Datelike, Utc};
+
+use crate::game::config::{InstallationsConfig, InstantGameConfig, RetentionPolicyValues};
+use crate::game::ownership::OwnerId;
+use crate::game::save_runtime::{self, SaveLock};
+use crate::restic::wrapper::{ResticWrapper, Snapshot};
 
 pub fn prune_snapshots(game_name: Option<String>, zero_changes: bool) -> Result<()> {
-    if zero_changes {
-        return prune_zero_change_snapshots(game_name);
-    }
-
-    prune_with_retention(game_name)
-}
-
-fn prune_with_retention(game_name: Option<String>) -> Result<()> {
-    let game_config = InstantGameConfig::load().context(REPO_MISSING_CONTEXT)?;
-    validation::check_restic_and_game_manager(&game_config)?;
-
-    let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-    let restic = ResticWrapper::new(repo_path.clone(), game_config.repo_password.clone())
-        .context("Failed to initialize restic wrapper")?;
-
-    let games = resolve_games(&game_config, game_name);
-    if games.is_empty() {
-        println!("No games matched the prune request.");
-        return Ok(());
-    }
-
-    let retention_policy = game_config.retention_policy.effective();
-    let retention_rules = retention_policy.to_rules();
-    let retention_rules_slice = retention_rules.as_slice();
-
-    let keep_last_display = retention_policy
-        .keep_last
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "unlimited".to_string());
-
-    println!(
-        "Retention policy (per game): keep-last {keep_last}, keep-daily {keep_daily}, keep-weekly {keep_weekly}, keep-monthly {keep_monthly}, keep-yearly {keep_yearly}.",
-        keep_last = keep_last_display,
-        keep_daily = retention_policy.keep_daily,
-        keep_weekly = retention_policy.keep_weekly,
-        keep_monthly = retention_policy.keep_monthly,
-        keep_yearly = retention_policy.keep_yearly,
-    );
-
-    let mut processed_games = Vec::new();
-
-    for game in games.iter() {
-        let tags_for_game = tags::create_game_tags(game);
-        let snapshots_json = restic
-            .list_snapshots_filtered(Some(tags_for_game.clone()))
-            .with_context(|| format!("Failed to list restic snapshots for '{game}'"))?;
-        let snapshots: Vec<Snapshot> = serde_json::from_str(&snapshots_json)
-            .with_context(|| format!("Failed to parse snapshot data for '{game}'"))?;
-
-        if snapshots.is_empty() {
-            println!("No snapshots found for '{game}', skipping retention pruning.");
-            continue;
-        }
-
-        println!(
-            "Applying retention policy to '{game}' ({} snapshots)...",
-            snapshots.len()
-        );
-
-        restic
-            .forget_with_policy(
-                Some(tags_for_game),
-                Some(vec!["host".to_string(), "tags".to_string()]),
-                retention_rules_slice,
-                true,
-            )
-            .with_context(|| format!("Failed to apply retention policy for '{game}'"))?;
-
-        cache::invalidate_game_cache(game, &repo_path);
-        processed_games.push(game.clone());
-    }
-
-    if processed_games.is_empty() {
-        println!("No games required retention pruning.");
+    let config = InstantGameConfig::load()?;
+    let local = InstallationsConfig::load()?;
+    config.validate_ownership(&local)?;
+    let mut ids = if let Some(name) = game_name {
+        vec![config.owner_id(&name)]
     } else {
-        println!(
-            "Retention pruning completed for {} game(s): {}.",
-            processed_games.len(),
-            processed_games.join(", ")
-        );
-    }
-
-    Ok(())
-}
-
-fn prune_zero_change_snapshots(game_name: Option<String>) -> Result<()> {
-    let game_config = InstantGameConfig::load().context(REPO_MISSING_CONTEXT)?;
-    validation::check_restic_and_game_manager(&game_config)?;
-
-    let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-    let restic = ResticWrapper::new(repo_path.clone(), game_config.repo_password.clone())
-        .context("Failed to initialize restic wrapper")?;
-
-    let games = resolve_games(&game_config, game_name);
-    if games.is_empty() {
-        println!("No games matched the prune request.");
-        return Ok(());
-    }
-
-    let mut total_pruned = 0usize;
-    let mut processed_games = HashSet::new();
-
-    for game in games.iter() {
-        let tags_for_game = tags::create_game_tags(game);
-        let snapshots_json = restic
-            .list_snapshots_filtered(Some(tags_for_game.clone()))
-            .with_context(|| format!("Failed to list restic snapshots for '{game}'"))?;
-        let mut snapshots: Vec<Snapshot> = serde_json::from_str(&snapshots_json)
-            .with_context(|| format!("Failed to parse snapshot data for '{game}'"))?;
-
-        if snapshots.is_empty() {
-            println!("No snapshots found for '{game}', skipping zero-change prune.");
-            continue;
-        }
-
-        snapshots.sort_by_key(|b| std::cmp::Reverse(parse_snapshot_time(&b.time)));
-        let zero_change: Vec<&Snapshot> = snapshots
+        let mut ids: Vec<_> = config
+            .games
             .iter()
-            .filter(|snap| is_zero_change(snap))
+            .map(|game| config.owner_id(&game.name.0))
             .collect();
-
-        if zero_change.len() <= 1 {
-            println!("No redundant zero-change snapshots for '{game}'.");
-            continue;
-        }
-
-        let mut prune_targets = Vec::new();
-        let mut removed_details = Vec::new();
-        for snapshot in zero_change.into_iter().skip(1) {
-            prune_targets.push(snapshot.id.clone());
-            removed_details.push((snapshot.short_id.clone(), snapshot.time.clone()));
-        }
-
-        println!(
-            "Pruning {} redundant zero-change snapshot(s) for '{}':",
-            prune_targets.len(),
-            game
-        );
-        for (short_id, time) in &removed_details {
-            println!("  • {} ({})", short_id, time);
-        }
-
-        restic
-            .forget_snapshots(&prune_targets, true)
-            .with_context(|| format!("Failed to prune redundant snapshots for '{game}'"))?;
-
-        cache::invalidate_game_cache(game, &repo_path);
-        total_pruned += prune_targets.len();
-        processed_games.insert(game.clone());
-    }
-
-    if total_pruned == 0 {
-        println!("No redundant zero-change snapshots found.");
-    } else {
-        println!(
-            "Removed {} redundant zero-change snapshot(s) across {} game(s).",
-            total_pruned,
-            processed_games.len()
-        );
-    }
-
-    Ok(())
-}
-
-fn resolve_games(game_config: &InstantGameConfig, game_name: Option<String>) -> Vec<String> {
-    match game_name {
-        Some(name) => {
-            let exists = game_config
-                .games
+        ids.extend(
+            config
+                .save_groups
                 .iter()
-                .any(|g| g.name.0.as_str() == name.as_str());
-            if exists {
-                vec![name]
-            } else {
-                println!("Game '{}' is not configured.", name);
-                Vec::new()
+                .map(|group| OwnerId::Group(group.id.clone())),
+        );
+        ids
+    };
+    ids.sort();
+    ids.dedup();
+    let restic = ResticWrapper::new(
+        config.repo.as_path().to_string_lossy().into_owned(),
+        config.repo_password.clone(),
+    )?;
+    if !zero_changes {
+        println!(
+            "Retention policy per save owner: {:?}",
+            config.retention_policy.effective().to_rules()
+        );
+    }
+    for id in ids {
+        let _lock = SaveLock::owner(&id)?;
+        let current = InstallationsConfig::load()?;
+        let snapshots = save_runtime::fresh_snapshots(&config, &id)?;
+        let shared = matches!(id, OwnerId::Group(_));
+        let heads = save_runtime::history_heads(&snapshots)?;
+        ensure!(
+            heads.len() <= 1,
+            "{} has unresolved branches; pruning is blocked until reconciliation",
+            id.label()
+        );
+        let mut keep: HashSet<_> = heads.iter().map(|snapshot| snapshot.id.clone()).collect();
+        if let Ok(saves) = current.owner_saves(&id) {
+            ensure!(
+                saves.pending_restore.is_none(),
+                "{} has an incomplete restore; pruning is blocked",
+                id.label()
+            );
+            if shared {
+                let digest = save_runtime::content_digest(saves.save_path.as_path())?;
+                ensure!(
+                    !matches!(
+                        save_runtime::baseline_action(
+                            saves,
+                            &digest,
+                            heads.first().map(|head| head.id.as_str())
+                        ),
+                        save_runtime::BaselineAction::Reconcile
+                    ),
+                    "{} needs reconciliation; pruning is blocked",
+                    id.label()
+                );
+            }
+            for pin in [
+                &saves.nearest_checkpoint,
+                &saves.acknowledged_snapshot,
+                &saves
+                    .baseline
+                    .as_ref()
+                    .and_then(|baseline| baseline.remote_head.clone()),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if let Some(snapshot) = snapshots.iter().find(|snapshot| snapshot.matches_id(pin)) {
+                    keep.insert(snapshot.id.clone());
+                }
             }
         }
-        None => game_config.games.iter().map(|g| g.name.0.clone()).collect(),
+        for snapshot in &snapshots {
+            if snapshot
+                .tags
+                .iter()
+                .any(|tag| tag == "instantgame-preserved")
+            {
+                keep.insert(snapshot.id.clone());
+            }
+            for preserved in snapshot
+                .tags
+                .iter()
+                .filter_map(|tag| tag.strip_prefix("instantgame-preserve:"))
+            {
+                keep.insert(preserved.into());
+            }
+        }
+        if zero_changes {
+            let mut retained_zero_change = false;
+            for snapshot in &snapshots {
+                let zero = snapshot
+                    .summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.files_new == 0 && summary.files_changed == 0);
+                if !zero || !retained_zero_change {
+                    keep.insert(snapshot.id.clone());
+                }
+                retained_zero_change |= zero;
+            }
+        } else {
+            keep.extend(retained_ids(
+                &snapshots,
+                config.retention_policy.effective(),
+            )?);
+        }
+        // Retain the latest legacy anchor until all old private snapshots are
+        // explicitly removed, so its implicit linear history stays unambiguous.
+        if let Some(legacy) = snapshots.iter().find(|snapshot| {
+            !snapshot
+                .tags
+                .iter()
+                .any(|tag| tag.starts_with("instantgame-parent:"))
+        }) {
+            keep.insert(legacy.id.clone());
+        }
+        retain_descendants(&snapshots, &mut keep);
+        let targets: Vec<_> = snapshots
+            .iter()
+            .filter(|snapshot| !keep.contains(&snapshot.id))
+            .map(|snapshot| snapshot.id.clone())
+            .collect();
+        if !targets.is_empty() {
+            restic
+                .forget_snapshots(&targets, true)
+                .context("Pruning save history")?;
+        }
+        println!(
+            "{}: removed {} snapshots; active heads and recovery checkpoints retained",
+            id.label(),
+            targets.len()
+        );
+        super::cache::invalidate_snapshot_cache();
+    }
+    Ok(())
+}
+
+fn retained_ids(snapshots: &[Snapshot], policy: RetentionPolicyValues) -> Result<HashSet<String>> {
+    let mut keep = HashSet::new();
+    for snapshot in snapshots
+        .iter()
+        .take(policy.keep_last.unwrap_or(0) as usize)
+    {
+        keep.insert(snapshot.id.clone());
+    }
+    let mut daily = HashSet::new();
+    let mut weekly = HashSet::new();
+    let mut monthly = HashSet::new();
+    let mut yearly = HashSet::new();
+    for snapshot in snapshots {
+        let time: DateTime<Utc> = DateTime::parse_from_rfc3339(&snapshot.time)?.with_timezone(&Utc);
+        let mut selected = false;
+        if daily.len() < policy.keep_daily as usize && daily.insert(time.date_naive()) {
+            selected = true;
+        }
+        if weekly.len() < policy.keep_weekly as usize
+            && weekly.insert((time.iso_week().year(), time.iso_week().week()))
+        {
+            selected = true;
+        }
+        if monthly.len() < policy.keep_monthly as usize
+            && monthly.insert((time.year(), time.month()))
+        {
+            selected = true;
+        }
+        if yearly.len() < policy.keep_yearly as usize && yearly.insert(time.year()) {
+            selected = true;
+        }
+        if selected {
+            keep.insert(snapshot.id.clone());
+        }
+    }
+    Ok(keep)
+}
+
+/// Keeping an old checkpoint also keeps the path from it to the current head.
+/// Otherwise removing an intermediate node would make a retained ancestor look
+/// like an independent branch. Missing ancestors below the retained suffix are safe.
+fn retain_descendants(snapshots: &[Snapshot], keep: &mut HashSet<String>) {
+    let mut children: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for snapshot in snapshots {
+        for parent in snapshot
+            .tags
+            .iter()
+            .filter_map(|tag| tag.strip_prefix("instantgame-parent:"))
+        {
+            children.entry(parent).or_default().push(&snapshot.id);
+        }
+    }
+    let mut pending: Vec<_> = keep.iter().cloned().collect();
+    while let Some(parent) = pending.pop() {
+        if let Some(descendants) = children.get(parent.as_str()) {
+            for child in descendants {
+                if keep.insert((*child).into()) {
+                    pending.push((*child).into());
+                }
+            }
+        }
     }
 }
 
-fn is_zero_change(snapshot: &Snapshot) -> bool {
-    match &snapshot.summary {
-        Some(summary) => summary.files_new == 0 && summary.files_changed == 0,
-        None => false,
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn parse_snapshot_time(time: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(time)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| DateTime::<Utc>::from(SystemTime::UNIX_EPOCH))
+    fn snapshot(id: &str, parent: &str) -> Snapshot {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "short_id": id, "time": "2026-01-01T00:00:00Z", "tree": "tree", "paths": ["/saves"], "hostname": "device", "username": "user", "tags": [format!("instantgame-parent:{parent}")]
+        })).unwrap()
+    }
+
+    #[test]
+    fn pruning_preserves_the_path_between_a_pinned_checkpoint_and_head() -> Result<()> {
+        let history = vec![
+            snapshot("a", "root"),
+            snapshot("b", "a"),
+            snapshot("c", "b"),
+            snapshot("d", "c"),
+        ];
+        let mut keep = HashSet::from(["b".into(), "d".into()]);
+        retain_descendants(&history, &mut keep);
+        assert_eq!(keep, HashSet::from(["b".into(), "c".into(), "d".into()]));
+        let retained: Vec<_> = history
+            .into_iter()
+            .filter(|snapshot| keep.contains(&snapshot.id))
+            .collect();
+        assert_eq!(
+            save_runtime::history_heads(&retained)?
+                .iter()
+                .map(|snapshot| snapshot.id.as_str())
+                .collect::<Vec<_>>(),
+            ["d"]
+        );
+        Ok(())
+    }
 }

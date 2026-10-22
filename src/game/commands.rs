@@ -44,6 +44,15 @@ fn ensure_restic_available() -> Result<()> {
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
+        GameCommands::Group { command } => super::save_groups::handle(command),
+        GameCommands::Reconcile {
+            game_name,
+            local,
+            snapshot,
+        } => {
+            let config = super::config::InstantGameConfig::load()?;
+            super::save_groups::reconcile(&config, &config.owner_id(&game_name), local, snapshot)
+        }
         GameCommands::Init {
             repo,
             password,
@@ -59,15 +68,27 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             save_path,
             create_save_path,
             no_cache,
-        } => handle_add(AddGameOptions {
-            discovery_launch_hint: None,
-            name,
-            description,
-            launch_command,
-            save_path,
-            create_save_path,
-            no_cache,
-        }),
+            save_group,
+        } => {
+            if let Some(group) = save_group {
+                return super::save_groups::add_member(
+                    &group,
+                    name.as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("--save-group requires --name"))?,
+                    description,
+                    launch_command,
+                );
+            }
+            handle_add(AddGameOptions {
+                discovery_launch_hint: None,
+                name,
+                description,
+                launch_command,
+                save_path,
+                create_save_path,
+                no_cache,
+            })
+        }
         GameCommands::Discover {
             path,
             sources,

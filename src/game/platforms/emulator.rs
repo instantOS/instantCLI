@@ -159,6 +159,7 @@ pub(super) fn build_command(
         EmulatorOptions {
             batch_mode,
             fullscreen,
+            ..Default::default()
         },
     ))
 }

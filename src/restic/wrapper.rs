@@ -113,11 +113,35 @@ impl ResticWrapper {
         tags: Vec<String>,
         include_filter: Option<&str>,
     ) -> Result<BackupProgress, ResticError> {
-        let mut args: Vec<String> = vec![
-            "backup".to_string(),
-            "--skip-if-unchanged".to_string(),
-            "--json".to_string(),
-        ];
+        self.backup_impl(paths, tags, include_filter, false)
+    }
+
+    /// Save synchronization already checks content baselines. Force restic to
+    /// read bytes too, and always create the explicit history/lineage transition.
+    pub fn backup_saves<P: AsRef<std::path::Path>>(
+        &self,
+        paths: &[P],
+        tags: Vec<String>,
+    ) -> Result<BackupProgress, ResticError> {
+        self.backup_impl(paths, tags, None, true)
+    }
+
+    fn backup_impl<P: AsRef<std::path::Path>>(
+        &self,
+        paths: &[P],
+        tags: Vec<String>,
+        include_filter: Option<&str>,
+        saves: bool,
+    ) -> Result<BackupProgress, ResticError> {
+        let mut args = vec!["backup".to_string(), "--json".to_string()];
+        args.push(
+            if saves {
+                "--force"
+            } else {
+                "--skip-if-unchanged"
+            }
+            .into(),
+        );
 
         // Add required tags
         for tag in tags {
@@ -281,56 +305,6 @@ impl ResticWrapper {
         Ok(())
     }
 
-    pub fn forget_with_policy(
-        &self,
-        tags: Option<Vec<String>>,
-        group_by: Option<Vec<String>>,
-        retention_rules: &[(String, String)],
-        prune: bool,
-    ) -> Result<(), ResticError> {
-        let mut args: Vec<String> = vec!["forget".to_string()];
-
-        if prune {
-            args.push("--prune".to_string());
-        }
-
-        if let Some(tags) = tags {
-            for tag in tags {
-                args.push("--tag".to_string());
-                args.push(tag);
-            }
-        }
-
-        if let Some(group_by) = group_by
-            && !group_by.is_empty()
-        {
-            args.push("--group-by".to_string());
-            args.push(group_by.join(","));
-        }
-
-        for (flag, value) in retention_rules {
-            args.push(format!("--{flag}"));
-            args.push(value.clone());
-        }
-
-        let mut cmd = self.base_command();
-        cmd.args(&args);
-        let output = self.execute_and_log_command(cmd, &args)?;
-
-        if !output.status.success() {
-            let code = output.status.code().unwrap_or(1);
-            let stderr = String::from_utf8(output.stderr)?;
-            return Err(ResticError::from_exit_code(code, &stderr));
-        }
-
-        Ok(())
-    }
-
-    /// Restore an exact directory tree in place, removing entries absent from the snapshot.
-    ///
-    /// Requires restic's `restore --delete` support. Older versions must fail rather
-    /// than silently merge trees. A failed restore may be partial; retry the same
-    /// snapshot and target to finish it without a local recovery copy or directory swap.
     pub fn restore(
         &self,
         snapshot_id: &str,

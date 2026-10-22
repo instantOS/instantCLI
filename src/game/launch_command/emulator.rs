@@ -128,6 +128,7 @@ mod tests {
                                 options: EmulatorOptions {
                                     fullscreen,
                                     batch_mode,
+                                    ..Default::default()
                                 },
                             }),
                         };
@@ -137,6 +138,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn pcsx2_custom_configuration_arguments_roundtrip() {
+        let command: LaunchCommand = "pcsx2-qt -datapath '/custom data' -gamecfg '/settings/game.ini' -batch -- '/games/Title.iso'".parse().unwrap();
+        let LaunchCommandKind::Emulator(emulator) = &command.kind else {
+            panic!("PCSX2 flags were not parsed")
+        };
+        assert_eq!(
+            emulator.options.data_path.as_deref(),
+            Some(std::path::Path::new("/custom data"))
+        );
+        assert_eq!(
+            emulator.options.game_config.as_deref(),
+            Some(std::path::Path::new("/settings/game.ini"))
+        );
+        assert_eq!(
+            command.to_shell_command().parse::<LaunchCommand>().unwrap(),
+            command
+        );
     }
 
     #[test]

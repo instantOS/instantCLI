@@ -317,7 +317,8 @@ fn finalize_game_setup(
         None
     };
 
-    installation.sync_repository = Some(game_config.repo.as_path().to_string_lossy().to_string());
+    installation.owned_mut()?.sync_repository =
+        Some(game_config.repo.as_path().to_string_lossy().to_string());
     let index = installations.installations.len();
     installations.installations.push(installation);
     if let Some(choice) = choice {
@@ -571,34 +572,6 @@ fn resolve_single_file_save_path(
     } else {
         Ok(save_path)
     }
-}
-
-/// Let the user pick a save path during reconciliation, without any snapshot context.
-pub(crate) fn choose_reconciliation_path(
-    game_name: &str,
-) -> Result<Option<(TildePath, PathContentKind)>> {
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let selected_path = match prompt_manual_save_path(game_name, None, false)? {
-        Some(selected_path) => selected_path,
-        None => return Ok(None),
-    };
-
-    let save_path = TildePath::from_str(&selected_path.display_path);
-    let Some(kind) =
-        detect_save_path_kind(&save_path, None, &game_config, &selected_path.display_path)?
-    else {
-        return Ok(None);
-    };
-
-    let save_path = if kind == PathContentKind::File {
-        resolve_single_file_save_path(save_path, &selected_path, None)?
-    } else {
-        save_path
-    };
-
-    ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory)?;
-
-    Ok(Some((save_path, kind)))
 }
 
 fn detect_save_path_kind(

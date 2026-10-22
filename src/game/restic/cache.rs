@@ -1,5 +1,5 @@
 use crate::game::config::InstantGameConfig;
-use crate::game::restic::tags;
+use crate::game::ownership::OwnerId;
 use crate::restic::wrapper::Snapshot;
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
@@ -44,19 +44,38 @@ pub fn get_snapshots_for_game(
     game_name: &str,
     config: &InstantGameConfig,
 ) -> Result<Vec<Snapshot>> {
-    let required_tags = tags::create_game_tags(game_name);
-    let mut filtered_snapshots: Vec<Snapshot> = get_repository_snapshots(config)?
-        .into_iter()
+    get_snapshots_for_owner(&config.owner_id(game_name), config)
+}
+
+pub fn get_snapshots_for_owner(
+    owner: &OwnerId,
+    config: &InstantGameConfig,
+) -> Result<Vec<Snapshot>> {
+    filter_owner(&get_repository_snapshots(config)?, owner)
+}
+
+fn filter_owner(snapshots: &[Snapshot], owner: &OwnerId) -> Result<Vec<Snapshot>> {
+    let required_tags = owner.tags();
+    let mut filtered_snapshots: Vec<Snapshot> = snapshots
+        .iter()
         .filter(|snapshot| {
             required_tags
                 .iter()
                 .all(|tag| snapshot.tags.iter().any(|existing| existing == tag))
         })
+        .cloned()
         .collect();
 
-    filtered_snapshots.sort_by(|a, b| b.time.cmp(&a.time));
-
-    Ok(filtered_snapshots)
+    let mut keyed = filtered_snapshots
+        .drain(..)
+        .map(|snapshot| {
+            let time = chrono::DateTime::parse_from_rfc3339(&snapshot.time)
+                .context("Snapshot has an invalid creation time")?;
+            Ok((time, snapshot))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    keyed.sort_by(|(a_time, a), (b_time, b)| b_time.cmp(a_time).then_with(|| b.id.cmp(&a.id)));
+    Ok(keyed.into_iter().map(|(_, snapshot)| snapshot).collect())
 }
 
 /// Retrieve all snapshots for the configured repository, using the in-memory cache when possible
@@ -121,24 +140,50 @@ pub fn invalidate_snapshot_cache() {
     }
 }
 
-/// Invalidate cache for a specific game
-pub fn invalidate_game_cache(game_name: &str, repository_path: &str) {
-    let _ = game_name; // game-level cache is derived from repository snapshots
-
-    if let Ok(mut cache) = get_cache().lock() {
-        cache.repositories.remove(repository_path);
-    }
-}
-
-/// Get snapshot by ID from cached snapshots if available
-pub fn get_snapshot_by_id(
+pub fn get_snapshot_for_owner(
     snapshot_id: &str,
-    game_name: &str,
+    owner: &OwnerId,
     config: &InstantGameConfig,
 ) -> Result<Option<Snapshot>> {
-    let snapshots = get_snapshots_for_game(game_name, config)?;
-
-    Ok(snapshots
+    Ok(get_snapshots_for_owner(owner, config)?
         .into_iter()
         .find(|snapshot| snapshot.matches_id(snapshot_id)))
+}
+
+/// One explicit repository observation per sync pass, shared by every owner.
+/// Unlike the display cache, this view never starts from a previous operation's
+/// TTL cache. Uploads invalidate it before running and refresh it afterwards.
+#[derive(Default)]
+pub(crate) struct SnapshotView {
+    snapshots: Option<Vec<Snapshot>>,
+}
+
+impl SnapshotView {
+    pub(crate) fn for_owner(
+        &mut self,
+        config: &InstantGameConfig,
+        owner: &OwnerId,
+    ) -> Result<Vec<Snapshot>> {
+        if self.snapshots.is_none() {
+            self.refresh(config)?;
+        }
+        filter_owner(
+            self.snapshots
+                .as_deref()
+                .context("Snapshot view was not loaded")?,
+            owner,
+        )
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.snapshots = None;
+    }
+
+    pub(crate) fn refresh(&mut self, config: &InstantGameConfig) -> Result<()> {
+        self.invalidate();
+        let snapshots = fetch_snapshots(config)?;
+        store_snapshots(&config.repo.as_path().to_string_lossy(), snapshots.clone())?;
+        self.snapshots = Some(snapshots);
+        Ok(())
+    }
 }

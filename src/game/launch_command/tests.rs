@@ -22,6 +22,7 @@ mod tests {
                 options: EmulatorOptions {
                     fullscreen: true,
                     batch_mode: false,
+                    ..Default::default()
                 },
             }),
         };

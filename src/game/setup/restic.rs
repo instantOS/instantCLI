@@ -128,6 +128,7 @@ mod tests {
             repo_password: password.to_string(),
             games: Vec::new(),
             retention_policy: Default::default(),
+            ..Default::default()
         }
     }
 

@@ -151,7 +151,9 @@ impl GameState {
             .iter()
             .find(|i| i.game_name.0 == game_name);
 
-        let has_installation = installation.is_some();
+        let has_installation = game_config
+            .resolve_owner(&installations, &game_config.owner_id(game_name))
+            .is_ok();
 
         let game = game_config.games.iter().find(|g| g.name.0 == game_name);
         let game_cmd = game.and_then(|g| g.launch_command.clone());
@@ -159,7 +161,10 @@ impl GameState {
 
         let inst_cmd = installation.and_then(|i| i.launch_command.clone());
 
-        let save_path = installation.map(|i| {
+        let resolved = game_config
+            .resolve_owner(&installations, &game_config.owner_id(game_name))
+            .ok();
+        let save_path = resolved.as_ref().map(|i| {
             i.save_path
                 .to_tilde_string()
                 .unwrap_or_else(|_| i.save_path.as_path().to_string_lossy().to_string())
@@ -574,7 +579,12 @@ fn ensure_launch_command(game_name: &str, state: &GameState) -> Result<Option<St
         .iter()
         .find(|install| install.game_name.0 == game_name);
     let context = LaunchCommandBuilderContext::from_game(
-        installation.map(|install| install.save_path.as_path()),
+        installation.and_then(|install| {
+            install
+                .saves
+                .as_ref()
+                .map(|saves| saves.save_path.as_path())
+        }),
         installation
             .and_then(|install| install.launch_command.as_ref())
             .or_else(|| {
@@ -728,17 +738,10 @@ fn handle_checkpoint_action(game_name: &str) -> Result<()> {
 }
 
 fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Result<()> {
-    let Some(installation) = state
-        .installations
-        .installations
-        .iter()
-        .find(|install| install.game_name.0 == game_name)
-    else {
-        FzfWrapper::message("No installation is configured for this game on this device.")?;
-        return Ok(());
-    };
-
-    let target_dir = save_directory_target(installation);
+    let owner = state
+        .game_config
+        .resolve_owner(&state.installations, &state.game_config.owner_id(game_name))?;
+    let target_dir = save_directory_target(&owner.saves);
     let target_display = target_dir.display().to_string();
 
     let items = vec![
@@ -816,9 +819,9 @@ fn handle_open_save_directory_action(game_name: &str, state: &GameState) -> Resu
     }
 }
 
-fn save_directory_target(installation: &GameInstallation) -> PathBuf {
-    let save_path = installation.save_path.as_path();
-    match installation.save_path_type {
+fn save_directory_target(saves: &crate::game::config::OwnedSaves) -> PathBuf {
+    let save_path = saves.save_path.as_path();
+    match saves.save_path_type {
         PathContentKind::File => save_path
             .parent()
             .map(Path::to_path_buf)
@@ -921,6 +924,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             GameMenuEntry::AddGame => {
                 handle_game_command(
                     GameCommands::Add {
+                        save_group: None,
                         name: None,
                         description: None,
                         launch_command: None,
@@ -1195,7 +1199,7 @@ mod tests {
         );
 
         assert_eq!(
-            save_directory_target(&installation),
+            save_directory_target(installation.owned().unwrap()),
             PathBuf::from("/tmp/game/saves")
         );
     }
@@ -1209,7 +1213,7 @@ mod tests {
         );
 
         assert_eq!(
-            save_directory_target(&installation),
+            save_directory_target(installation.owned().unwrap()),
             PathBuf::from("/tmp/game/saves")
         );
     }

@@ -43,12 +43,11 @@ impl EditState {
 
     /// Save both configuration files
     pub fn save(&mut self) -> Result<()> {
-        self.game_config
-            .save()
-            .context("Failed to save games.toml")?;
-        self.installations
-            .save()
-            .context("Failed to save installations.toml")?;
+        let _lock = crate::game::save_runtime::SaveLock::owner(
+            &self.game_config.owner_id(&self.game().name.0),
+        )?;
+        crate::game::config::save_pair(&self.game_config, &self.installations)
+            .context("Failed to save game configuration")?;
         self.dirty = false;
         println!(
             "{} Changes saved successfully.",

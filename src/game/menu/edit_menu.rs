@@ -261,7 +261,7 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
     ));
 
     // Save Path (only if installation exists)
-    if let Some(inst) = installation {
+    if let Some(inst) = installation.and_then(|entry| entry.saves.as_ref()) {
         let save_path_str = if inst.save_path.as_path().as_os_str().is_empty() {
             "<not set>".to_string()
         } else {

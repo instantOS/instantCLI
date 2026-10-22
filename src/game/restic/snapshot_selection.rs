@@ -537,14 +537,15 @@ pub fn select_snapshot_interactive(
     }
 
     // Get local save information for comparison if installation is provided
-    let (local_save_info, nearest_checkpoint) = if let Some(install) = installation {
-        (
-            get_save_directory_info(install.save_path.as_path()).ok(),
-            install.nearest_checkpoint.clone(),
-        )
-    } else {
-        (None, None)
-    };
+    let (local_save_info, nearest_checkpoint) =
+        if let Some(install) = installation.and_then(|entry| entry.saves.as_ref()) {
+            (
+                get_save_directory_info(install.save_path.as_path()).ok(),
+                install.nearest_checkpoint.clone(),
+            )
+        } else {
+            (None, None)
+        };
 
     // Show selection prompt
     // Create wrapper snapshots that include local comparison info

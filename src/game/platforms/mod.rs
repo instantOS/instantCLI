@@ -801,3 +801,5 @@ fn ask_gamescope_flags() -> Result<GamescopeOptions> {
 
     Ok(GamescopeOptions { options })
 }
+
+pub(crate) mod pcsx2;

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::PathBuf};
 
@@ -128,6 +128,8 @@ impl From<&str> for GameName {
 pub struct Game {
     pub name: GameName,
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub save_group: Option<String>,
     pub launch_command: Option<LaunchCommand>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<GameDependency>,
@@ -138,6 +140,7 @@ impl Game {
         Self {
             name: name.into(),
             description: None,
+            save_group: None,
             launch_command: None,
             dependencies: Vec::new(),
         }
@@ -153,10 +156,10 @@ pub struct GameDependency {
     pub source_type: PathContentKind,
 }
 
-/// Game installation - device-specific
+/// Data owned by either a private game or a shared save group.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GameInstallation {
-    pub game_name: GameName,
+#[serde(deny_unknown_fields)]
+pub struct OwnedSaves {
     pub save_path: TildePath,
     #[serde(default)]
     pub save_path_type: PathContentKind,
@@ -174,9 +177,70 @@ pub struct GameInstallation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_restore: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<SaveBaseline>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveBaseline {
+    pub content: String,
+    pub remote_head: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharedSaveGroup {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveGroupBinding {
+    pub id: String,
+    #[serde(flatten)]
+    pub saves: OwnedSaves,
+}
+
+/// Device-specific launch overrides and, for private games, inline save ownership.
+#[derive(Debug, Clone, Serialize)]
+pub struct GameInstallation {
+    pub game_name: GameName,
+    #[serde(flatten)]
+    pub saves: Option<OwnedSaves>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_command: Option<LaunchCommand>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<InstalledDependency>,
+}
+
+impl<'de> Deserialize<'de> for GameInstallation {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            game_name: GameName,
+            launch_command: Option<LaunchCommand>,
+            #[serde(default)]
+            dependencies: Vec<InstalledDependency>,
+            #[serde(flatten)]
+            saves: toml::Table,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let saves = if raw.saves.is_empty() {
+            None
+        } else {
+            Some(
+                toml::Value::Table(raw.saves)
+                    .try_into()
+                    .map_err(serde::de::Error::custom)?,
+            )
+        };
+        Ok(Self {
+            game_name: raw.game_name,
+            saves,
+            launch_command: raw.launch_command,
+            dependencies: raw.dependencies,
+        })
+    }
 }
 
 impl GameInstallation {
@@ -187,6 +251,28 @@ impl GameInstallation {
     ) -> Self {
         Self {
             game_name: game_name.into(),
+            saves: Some(OwnedSaves::new(save_path, kind)),
+            launch_command: None,
+            dependencies: Vec::new(),
+        }
+    }
+
+    pub fn owned(&self) -> Result<&OwnedSaves> {
+        self.saves
+            .as_ref()
+            .context("This game uses shared saves; operate on its save group")
+    }
+
+    pub fn owned_mut(&mut self) -> Result<&mut OwnedSaves> {
+        self.saves
+            .as_mut()
+            .context("This game uses shared saves; operate on its save group")
+    }
+}
+
+impl OwnedSaves {
+    pub fn new(save_path: impl Into<TildePath>, kind: PathContentKind) -> Self {
+        Self {
             save_path: save_path.into(),
             save_path_type: kind,
             nearest_checkpoint: None,
@@ -194,8 +280,7 @@ impl GameInstallation {
             sync_repository: None,
             acknowledged_snapshot: None,
             pending_restore: None,
-            launch_command: None,
-            dependencies: Vec::new(),
+            baseline: None,
         }
     }
 
@@ -267,12 +352,16 @@ pub struct InstalledDependency {
 /// Main game configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstantGameConfig {
+    #[serde(skip)]
+    pub revision: std::cell::RefCell<Option<String>>,
     #[serde(default = "InstantGameConfig::default_repo")]
     pub repo: TildePath,
     #[serde(default = "InstantGameConfig::default_password")]
     pub repo_password: String,
     #[serde(default)]
     pub games: Vec<Game>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub save_groups: Vec<SharedSaveGroup>,
     #[serde(default, skip_serializing_if = "RetentionPolicyConfig::is_default")]
     pub retention_policy: RetentionPolicyConfig,
 }
@@ -290,9 +379,11 @@ impl InstantGameConfig {
 impl Default for InstantGameConfig {
     fn default() -> Self {
         Self {
+            revision: Default::default(),
             repo: Self::default_repo(),
             repo_password: Self::default_password(),
             games: Vec::new(),
+            save_groups: Vec::new(),
             retention_policy: RetentionPolicyConfig::default(),
         }
     }
@@ -301,7 +392,12 @@ impl Default for InstantGameConfig {
 /// Device-specific installations configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InstallationsConfig {
+    #[serde(skip)]
+    pub revision: std::cell::RefCell<Option<String>>,
+    #[serde(default)]
     pub installations: Vec<GameInstallation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub save_groups: Vec<SaveGroupBinding>,
 }
 
 pub fn games_config_path() -> Result<PathBuf> {
@@ -315,12 +411,14 @@ pub fn installations_config_path() -> Result<PathBuf> {
 impl InstantGameConfig {
     pub fn load() -> Result<Self> {
         let path = games_config_path()?;
-        let config = <Self as DocumentedConfig>::load_from_path_documented(path)?;
+        let config = <Self as DocumentedConfig>::load_from_path_documented(&path)?;
+        *config.revision.borrow_mut() = config_revision(&path)?;
         config.validate()?;
         Ok(config)
     }
 
     pub fn validate(&self) -> Result<()> {
+        super::ownership::validate_groups(self)?;
         let mut names = HashSet::new();
         for game in &self.games {
             if !names.insert(&game.name.0) {
@@ -334,21 +432,14 @@ impl InstantGameConfig {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = games_config_path()?;
-        // Protect the plaintext repository password before writing any content.
-        // Open without truncation so an error cannot erase the existing config.
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .mode(0o600)
-            .open(&path)?;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        self.save_documented_pretty_toml(path, Some("Instant game configuration"))
+        self.validate()?;
+        save_atomic(
+            self,
+            &games_config_path()?,
+            &self.revision,
+            "Instant game configuration",
+            true,
+        )
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -359,7 +450,8 @@ impl InstantGameConfig {
 impl InstallationsConfig {
     pub fn load() -> Result<Self> {
         let path = installations_config_path()?;
-        let config = <Self as DocumentedConfig>::load_from_path_documented(path)?;
+        let config = <Self as DocumentedConfig>::load_from_path_documented(&path)?;
+        *config.revision.borrow_mut() = config_revision(&path)?;
         config.validate()?;
         Ok(config)
     }
@@ -374,12 +466,46 @@ impl InstallationsConfig {
                 ));
             }
         }
+        let mut groups = HashSet::new();
+        for group in &self.save_groups {
+            anyhow::ensure!(
+                groups.insert(&group.id),
+                "Duplicate local save group '{}'",
+                group.id
+            );
+        }
         Ok(())
     }
 
-    pub fn save(&self) -> Result<()> {
+    /// Apply one owner's state transition against the latest config while its
+    /// file lock is held. Concurrent sessions for other owners cannot lose updates.
+    pub(crate) fn update_owner(
+        id: &super::ownership::OwnerId,
+        update: impl FnOnce(&mut OwnedSaves) -> Result<()>,
+    ) -> Result<()> {
         let path = installations_config_path()?;
-        self.save_documented_pretty_toml(path, Some("Device-specific game installations"))
+        let _lock = super::save_runtime::SaveLock::at_wait(&path.with_extension("toml.lock"))?;
+        let mut local = Self::load()?;
+        update(local.owner_saves_mut(id)?)?;
+        local.validate()?;
+        save_atomic_locked(
+            &local,
+            &path,
+            &local.revision,
+            "Device-specific game installations",
+            false,
+        )
+    }
+
+    pub fn save(&self) -> Result<()> {
+        self.validate()?;
+        save_atomic(
+            self,
+            &installations_config_path()?,
+            &self.revision,
+            "Device-specific game installations",
+            false,
+        )
     }
 }
 
@@ -407,6 +533,8 @@ id = "example-save-data"
 source_path = "~/Games/Example Game/Saves"
 source_type = "directory"
 "#,
+    save_groups,
+    "Shared save group identities and display names",
     retention_policy,
     "Optional top-level backup retention policy; omit to use defaults (keep-daily, keep-weekly, etc.)",
     example,
@@ -431,7 +559,107 @@ game_name = "Example Game"
 save_path = "~/Games/Example Game/Saves"
 save_path_type = "directory"
 "#,
+    save_groups,
+    "Device-specific shared save paths and synchronization state",
 );
+
+fn config_revision(path: &std::path::Path) -> Result<Option<String>> {
+    use sha2::{Digest, Sha256};
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(hex::encode(Sha256::digest(bytes)))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).context("Reading configuration revision"),
+    }
+}
+
+fn save_atomic<T: DocumentedConfig>(
+    config: &T,
+    path: &std::path::Path,
+    revision: &std::cell::RefCell<Option<String>>,
+    header: &str,
+    secret: bool,
+) -> Result<()> {
+    let parent = path
+        .parent()
+        .context("Configuration has no parent directory")?;
+    std::fs::create_dir_all(parent)?;
+    let _lock = super::save_runtime::SaveLock::at_wait(&path.with_extension("toml.lock"))?;
+    save_atomic_locked(config, path, revision, header, secret)
+}
+
+fn save_atomic_locked<T: DocumentedConfig>(
+    config: &T,
+    path: &std::path::Path,
+    revision: &std::cell::RefCell<Option<String>>,
+    header: &str,
+    secret: bool,
+) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let parent = path
+        .parent()
+        .context("Configuration has no parent directory")?;
+    anyhow::ensure!(
+        config_revision(path)? == *revision.borrow(),
+        "Configuration {} changed since it was loaded; reload and retry (no changes were overwritten)",
+        path.display()
+    );
+    let temporary = tempfile::NamedTempFile::new_in(parent)?;
+    config.save_documented_pretty_toml(temporary.path(), Some(header))?;
+    let mode = if secret {
+        0o600
+    } else {
+        std::fs::metadata(path)
+            .map(|m| m.permissions().mode())
+            .unwrap_or(0o600)
+    };
+    temporary
+        .as_file()
+        .set_permissions(std::fs::Permissions::from_mode(mode))?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .persist(path)
+        .context("Atomically replacing configuration")?;
+    std::fs::File::open(parent)?.sync_all()?;
+    *revision.borrow_mut() = config_revision(path)?;
+    Ok(())
+}
+
+/// Check both revisions before writing either half of portable/local ownership.
+/// A crash between replacements leaves an invalid or unbound mapping, which
+/// validation blocks; it can never silently select another owner's save history.
+pub(crate) fn save_pair(config: &InstantGameConfig, local: &InstallationsConfig) -> Result<()> {
+    config.validate_ownership(local)?;
+    let portable_path = games_config_path()?;
+    let local_path = installations_config_path()?;
+    std::fs::create_dir_all(
+        portable_path
+            .parent()
+            .context("Configuration has no parent")?,
+    )?;
+    let _portable_lock =
+        super::save_runtime::SaveLock::at_wait(&portable_path.with_extension("toml.lock"))?;
+    let _local_lock =
+        super::save_runtime::SaveLock::at_wait(&local_path.with_extension("toml.lock"))?;
+    anyhow::ensure!(
+        config_revision(&portable_path)? == *config.revision.borrow()
+            && config_revision(&local_path)? == *local.revision.borrow(),
+        "Game configuration changed since it was loaded; reload and retry (no changes were overwritten)"
+    );
+    save_atomic_locked(
+        config,
+        &portable_path,
+        &config.revision,
+        "Instant game configuration",
+        true,
+    )?;
+    save_atomic_locked(
+        local,
+        &local_path,
+        &local.revision,
+        "Device-specific game installations",
+        false,
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -443,9 +671,30 @@ mod tests {
     fn installation_sync_state_is_backwards_compatible() {
         let legacy = "game_name = 'Game'\nsave_path = '/saves'\nnearest_checkpoint = 'old'";
         let mut installation: GameInstallation = toml::from_str(legacy).unwrap();
-        assert!(installation.sync_repository.is_none());
-        assert!(installation.acknowledged_snapshot.is_none());
-        assert!(installation.pending_restore.is_none());
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .sync_repository
+                .is_none()
+        );
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .acknowledged_snapshot
+                .is_none()
+        );
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .pending_restore
+                .is_none()
+        );
         let serialized = toml::to_string(&installation).unwrap();
         for field in [
             "sync_repository",
@@ -455,15 +704,27 @@ mod tests {
             assert!(!serialized.contains(field));
         }
 
-        installation.sync_repository = Some("repo".into());
-        installation.acknowledged_snapshot = Some("head".into());
-        installation.pending_restore = Some("historical".into());
+        installation.saves.as_mut().unwrap().sync_repository = Some("repo".into());
+        installation.saves.as_mut().unwrap().acknowledged_snapshot = Some("head".into());
+        installation.saves.as_mut().unwrap().pending_restore = Some("historical".into());
         let restored: GameInstallation =
             toml::from_str(&toml::to_string(&installation).unwrap()).unwrap();
-        assert_eq!(restored.sync_repository.as_deref(), Some("repo"));
-        assert_eq!(restored.acknowledged_snapshot.as_deref(), Some("head"));
-        assert_eq!(restored.pending_restore.as_deref(), Some("historical"));
-        assert_eq!(restored.nearest_checkpoint.as_deref(), Some("old"));
+        assert_eq!(
+            restored.owned().unwrap().sync_repository.as_deref(),
+            Some("repo")
+        );
+        assert_eq!(
+            restored.owned().unwrap().acknowledged_snapshot.as_deref(),
+            Some("head")
+        );
+        assert_eq!(
+            restored.owned().unwrap().pending_restore.as_deref(),
+            Some("historical")
+        );
+        assert_eq!(
+            restored.owned().unwrap().nearest_checkpoint.as_deref(),
+            Some("old")
+        );
     }
 
     #[test]
@@ -473,10 +734,25 @@ mod tests {
             TildePath::new(PathBuf::from("/saves")),
             PathContentKind::Directory,
         );
-        assert!(!installation.needs_repository_reconciliation("repo"));
-        installation.sync_repository = Some("repo".into());
-        assert!(!installation.needs_repository_reconciliation("repo"));
-        assert!(installation.needs_repository_reconciliation("other"));
+        assert!(
+            !installation
+                .owned()
+                .unwrap()
+                .needs_repository_reconciliation("repo")
+        );
+        installation.saves.as_mut().unwrap().sync_repository = Some("repo".into());
+        assert!(
+            !installation
+                .owned()
+                .unwrap()
+                .needs_repository_reconciliation("repo")
+        );
+        assert!(
+            installation
+                .owned()
+                .unwrap()
+                .needs_repository_reconciliation("other")
+        );
     }
 
     #[test]
@@ -486,34 +762,108 @@ mod tests {
             TildePath::new(PathBuf::from("/saves")),
             PathContentKind::Directory,
         );
-        installation.sync_repository = Some("repo".into());
+        installation.saves.as_mut().unwrap().sync_repository = Some("repo".into());
 
         // A fresh backup checkpoint clears transient sync state.
-        installation.acknowledged_snapshot = Some("head".into());
-        installation.pending_restore = Some("old".into());
-        installation.note_backup("old");
-        assert_eq!(installation.nearest_checkpoint.as_deref(), Some("old"));
-        assert!(installation.checkpoint_time.is_some());
-        assert!(installation.acknowledged_snapshot.is_none());
-        assert!(installation.pending_restore.is_none());
-        assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
+        installation.saves.as_mut().unwrap().acknowledged_snapshot = Some("head".into());
+        installation.saves.as_mut().unwrap().pending_restore = Some("old".into());
+        installation.owned_mut().unwrap().note_backup("old");
+        assert_eq!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .nearest_checkpoint
+                .as_deref(),
+            Some("old")
+        );
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .checkpoint_time
+                .is_some()
+        );
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .acknowledged_snapshot
+                .is_none()
+        );
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .pending_restore
+                .is_none()
+        );
+        assert_eq!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .sync_repository
+                .as_deref(),
+            Some("repo")
+        );
 
         // A completed restore clears it too, keeping only the acknowledged
         // head that belongs to the new state.
-        installation.acknowledged_snapshot = Some("head".into());
-        installation.pending_restore = Some("old".into());
-        installation.note_restored_snapshot("old", "2026-01-01T00:00:00Z", Some("remote".into()));
-        assert_eq!(installation.nearest_checkpoint.as_deref(), Some("old"));
+        installation.saves.as_mut().unwrap().acknowledged_snapshot = Some("head".into());
+        installation.saves.as_mut().unwrap().pending_restore = Some("old".into());
+        installation.owned_mut().unwrap().note_restored_snapshot(
+            "old",
+            "2026-01-01T00:00:00Z",
+            Some("remote".into()),
+        );
         assert_eq!(
-            installation.checkpoint_time.as_deref(),
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .nearest_checkpoint
+                .as_deref(),
+            Some("old")
+        );
+        assert_eq!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .checkpoint_time
+                .as_deref(),
             Some("2026-01-01T00:00:00Z")
         );
         assert_eq!(
-            installation.acknowledged_snapshot.as_deref(),
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .acknowledged_snapshot
+                .as_deref(),
             Some("remote")
         );
-        assert!(installation.pending_restore.is_none());
-        assert_eq!(installation.sync_repository.as_deref(), Some("repo"));
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .pending_restore
+                .is_none()
+        );
+        assert_eq!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .sync_repository
+                .as_deref(),
+            Some("repo")
+        );
     }
 
     #[test]
@@ -523,21 +873,38 @@ mod tests {
             TildePath::new(PathBuf::from("/saves")),
             PathContentKind::Directory,
         );
-        installation.pending_restore = Some("historical".into());
-        installation.note_restored_snapshot(
+        installation.saves.as_mut().unwrap().pending_restore = Some("historical".into());
+        installation.owned_mut().unwrap().note_restored_snapshot(
             "historical",
             "2026-01-01T00:00:00Z",
             Some("remote-head".into()),
         );
         assert_eq!(
-            installation.nearest_checkpoint.as_deref(),
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .nearest_checkpoint
+                .as_deref(),
             Some("historical")
         );
         assert_eq!(
-            installation.acknowledged_snapshot.as_deref(),
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .acknowledged_snapshot
+                .as_deref(),
             Some("remote-head")
         );
-        assert!(installation.pending_restore.is_none());
+        assert!(
+            installation
+                .saves
+                .as_ref()
+                .unwrap()
+                .pending_restore
+                .is_none()
+        );
     }
 
     #[test]
@@ -548,7 +915,7 @@ mod tests {
             TildePath::new(PathBuf::from("/saves")),
             PathContentKind::Directory,
         );
-        installation.note_restored_snapshot(
+        installation.owned_mut().unwrap().note_restored_snapshot(
             "historical",
             "2026-01-01T00:00:00Z",
             Some("historical".into()),
@@ -563,17 +930,23 @@ mod tests {
             PathContentKind::Directory,
         );
 
-        installation.note_backup("checkpoint456");
+        installation
+            .owned_mut()
+            .unwrap()
+            .note_backup("checkpoint456");
         assert_eq!(
-            installation.nearest_checkpoint,
+            installation.saves.as_ref().unwrap().nearest_checkpoint,
             Some("checkpoint456".to_string())
         );
         assert_eq!(installation.launch_command, None);
         assert!(installation.dependencies.is_empty());
 
-        installation.note_backup("checkpoint789");
+        installation
+            .owned_mut()
+            .unwrap()
+            .note_backup("checkpoint789");
         assert_eq!(
-            installation.nearest_checkpoint,
+            installation.saves.as_ref().unwrap().nearest_checkpoint,
             Some("checkpoint789".to_string())
         );
         assert_eq!(installation.launch_command, None);
@@ -606,20 +979,20 @@ mod tests {
         let snapshot = snapshot_fixture(FULL_ID, SHORT_ID);
 
         // No checkpoint yet: never matches, sync must not skip.
-        assert!(!installation.checkpoint_matches(&snapshot));
+        assert!(!installation.owned().unwrap().checkpoint_matches(&snapshot));
 
         // Writes are normalized to the full ID (see checkpoint.rs).
-        installation.note_backup(FULL_ID);
-        assert!(installation.checkpoint_matches(&snapshot));
+        installation.owned_mut().unwrap().note_backup(FULL_ID);
+        assert!(installation.owned().unwrap().checkpoint_matches(&snapshot));
 
         // Legacy configs holding the short form (hand-edited or pre-
         // normalization) must still match, or sync re-restores over saves.
-        installation.nearest_checkpoint = Some(SHORT_ID.into());
-        assert!(installation.checkpoint_matches(&snapshot));
+        installation.saves.as_mut().unwrap().nearest_checkpoint = Some(SHORT_ID.into());
+        assert!(installation.owned().unwrap().checkpoint_matches(&snapshot));
 
         // Unrelated snapshots never match.
         let other = snapshot_fixture("deadbeef", "deadbeef");
-        assert!(!installation.checkpoint_matches(&other));
+        assert!(!installation.owned().unwrap().checkpoint_matches(&other));
     }
 
     #[test]
@@ -732,6 +1105,7 @@ mod tests {
                 TildePath::new(PathBuf::from("~/.saves/game1")),
                 PathContentKind::Directory,
             )],
+            ..Default::default()
         };
 
         config
@@ -770,7 +1144,7 @@ mod tests {
         assert!(contents.contains("# [[games]]"));
         assert!(contents.contains("# name = \"Example Game\""));
         assert!(contents.contains("# [[games.dependencies]]"));
-        assert!(contents.contains("#\n# retention_policy"));
+        assert!(contents.contains("# retention_policy"));
         assert!(contents.contains("Optional top-level backup retention policy"));
         assert!(contents.contains("# Example retention_policy entry:"));
         assert!(contents.contains("# [retention_policy]"));
@@ -805,6 +1179,31 @@ mod tests {
         );
         // The current value still has to round-trip via the TOML body.
         assert!(contents.contains("repo_password = "));
+    }
+
+    #[test]
+    fn stale_config_writes_do_not_erase_newer_bindings() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("installations.toml");
+        let mut first = InstallationsConfig::default();
+        save_atomic(&first, &path, &first.revision, "test", false)?;
+        let mut second = first.clone();
+        second.installations.push(GameInstallation::with_kind(
+            "B",
+            TildePath::from_str("/b"),
+            PathContentKind::Directory,
+        ));
+        save_atomic(&second, &path, &second.revision, "test", false)?;
+        first.installations.push(GameInstallation::with_kind(
+            "A",
+            TildePath::from_str("/a"),
+            PathContentKind::Directory,
+        ));
+        assert!(save_atomic(&first, &path, &first.revision, "test", false).is_err());
+        let saved: InstallationsConfig = toml::from_str(&std::fs::read_to_string(&path)?)?;
+        assert_eq!(saved.installations.len(), 1);
+        assert_eq!(saved.installations[0].game_name.0, "B");
+        Ok(())
     }
 
     #[test]

@@ -87,13 +87,17 @@ impl DiscoveredGame for DiscoveredMemcard {
                 },
             )
             .blank()
-            .text("Memory card:")
+            .text(if self.platform == EmulatorPlatform::Pcsx2 {
+                "Shared memory-card directory:"
+            } else {
+                "Memory card:"
+            })
             .bullet(&TildePath::new(self.memcard_path.clone()).display_string())
             .blank()
             .subtext(if self.is_existing() {
                 "Already tracked — press Enter to open game menu"
             } else {
-                "Auto-discovered emulator memory card"
+                "Shared storage — configure once for all participating games"
             })
             .build()
     }
@@ -128,8 +132,20 @@ fn locations(platform: EmulatorPlatform) -> &'static [(EmulatorSaveSource, &'sta
 pub fn discover(platform: EmulatorPlatform) -> Result<Vec<DiscoveredMemcard>> {
     let mut results = Vec::new();
     for &(source, location) in locations(platform) {
-        let path = TildePath::from_str(location);
-        results.extend(scan_directory(path.as_path(), platform, source)?);
+        let mut path = TildePath::from_str(location).into_path_buf();
+        if platform == EmulatorPlatform::Pcsx2 {
+            let root = if source == EmulatorSaveSource::Native {
+                dirs::config_dir()
+                    .context("Cannot locate PCSX2 configuration directory")?
+                    .join("PCSX2")
+            } else {
+                path.parent()
+                    .context("Memory-card directory has no parent")?
+                    .to_path_buf()
+            };
+            path = crate::game::platforms::pcsx2::configured_card_directory(&root)?;
+        }
+        results.extend(scan_directory(&path, platform, source)?);
     }
     results.sort_by_cached_key(|card| card.display_name.to_lowercase());
     Ok(results)
@@ -148,6 +164,21 @@ fn scan_directory(
                 .with_context(|| format!("Failed to scan memory cards in {}", dir.display()));
         }
     };
+    if platform == EmulatorPlatform::Pcsx2 {
+        // The directory covers both slots, folder cards, and cards created later.
+        drop(entries);
+        return Ok(vec![DiscoveredMemcard {
+            display_name: match source {
+                EmulatorSaveSource::Native => "PS2 memory cards (Native/AppImage)",
+                EmulatorSaveSource::Flatpak => "PS2 memory cards (Flatpak)",
+            }
+            .into(),
+            memcard_path: dir.to_path_buf(),
+            platform,
+            source,
+            tracked_name: None,
+        }]);
+    }
     let extensions: &[&str] = match platform {
         EmulatorPlatform::Pcsx2 => &["ps2"],
         EmulatorPlatform::DuckStation => &["mcd", "mcr"],
