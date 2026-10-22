@@ -109,7 +109,10 @@ fn collect_game_details(
         .iter()
         .find(|inst| inst.game_name.0 == game_name);
 
-    let installation_details = installation.map(|install| {
+    let resolved = config
+        .resolve_owner(installations, &config.owner_id(game_name))
+        .ok();
+    let installation_details = resolved.as_ref().map(|install| {
         let path_display = install.save_path.display_string();
 
         match get_save_directory_info(install.save_path.as_path()) {

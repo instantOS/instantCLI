@@ -2,383 +2,115 @@ pub mod backup;
 pub mod cache;
 pub mod commands;
 pub mod dependencies;
-pub mod helpers;
 pub mod prune;
-pub mod security;
 pub mod single_file;
 pub mod snapshot_selection;
 pub mod snapshots;
 pub mod tags;
 
-use crate::game::checkpoint;
 use crate::game::config::InstantGameConfig;
-use crate::ui::prelude::*;
 use anyhow::{Context, Result};
-use colored::Colorize;
 
-fn emit_restic_event(
-    level: Level,
-    code: &str,
-    icon: Option<char>,
-    plain_message: impl Into<String>,
-    text_message: impl Into<String>,
-    data: Option<serde_json::Value>,
-) {
-    let plain = plain_message.into();
-    let text = text_message.into();
-    let formatted = if matches!(get_output_format(), OutputFormat::Json) {
-        plain
-    } else if let Some(icon) = icon {
-        format!("{icon} {text}")
-    } else {
-        text
-    };
-    emit(level, code, &formatted, data);
-}
-
-/// Handle game save backup with optional game selection
+/// Manual backups use the same owner lock and state transitions as automatic sync.
 pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
-    // Load configurations
-    // Step 1: Game selection using security module
-    let game_selection = security::get_game_installation(game_name)?;
-    if game_selection.game_name.is_empty() {
-        // User cancelled selection
+    let Some(name) = select_game_name(game_name)? else {
         return Ok(());
-    }
-
-    let game_name = game_selection.game_name;
-    let installation = &game_selection.installation;
-
-    // Step 2: Security check: ensure save directory is not empty
-    helpers::validate_backup_requirements(&game_name, installation)?;
-
-    // Step 3: Perform the backup
-    perform_game_backup(&game_name, installation)
+    };
+    let config = InstantGameConfig::load()?;
+    let id = config.owner_id(&name);
+    let _lock = crate::game::save_runtime::SaveLock::owner(&id)?;
+    let local = crate::game::config::InstallationsConfig::load()?;
+    config.validate_ownership(&local)?;
+    let owner = config.resolve_owner(&local, &id)?;
+    crate::game::save_runtime::ensure_ready(&owner, &config)?;
+    crate::game::operations::sync::execution::publish_local_choice(&owner, &config)
 }
 
-/// Internal helper to perform the actual backup process
-fn perform_game_backup(
-    game_name: &str,
-    installation: &crate::game::config::GameInstallation,
-) -> Result<()> {
-    // Load configuration for backup handler
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let backup_handler = backup::GameBackup::new(game_config.clone());
-
-    emit_restic_event(
-        Level::Info,
-        "game.backup.start",
-        Some(char::from(NerdFont::Save)),
-        format!(
-            "Creating backup for '{}'... This may take a while depending on save file size.",
-            game_name
-        ),
-        format!(
-            "Creating backup for '{}'...\nThis may take a while depending on save file size.",
-            game_name.yellow()
-        ),
-        Some(serde_json::json!({
-            "game": game_name,
-            "action": "backup_start"
-        })),
-    );
-
-    match backup_handler.backup_game(installation) {
-        Ok(output) => {
-            emit_restic_event(
-                Level::Success,
-                "game.backup.completed",
-                Some(char::from(NerdFont::Check)),
-                format!("Backup completed successfully for game '{game_name}'!"),
-                format!(
-                    "Backup completed successfully for game '{}'!\n\n{}",
-                    game_name.green(),
-                    output
-                ),
-                Some(serde_json::json!({
-                    "game": game_name,
-                    "action": "backup_completed",
-                    "output": output.to_string()
-                })),
-            );
-
-            // Update checkpoint after successful backup
-            if let Err(e) = checkpoint::update_checkpoint_after_backup(
-                output.snapshot_id.as_deref(),
-                game_name,
-                &game_config,
-            ) {
-                eprintln!("Warning: Could not update checkpoint: {e}");
-            }
-
-            // Invalidate cache for this game after successful backup
-            let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-            cache::invalidate_game_cache(game_name, &repo_path);
-            Ok(())
-        }
-        Err(e) => {
-            emit_restic_event(
-                Level::Error,
-                "game.backup.failed",
-                Some(char::from(NerdFont::CrossCircle)),
-                format!("Backup failed for game '{game_name}': {e}"),
-                format!("Backup failed for game '{}': {}", game_name.red(), e),
-                Some(serde_json::json!({
-                    "game": game_name,
-                    "action": "backup_failed",
-                    "error": e.to_string()
-                })),
-            );
-            Err(e)
-        }
-    }
-}
-
-/// Handle game save restore with optional game and snapshot selection
 pub fn restore_game_saves(
     game_name: Option<String>,
     snapshot_id: Option<String>,
     force: bool,
 ) -> Result<()> {
-    use crate::game::restic::backup::GameBackup;
-    use crate::game::restic::snapshot_selection::select_snapshot_interactive;
-
-    // Step 1: Game selection using security module
-    let game_selection = security::get_game_installation(game_name)?;
-    if game_selection.game_name.is_empty() {
-        // User cancelled selection
+    let Some(name) = select_game_name(game_name)? else {
         return Ok(());
-    }
+    };
+    let config = InstantGameConfig::load()?;
+    restore_owner(&config, &config.owner_id(&name), snapshot_id, force)
+}
 
-    // Step 2: Validate restore environment
-    let security_result = security::validate_restore_environment(&game_selection.installation)?;
-
-    // Step 3: Get snapshot ID with enhanced selection (includes local save comparison)
-    let snapshot_id = match snapshot_id {
-        Some(id) => {
-            // Validate the provided snapshot ID exists
-            let game_config = InstantGameConfig::load()
-                .context("Failed to load game configuration for snapshot validation")?;
-            if !security::validate_snapshot_id(&id, &game_selection.game_name, &game_config)? {
-                return Ok(());
-            }
-            id
-        }
+pub(crate) fn restore_owner(
+    config: &InstantGameConfig,
+    id: &crate::game::ownership::OwnerId,
+    snapshot_id: Option<String>,
+    force: bool,
+) -> Result<()> {
+    let _lock = crate::game::save_runtime::SaveLock::owner(id)?;
+    let local = crate::game::config::InstallationsConfig::load()?;
+    config.validate_ownership(&local)?;
+    let owner = config.resolve_owner(&local, id)?;
+    let snapshots = crate::game::save_runtime::fresh_snapshots(config, id)?;
+    let snapshot = match snapshot_id {
+        Some(id) => snapshots
+            .iter()
+            .find(|snapshot| snapshot.matches_id(&id))
+            .context("Snapshot does not belong to this save owner")?
+            .clone(),
         None => {
-            // Use enhanced snapshot selection with local save comparison
-            match select_snapshot_interactive(
-                &game_selection.game_name,
-                Some(&game_selection.installation),
-            )? {
-                Some(id) => id,
-                None => return Ok(()),
+            use crate::game::restic::snapshot_selection::{EnhancedSnapshot, SnapshotMenuEntry};
+            use crate::menu_utils::{DialogOutcome, FzfWrapper};
+            let entries: Vec<_> = snapshots
+                .into_iter()
+                .map(|snapshot| {
+                    SnapshotMenuEntry::Snapshot(EnhancedSnapshot {
+                        snapshot,
+                        game_name: owner.name.clone(),
+                        local_save_info: None,
+                        nearest_checkpoint: owner.nearest_checkpoint.clone(),
+                    })
+                })
+                .collect();
+            match FzfWrapper::builder()
+                .header(owner.scope())
+                .items(entries)
+                .select_one()?
+            {
+                DialogOutcome::Submitted(SnapshotMenuEntry::Snapshot(selected)) => {
+                    selected.snapshot
+                }
+                _ => return Ok(()),
             }
         }
     };
-
-    let game_name_plain = game_selection.game_name.clone();
-
-    // Step 4: Get snapshot details for security checks
-    let game_config =
-        InstantGameConfig::load().context("Failed to load game configuration for restore")?;
-    let snapshot =
-        match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
-            Some(snapshot) => snapshot,
-            None => {
-                let plain_message = format!(
-                    "Error: Snapshot '{}' not found for game '{}'.",
-                    snapshot_id, game_name_plain
-                );
-                let text_message = format!(
-                    "Error: Snapshot '{}' not found for game '{}'.",
-                    snapshot_id,
-                    game_selection.game_name.red()
-                );
-                emit_restic_event(
-                    Level::Error,
-                    "game.restore.snapshot_missing",
-                    Some(char::from(NerdFont::CrossCircle)),
-                    plain_message,
-                    text_message,
-                    Some(serde_json::json!({
-                        "game": game_name_plain.clone(),
-                        "action": "snapshot_missing",
-                        "snapshot_id": snapshot_id
-                    })),
-                );
-                emit_restic_event(
-                    Level::Info,
-                    "game.restore.hint.snapshot",
-                    Some(char::from(NerdFont::Info)),
-                    "Please select a valid snapshot.".to_string(),
-                    "Please select a valid snapshot.".to_string(),
-                    Some(serde_json::json!({
-                        "hint": "select_valid_snapshot"
-                    })),
-                );
-                return Err(anyhow::anyhow!("snapshot not found"));
-            }
-        };
-
-    // Step 5: Check if restore should be skipped due to matching checkpoint
-    if !force && game_selection.installation.checkpoint_matches(&snapshot) {
-        let plain_message = format!(
-            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-            game_name_plain, snapshot.id
-        );
-        let text_message = format!(
-            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-            game_selection.game_name.yellow(),
-            snapshot.id
-        );
-        let snapshot_id = snapshot.id.clone();
-        emit_restic_event(
-            Level::Info,
-            "game.restore.skipped",
-            Some(char::from(NerdFont::Info)),
-            plain_message,
-            text_message,
-            Some(serde_json::json!({
-                "game": game_name_plain.clone(),
-                "action": "restore_skipped",
-                "snapshot_id": snapshot_id,
-                "reason": "checkpoint_matches"
-            })),
-        );
-        return Ok(());
-    }
-
-    // Step 6: Perform security check for snapshot vs local saves
-    if let Some(ref save_info) = security_result.save_info
-        && !security::check_snapshot_vs_local_saves(
-            &snapshot,
-            save_info,
-            &game_selection.game_name,
-            force,
-        )?
+    if !force
+        && owner.pending_restore.is_none()
+        && owner.checkpoint_matches(&snapshot)
+        && crate::game::save_runtime::snapshot_digest(&snapshot)
+            == Some(crate::game::save_runtime::content_digest(owner.save_path.as_path())?.as_str())
     {
-        // User cancelled due to security warning
-        emit_restic_event(
-            Level::Warn,
-            "game.restore.cancelled.security",
-            Some(char::from(NerdFont::Warning)),
-            "Restore cancelled due to security warning.".to_string(),
-            "Restore cancelled due to security warning.".to_string(),
-            Some(serde_json::json!({
-                "game": game_name_plain.clone(),
-                "action": "restore_cancelled_security"
-            })),
+        println!(
+            "Restore skipped: {} already contains snapshot {}",
+            owner.name, snapshot.short_id
         );
         return Ok(());
     }
-
-    // Step 7: Show enhanced restore confirmation with security information
-    if !security::create_restore_confirmation(
-        &game_selection.game_name,
-        &snapshot,
-        &security_result,
-        force,
-    )? {
-        // User cancelled confirmation
-        emit_restic_event(
-            Level::Warn,
-            "game.restore.cancelled.user",
-            Some(char::from(NerdFont::Warning)),
-            "Restore cancelled by user.".to_string(),
-            "Restore cancelled by user.".to_string(),
-            Some(serde_json::json!({
-                "game": game_name_plain.clone(),
-                "action": "restore_cancelled_user"
-            })),
-        );
+    println!("{}", owner.scope());
+    if !force
+        && crate::menu_utils::FzfWrapper::confirm(&format!(
+            "{}\nRestore snapshot {}? Existing local saves will be replaced.",
+            owner.scope(),
+            snapshot.short_id
+        ))? != crate::menu_utils::ConfirmResult::Yes
+    {
         return Ok(());
     }
+    crate::game::operations::sync::execution::perform_restore(&owner, config, &snapshot.id)
+}
 
-    // Step 8: Perform the restore
-    let save_path = game_selection.installation.save_path.as_path();
-    let backup_handler = GameBackup::new(game_config);
-
-    emit_restic_event(
-        Level::Info,
-        "game.restore.start",
-        Some(char::from(NerdFont::Download)),
-        format!("Restoring game saves for '{}'...", game_name_plain),
-        format!(
-            "Restoring game saves for '{}'...",
-            game_selection.game_name.yellow()
-        ),
-        Some(serde_json::json!({
-            "game": game_selection.game_name.clone(),
-            "action": "restore_start",
-            "snapshot_id": snapshot_id.clone()
-        })),
-    );
-
-    match backup_handler.restore_backup(backup::RestoreRequest {
-        game_name: &game_selection.game_name,
-        snapshot_id: &snapshot_id,
-        path: save_path,
-        save_path_type: game_selection.installation.save_path_type,
-        snapshot_source_path: snapshot.paths.first().map(|path| path.as_str()),
-    }) {
-        Ok(output) => {
-            let output_clone = output.clone();
-            emit_restic_event(
-                Level::Success,
-                "game.restore.completed",
-                Some(char::from(NerdFont::Check)),
-                format!(
-                    "Restore completed successfully for game '{}'!",
-                    game_selection.game_name
-                ),
-                format!(
-                    "Restore completed successfully for game '{}'!\n\n{}",
-                    game_selection.game_name.green(),
-                    output
-                ),
-                Some(serde_json::json!({
-                    "game": game_selection.game_name.clone(),
-                    "action": "restore_completed",
-                    "snapshot_id": snapshot_id.clone(),
-                    "output": output_clone
-                })),
-            );
-
-            // Invalidate cache for this game after successful restore
-            let repo_path = backup_handler
-                .config
-                .repo
-                .as_path()
-                .to_string_lossy()
-                .to_string();
-            cache::invalidate_game_cache(&game_selection.game_name, &repo_path);
-        }
-        Err(e) => {
-            emit_restic_event(
-                Level::Error,
-                "game.restore.failed",
-                Some(char::from(NerdFont::CrossCircle)),
-                format!(
-                    "Restore failed for game '{}': {}",
-                    game_selection.game_name, e
-                ),
-                format!(
-                    "Restore failed for game '{}': {}",
-                    game_selection.game_name.red(),
-                    e
-                ),
-                Some(serde_json::json!({
-                    "game": game_selection.game_name.clone(),
-                    "action": "restore_failed",
-                    "snapshot_id": snapshot_id,
-                    "error": e.to_string()
-                })),
-            );
-            return Err(e);
-        }
+fn select_game_name(name: Option<String>) -> Result<Option<String>> {
+    match name {
+        Some(name) => Ok(Some(name)),
+        None => crate::game::games::selection::select_game_interactive(None),
     }
-
-    Ok(())
 }
 
 /// Handle restic command passthrough with instant games repository configuration

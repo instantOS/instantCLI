@@ -19,8 +19,6 @@ mod install;
 mod paths;
 mod restic;
 
-pub(crate) use install::choose_reconciliation_path;
-
 pub fn setup_uninstalled_games() -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let initialized_here = !game_config.is_initialized();
@@ -108,6 +106,17 @@ pub fn setup_tracked_game(game_name: &str, discovered_save_path: Option<&str>) -
         return crate::game::menu::game_menu(Some(game_name.to_string()));
     }
 
+    if let crate::game::ownership::OwnerId::Group(id) = game_config.owner_id(game_name) {
+        if game_config
+            .resolve_owner(&installations, &game_config.owner_id(game_name))
+            .is_ok()
+        {
+            return crate::game::menu::game_menu(Some(game_name.into()));
+        }
+        anyhow::bail!(
+            "Bind shared save group '{id}' on this device with ins game group bind before setting up this game"
+        );
+    }
     let snapshot_overview = restic::collect_snapshot_overview(&game_config)?;
     let snapshot = snapshot_overview.get(game_name);
 
@@ -691,10 +700,10 @@ impl<'a> SetupPreview<'a> {
         info.push(format!(
             "{} Existing save path: {}",
             char::from(NerdFont::Folder),
-            installation.save_path.display_string()
+            installation.owned().ok()?.save_path.display_string()
         ));
 
-        if let Some(checkpoint) = installation.nearest_checkpoint.as_deref() {
+        if let Some(checkpoint) = installation.owned().ok()?.nearest_checkpoint.as_deref() {
             info.push(format!("Nearest checkpoint: {}", checkpoint));
         }
 
@@ -797,7 +806,7 @@ impl<'a> CandidateCollector<'a> {
             let snapshot = self.snapshot_overview.get(&name).cloned();
             let missing_dependencies = missing_dependencies_for_game(game, installation.as_ref());
 
-            if installation.is_none() {
+            if installation.is_none() && game.save_group.is_none() {
                 self.push_candidate(SetupCandidate {
                     name: name.clone(),
                     category: CandidateCategory::MissingInstallation,

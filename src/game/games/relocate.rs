@@ -98,9 +98,10 @@ pub(super) fn upsert_installation(
         .iter_mut()
         .find(|i| i.game_name.0 == game_name)
     {
-        inst.save_path = save_path;
-        inst.save_path_type = save_path_type;
-        inst.nearest_checkpoint = None;
+        inst.saves = Some(crate::game::config::OwnedSaves::new(
+            save_path,
+            save_path_type,
+        ));
     } else {
         installations.push(GameInstallation::with_kind(
             game_name.to_string(),

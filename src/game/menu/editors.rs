@@ -398,16 +398,21 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
         command: cmd,
         source_label: "device-specific override",
     });
-    let context = LaunchCommandBuilderContext::from_game(
-        state
-            .installation()
-            .map(|install| install.save_path.as_path()),
+    let mut context = LaunchCommandBuilderContext::from_game(
+        state.installation().and_then(|install| {
+            install
+                .saves
+                .as_ref()
+                .map(|saves| saves.save_path.as_path())
+        }),
         state.game().launch_command.as_ref().or_else(|| {
             state
                 .installation()
                 .and_then(|install| install.launch_command.as_ref())
         }),
     );
+
+    context.add_discovery_hint(state.discovery_launch_hint.as_ref());
 
     match select_launch_command_input_method(current, other)? {
         LaunchCommandInputMethod::Build => {
@@ -486,15 +491,20 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         command: cmd,
         source_label: "shared command",
     });
-    let context = LaunchCommandBuilderContext::from_game(
-        state
-            .installation()
-            .map(|install| install.save_path.as_path()),
+    let mut context = LaunchCommandBuilderContext::from_game(
+        state.installation().and_then(|install| {
+            install
+                .saves
+                .as_ref()
+                .map(|saves| saves.save_path.as_path())
+        }),
         state
             .installation()
             .and_then(|install| install.launch_command.as_ref())
             .or_else(|| state.game().launch_command.as_ref()),
     );
+
+    context.add_discovery_hint(state.discovery_launch_hint.as_ref());
 
     match select_launch_command_input_method(current, other)? {
         LaunchCommandInputMethod::Build => {
@@ -566,7 +576,7 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         .installation()
         .ok_or_else(|| anyhow!("No installation found for this game on this device"))?;
 
-    let current_path = &installation.save_path;
+    let current_path = &installation.owned()?.save_path;
     let current_path_str = if current_path.as_path().as_os_str().is_empty() {
         "<not set>".to_string()
     } else {
@@ -607,7 +617,11 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
                 FzfWrapper::message("Save path unchanged.")?;
                 Ok(false)
             } else {
-                state.installation_mut().unwrap().save_path = new_path;
+                state
+                    .installation_mut()
+                    .ok_or_else(|| anyhow!("Installation disappeared"))?
+                    .owned_mut()?
+                    .save_path = new_path;
                 state.mark_dirty();
                 FzfWrapper::message("Save path updated")?;
                 Ok(true)
@@ -709,10 +723,12 @@ mod tests {
             installation.launch_command = inst_cmd.map(LaunchCommand::from_shell_or_manual);
             InstallationsConfig {
                 installations: vec![installation],
+                ..Default::default()
             }
         } else {
             InstallationsConfig {
                 installations: Vec::new(),
+                ..Default::default()
             }
         };
 

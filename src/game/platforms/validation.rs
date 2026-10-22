@@ -2,26 +2,6 @@
 
 use std::path::Path;
 
-/// Valid file extensions for Eden (Switch) games
-pub const EDEN_EXTENSIONS: &[&str] = &["nsp", "xci", "nca"];
-
-/// Valid file extensions for Dolphin (GameCube/Wii) games
-pub const DOLPHIN_EXTENSIONS: &[&str] = &["iso", "wbfs", "gcm", "ciso", "gcz", "wad", "dol", "elf"];
-
-/// Valid file extensions for PCSX2 (PlayStation 2) games
-pub const PCSX2_EXTENSIONS: &[&str] = &["iso", "bin", "chd", "cso", "gz", "elf", "irx"];
-
-/// Valid file extensions for mGBA (Game Boy Advance) games
-pub const MGBA_EXTENSIONS: &[&str] = &["gba", "gb", "gbc", "sgb", "zip", "7z"];
-
-/// Valid file extensions for DuckStation (PlayStation 1) games
-pub const DUCKSTATION_EXTENSIONS: &[&str] = &[
-    "bin", "cue", "iso", "img", "chd", "pbp", "ecm", "mds", "psf", "minipsf", "m3u",
-];
-
-/// Valid file extensions for Azahar (3DS) games
-pub const AZAHAR_EXTENSIONS: &[&str] = &["3ds", "3dsx", "cia", "app", "elf", "axf", "cci", "cxi"];
-
 /// Valid file extensions for Windows executables (umu-run)
 pub const WINDOWS_EXTENSIONS: &[&str] = &["exe", "msi", "bat"];
 
@@ -80,21 +60,30 @@ mod tests {
 
     #[test]
     fn test_has_valid_extension() {
-        assert!(has_valid_extension(Path::new("game.nsp"), EDEN_EXTENSIONS));
-        assert!(has_valid_extension(Path::new("game.XCI"), EDEN_EXTENSIONS));
-        assert!(!has_valid_extension(Path::new("game.iso"), EDEN_EXTENSIONS));
+        assert!(has_valid_extension(
+            Path::new("game.nsp"),
+            crate::game::launch_command::EmulatorPlatform::Eden.extensions()
+        ));
+        assert!(has_valid_extension(
+            Path::new("game.XCI"),
+            crate::game::launch_command::EmulatorPlatform::Eden.extensions()
+        ));
+        assert!(!has_valid_extension(
+            Path::new("game.iso"),
+            crate::game::launch_command::EmulatorPlatform::Eden.extensions()
+        ));
 
         assert!(has_valid_extension(
             Path::new("game.iso"),
-            DOLPHIN_EXTENSIONS
+            crate::game::launch_command::EmulatorPlatform::Dolphin.extensions()
         ));
         assert!(has_valid_extension(
             Path::new("game.wbfs"),
-            DOLPHIN_EXTENSIONS
+            crate::game::launch_command::EmulatorPlatform::Dolphin.extensions()
         ));
         assert!(!has_valid_extension(
             Path::new("game.nsp"),
-            DOLPHIN_EXTENSIONS
+            crate::game::launch_command::EmulatorPlatform::Dolphin.extensions()
         ));
 
         assert!(has_valid_extension(
@@ -108,15 +97,15 @@ mod tests {
 
         assert!(has_valid_extension(
             Path::new("game.3ds"),
-            AZAHAR_EXTENSIONS
+            crate::game::launch_command::EmulatorPlatform::Azahar.extensions()
         ));
         assert!(has_valid_extension(
             Path::new("game.cia"),
-            AZAHAR_EXTENSIONS
+            crate::game::launch_command::EmulatorPlatform::Azahar.extensions()
         ));
         assert!(!has_valid_extension(
             Path::new("game.iso"),
-            AZAHAR_EXTENSIONS
+            crate::game::launch_command::EmulatorPlatform::Azahar.extensions()
         ));
     }
 

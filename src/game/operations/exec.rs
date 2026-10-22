@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::process::Command;
-use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -23,11 +22,29 @@ fn exec_with_ui(command: Vec<OsString>, ui: &GameUi) -> Result<()> {
         return Err(anyhow!("No command provided to execute."));
     }
 
+    let config = crate::game::config::InstantGameConfig::load()?;
+    let local = crate::game::config::InstallationsConfig::load()?;
+    config.validate_ownership(&local)?;
+    // Arbitrary Steam commands have no declared shared-save mapping. Preserve
+    // the existing private-save workflow without touching unrelated groups.
+    let owners: Vec<_> = config
+        .bound_owner_ids(&local)
+        .into_iter()
+        .filter(|id| matches!(id, crate::game::ownership::OwnerId::Game(_)))
+        .collect();
+    let _locks = owners
+        .iter()
+        .map(crate::game::save_runtime::SaveLock::owner)
+        .collect::<Result<Vec<_>>>()?;
+    for id in &owners {
+        crate::game::save_runtime::ensure_ready(&config.resolve_owner(&local, id)?, &config)?;
+    }
+
     let command_display = format_command(&command);
 
     if check_internet() {
         println!("Internet connection detected; syncing saves before launch...");
-        ui.sync("InstantCLI - Pre-launch Save Sync", Duration::ZERO)?
+        ui.sync_held_all("InstantCLI - Pre-launch Save Sync", &owners)?
             .ensure_success()
             .context("Pre-launch save sync failed; command was not started")?;
     } else {
@@ -61,7 +78,7 @@ fn exec_with_ui(command: Vec<OsString>, ui: &GameUi) -> Result<()> {
     after_launch(launch_result, || {
         if check_internet() {
             println!("Internet connection detected; syncing saves after exit...");
-            let report = ui.sync("InstantCLI - Post-exit Save Sync", Duration::ZERO)?;
+            let report = ui.sync_held_all("InstantCLI - Post-exit Save Sync", &owners)?;
             report
                 .ensure_success()
                 .context("Post-exit save sync failed")?;

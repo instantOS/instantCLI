@@ -240,8 +240,24 @@ impl Game {
             builder = builder.field("Launch", &command.to_string());
         }
 
+        if let Some(group) = &self.save_group {
+            let binding = InstallationsConfig::load().ok().and_then(|local| {
+                local
+                    .save_groups
+                    .into_iter()
+                    .find(|binding| &binding.id == group)
+            });
+            builder = builder.field("Shared saves", group);
+            builder = match binding {
+                Some(binding) => builder
+                    .field("Save path", &binding.saves.save_path.display_string())
+                    .text("Restoring rolls back the whole shared group."),
+                None => builder.text("Shared saves are not bound on this device."),
+            };
+            return builder.build_string();
+        }
         // Installation section
-        if let Some(install) = installation {
+        if let Some(install) = installation.and_then(|entry| entry.saves.as_ref()) {
             let path_display = install.save_path.display_string();
 
             builder = builder
@@ -277,10 +293,6 @@ impl Game {
             }
 
             // Dependencies
-            if !install.dependencies.is_empty() {
-                builder =
-                    builder.field_indented("Dependencies", &install.dependencies.len().to_string());
-            }
         } else {
             builder = builder
                 .blank()
@@ -386,10 +398,9 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
 
     // Add all games with installation status
     for game in &config.games {
-        let is_installed = installations
-            .installations
-            .iter()
-            .any(|inst| inst.game_name.0 == game.name.0);
+        let is_installed = config
+            .resolve_owner(&installations, &config.owner_id(&game.name.0))
+            .is_ok();
         entries.push(GameMenuEntry::Game(game.name.0.clone(), is_installed));
     }
 

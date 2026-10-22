@@ -1,262 +1,117 @@
-//! DuckStation (PlayStation 1 emulator) launch command builder
-//!
-//! Builds commands for running PS1 games via DuckStation AppImage.
-//! Downloads the AppImage automatically if not found.
-
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
-use anyhow::{Context, Result};
-
-use crate::game::launch_command::{
-    EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
-    LaunchCommandKind,
-};
-use crate::game::platforms::appimage_finder::find_appimages_by_paths;
+//! Optional DuckStation AppImage acquisition when no installation is available.
+use super::prompts::select_appimage_manually;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
-
-use super::prompts::{
-    AppImageSelectionPrompt, FileSelectionPrompt, ask_fullscreen, confirm_value,
-    select_appimage_manually, select_detected_appimage, select_file_with_validation,
-};
-use super::validation::{DUCKSTATION_EXTENSIONS, format_valid_extensions, validate_game_file};
-
-/// Default DuckStation AppImage location
+use anyhow::{Context, Result};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::process::Command;
 const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";
-
-/// DuckStation download URL (x64 only)
 const DUCKSTATION_DOWNLOAD_URL: &str =
     "https://github.com/stenzek/duckstation/releases/download/latest/DuckStation-x64.AppImage";
+pub(super) fn select_or_download() -> Result<Option<PathBuf>> {
+    let message = format!(
+        "{} DuckStation AppImage not found!\n\n\
+         Would you like to download it?\n\
+         (x64/AMD64 only, ~80MB)\n\n\
+         Download URL:\n{}",
+        char::from(NerdFont::CloudDownload),
+        DUCKSTATION_DOWNLOAD_URL
+    );
 
-/// Alternative DuckStation AppImage locations to check
-/// Filenames are matched case-insensitively, so duckstation.appimage will find
-/// DuckStation-x64.AppImage, duckstation.appimage, DUCKSTATION.APPIMAGE, etc.
-const DUCKSTATION_SEARCH_PATHS: &[&str] = &[
-    "~/AppImages/DuckStation-x64.AppImage",
-    "~/AppImages/duckstation.AppImage",
-    "~/.local/bin/DuckStation-x64.AppImage",
-    "~/.local/share/applications/DuckStation-x64.AppImage",
-];
+    match FzfWrapper::builder()
+        .confirm(message)
+        .yes_text("Download DuckStation")
+        .no_text("Select Manually")
+        .confirm_dialog()?
+    {
+        ConfirmResult::Yes => download_duckstation(),
+        ConfirmResult::No => select_appimage_manually("DuckStation"),
+        ConfirmResult::Cancelled => Ok(None),
+    }
+}
 
-pub struct DuckStationBuilder;
+fn download_duckstation() -> Result<Option<PathBuf>> {
+    let dest_path = PathBuf::from(shellexpand::tilde(DEFAULT_DUCKSTATION_PATH).into_owned());
 
-impl DuckStationBuilder {
-    /// Build a DuckStation launch command interactively
-    pub fn build_command() -> Result<Option<LaunchCommand>> {
-        // Step 1: Find or download DuckStation AppImage
-        let duckstation_path = match Self::find_or_download_duckstation()? {
-            Some(p) => p,
-            None => return Ok(None),
-        };
-
-        // Step 2: Select game file
-        let game_file = match Self::select_game_file()? {
-            Some(f) => f,
-            None => return Ok(None),
-        };
-
-        // Step 3: Ask for fullscreen
-        let fullscreen = ask_fullscreen()?;
-
-        // Step 4: Ask for batch mode (exit when game closes)
-        let batch_mode = Self::ask_batch_mode()?;
-
-        // Build the command
-        let command =
-            Self::build_launch_command(&duckstation_path, &game_file, fullscreen, batch_mode);
-
-        // Show preview and confirm
-        confirm_value(command)
+    // Create AppImages directory if it doesn't exist
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent).context("Failed to create AppImages directory")?;
     }
 
-    fn find_or_download_duckstation() -> Result<Option<PathBuf>> {
-        if let Some(path) = select_detected_appimage(
-            &find_appimages_by_paths(DUCKSTATION_SEARCH_PATHS),
-            NerdFont::Disc,
-            "DuckStation",
-        )? {
-            return Ok(Some(path));
-        }
+    FzfWrapper::message(&format!(
+        "{} Downloading DuckStation...\n\n\
+         This may take a few minutes.\n\
+         Destination: {}",
+        char::from(NerdFont::CloudDownload),
+        dest_path.display()
+    ))?;
 
-        // Not found, offer to download or select manually
-        Self::offer_download_or_select()
-    }
-
-    fn offer_download_or_select() -> Result<Option<PathBuf>> {
-        let message = format!(
-            "{} DuckStation AppImage not found!\n\n\
-             Would you like to download it?\n\
-             (x64/AMD64 only, ~80MB)\n\n\
-             Download URL:\n{}",
-            char::from(NerdFont::CloudDownload),
-            DUCKSTATION_DOWNLOAD_URL
-        );
-
-        match FzfWrapper::builder()
-            .confirm(message)
-            .yes_text("Download DuckStation")
-            .no_text("Select Manually")
-            .confirm_dialog()?
-        {
-            ConfirmResult::Yes => Self::download_duckstation(),
-            ConfirmResult::No => Self::select_duckstation_manually(),
-            ConfirmResult::Cancelled => Ok(None),
-        }
-    }
-
-    fn download_duckstation() -> Result<Option<PathBuf>> {
-        let dest_path = PathBuf::from(shellexpand::tilde(DEFAULT_DUCKSTATION_PATH).into_owned());
-
-        // Create AppImages directory if it doesn't exist
-        if let Some(parent) = dest_path.parent() {
-            fs::create_dir_all(parent).context("Failed to create AppImages directory")?;
-        }
-
+    // Use curl or wget to download (synchronously, as this is simpler for AppImages)
+    let download_result = if which::which("curl").is_ok() {
+        Command::new("curl")
+            .args(["-L", "-o"])
+            .arg(&dest_path)
+            .arg(DUCKSTATION_DOWNLOAD_URL)
+            .status()
+    } else if which::which("wget").is_ok() {
+        Command::new("wget")
+            .args(["-O"])
+            .arg(&dest_path)
+            .arg(DUCKSTATION_DOWNLOAD_URL)
+            .status()
+    } else {
         FzfWrapper::message(&format!(
-            "{} Downloading DuckStation...\n\n\
-             This may take a few minutes.\n\
-             Destination: {}",
-            char::from(NerdFont::CloudDownload),
-            dest_path.display()
+            "{} Neither curl nor wget found!\n\n\
+             Please install curl or wget to download automatically,\n\
+             or download manually from:\n{}",
+            char::from(NerdFont::CrossCircle),
+            DUCKSTATION_DOWNLOAD_URL
         ))?;
+        return Ok(None);
+    };
 
-        // Use curl or wget to download (synchronously, as this is simpler for AppImages)
-        let download_result = if which::which("curl").is_ok() {
-            Command::new("curl")
-                .args(["-L", "-o"])
-                .arg(&dest_path)
-                .arg(DUCKSTATION_DOWNLOAD_URL)
-                .status()
-        } else if which::which("wget").is_ok() {
-            Command::new("wget")
-                .args(["-O"])
-                .arg(&dest_path)
-                .arg(DUCKSTATION_DOWNLOAD_URL)
-                .status()
-        } else {
+    match download_result {
+        Ok(status) if status.success() => {
+            // Make it executable
+            let mut perms = fs::metadata(&dest_path)
+                .context("Failed to get file metadata")?
+                .permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&dest_path, perms).context("Failed to make AppImage executable")?;
+
             FzfWrapper::message(&format!(
-                "{} Neither curl nor wget found!\n\n\
-                 Please install curl or wget to download automatically,\n\
-                 or download manually from:\n{}",
+                "{} DuckStation downloaded successfully!\n\n\
+                 Location: {}",
+                char::from(NerdFont::Check),
+                dest_path.display()
+            ))?;
+
+            Ok(Some(dest_path))
+        }
+        Ok(_) => {
+            // Download failed
+            FzfWrapper::message(&format!(
+                "{} Download failed!\n\n\
+                 Please download manually from:\n{}",
                 char::from(NerdFont::CrossCircle),
                 DUCKSTATION_DOWNLOAD_URL
             ))?;
-            return Ok(None);
-        };
 
-        match download_result {
-            Ok(status) if status.success() => {
-                // Make it executable
-                let mut perms = fs::metadata(&dest_path)
-                    .context("Failed to get file metadata")?
-                    .permissions();
-                perms.set_mode(0o755);
-                fs::set_permissions(&dest_path, perms)
-                    .context("Failed to make AppImage executable")?;
-
-                FzfWrapper::message(&format!(
-                    "{} DuckStation downloaded successfully!\n\n\
-                     Location: {}",
-                    char::from(NerdFont::Check),
-                    dest_path.display()
-                ))?;
-
-                Ok(Some(dest_path))
-            }
-            Ok(_) => {
-                // Download failed
-                FzfWrapper::message(&format!(
-                    "{} Download failed!\n\n\
-                     Please download manually from:\n{}",
-                    char::from(NerdFont::CrossCircle),
-                    DUCKSTATION_DOWNLOAD_URL
-                ))?;
-
-                // Clean up partial download
-                let _ = fs::remove_file(&dest_path);
-                Ok(None)
-            }
-            Err(e) => {
-                FzfWrapper::message(&format!(
-                    "{} Download error: {}\n\n\
-                     Please download manually from:\n{}",
-                    char::from(NerdFont::CrossCircle),
-                    e,
-                    DUCKSTATION_DOWNLOAD_URL
-                ))?;
-                Ok(None)
-            }
+            // Clean up partial download
+            let _ = fs::remove_file(&dest_path);
+            Ok(None)
         }
-    }
-
-    fn select_duckstation_manually() -> Result<Option<PathBuf>> {
-        select_appimage_manually(AppImageSelectionPrompt::new(
-            format!("{} Select DuckStation AppImage", char::from(NerdFont::Disc)),
-            format!(
-                "{} Select the DuckStation AppImage file (e.g., {})",
-                char::from(NerdFont::Info),
-                DEFAULT_DUCKSTATION_PATH
-            ),
-            "DuckStation AppImage not found at: {}".to_string(),
-        ))
-    }
-
-    fn select_game_file() -> Result<Option<PathBuf>> {
-        select_file_with_validation(
-            FileSelectionPrompt::game_file(
-                format!(
-                    "{} Select PlayStation 1 Game File",
-                    char::from(NerdFont::Disc)
-                ),
-                format!(
-                    "{} Select a PS1 game file ({})",
-                    char::from(NerdFont::Info),
-                    format_valid_extensions(DUCKSTATION_EXTENSIONS)
-                ),
-            ),
-            |path| validate_game_file(path, "DuckStation", DUCKSTATION_EXTENSIONS),
-        )
-    }
-
-    fn ask_batch_mode() -> Result<bool> {
-        match FzfWrapper::builder()
-            .confirm(format!(
-                "{} Use batch mode?\n\n\
-                 Batch mode will start the game directly without showing\n\
-                 the DuckStation main window first.",
-                char::from(NerdFont::Terminal)
-            ))
-            .yes_text("Yes, start game directly")
-            .no_text("No, show main window")
-            .confirm_dialog()?
-        {
-            ConfirmResult::Yes => Ok(true),
-            _ => Ok(false),
-        }
-    }
-
-    fn build_launch_command(
-        duckstation_path: &Path,
-        game_file: &Path,
-        fullscreen: bool,
-        batch_mode: bool,
-    ) -> LaunchCommand {
-        LaunchCommand {
-            wrappers: Default::default(),
-            kind: LaunchCommandKind::Emulator(EmulatorLaunchCommand {
-                platform: EmulatorPlatform::DuckStation,
-                launcher: EmulatorLauncher::AppImage {
-                    path: duckstation_path.to_path_buf(),
-                },
-                game: game_file.to_path_buf(),
-                options: EmulatorOptions {
-                    fullscreen,
-                    batch_mode,
-                },
-            }),
+        Err(e) => {
+            FzfWrapper::message(&format!(
+                "{} Download error: {}\n\n\
+                 Please download manually from:\n{}",
+                char::from(NerdFont::CrossCircle),
+                e,
+                DUCKSTATION_DOWNLOAD_URL
+            ))?;
+            Ok(None)
         }
     }
 }

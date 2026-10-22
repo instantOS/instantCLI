@@ -76,6 +76,12 @@ impl DiscoveredGame for SteamDiscoveredGame {
         Some(&self.prefix_path)
     }
 
+    fn launch_hint(&self) -> Option<super::DiscoveryLaunchHint> {
+        Some(super::DiscoveryLaunchHint::Steam {
+            app_id: self.app_id,
+        })
+    }
+
     fn platform_name(&self) -> &'static str {
         "Steam"
     }

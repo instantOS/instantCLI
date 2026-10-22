@@ -35,9 +35,6 @@ const NAND_SAVE_SUBPATH: &str = "nand/user/save/0000000000000000";
 /// Special game directory names that should be skipped when scanning
 const SPECIAL_GAMEDIRS: &[&str] = &["SDMC", "UserNAND", "SysNAND"];
 
-/// Valid Switch game file extensions (case-insensitive)
-const SWITCH_GAME_EXTENSIONS: &[&str] = &["nsp", "xci"];
-
 /// A discovered Eden game with save data
 #[derive(Debug, Clone)]
 pub struct EdenDiscoveredGame {
@@ -78,6 +75,14 @@ impl DiscoveredGame for EdenDiscoveredGame {
 
     fn game_path(&self) -> Option<&PathBuf> {
         self.game_path.as_ref()
+    }
+
+    fn launch_hint(&self) -> Option<super::DiscoveryLaunchHint> {
+        Some(super::DiscoveryLaunchHint::Emulator {
+            platform: crate::game::launch_command::EmulatorPlatform::Eden,
+            source: super::EmulatorSaveSource::Native,
+            game: self.game_path.clone(),
+        })
     }
 
     fn platform_name(&self) -> &'static str {
@@ -312,12 +317,10 @@ pub(crate) fn collect_configured_rom_files() -> Vec<PathBuf> {
 
 /// Check if a file has a valid Switch game extension
 fn is_switch_game_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| {
-            let lower = ext.to_lowercase();
-            SWITCH_GAME_EXTENSIONS.iter().any(|&valid| lower == valid)
-        })
+    crate::game::platforms::validation::has_valid_extension(
+        path,
+        crate::game::launch_command::EmulatorPlatform::Eden.extensions(),
+    )
 }
 
 // ---------------------------------------------------------------------------

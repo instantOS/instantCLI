@@ -24,15 +24,13 @@ impl GameCreationContext {
     }
 
     pub(super) fn installation_exists(&self, name: &str) -> bool {
-        self.installations
-            .installations
-            .iter()
-            .any(|inst| inst.game_name.0 == name)
+        self.config
+            .resolve_owner(&self.installations, &self.config.owner_id(name))
+            .is_ok()
     }
 
     pub(super) fn save(&self) -> Result<()> {
-        self.config.save()?;
-        self.installations.save()?;
+        crate::game::config::save_pair(&self.config, &self.installations)?;
         Ok(())
     }
 }
@@ -74,6 +72,9 @@ impl GameManager {
                             continue;
                         };
                         return Self::finish_add_game(&mut context, details);
+                    }
+                    EmulatorPrefillResult::ConfigureSharedDirectory { path, name } => {
+                        return crate::game::save_groups::configure_discovered(&path, &name);
                     }
                     EmulatorPrefillResult::Cancelled => {
                         return Ok(());
@@ -141,6 +142,12 @@ impl GameManager {
             return Ok(());
         }
 
+        let id = context.config.owner_id(&game_name);
+        let _lock = crate::game::save_runtime::SaveLock::owner(&id)?;
+        anyhow::ensure!(
+            matches!(id, crate::game::ownership::OwnerId::Game(_)),
+            "This game uses shared saves; use ins game group bind to relocate the whole group"
+        );
         let new_path = super::relocate::resolve_relocation_save_path(&game_name, new_path)?;
         let save_path_type = super::relocate::determine_save_path_type(&new_path)?;
 

@@ -39,7 +39,7 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
         return Ok(());
     }
 
-    let selected = if let Some(requested) = game_name {
+    let mut selected = if let Some(requested) = game_name {
         match launchables.iter().find(|game| game.name == requested) {
             Some(game) => game.clone(),
             None => {
@@ -54,30 +54,46 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
         }
     };
 
-    println!(
-        "Launching {} using {}",
-        selected.name,
-        selected.source.label()
-    );
-
-    let title = format!("InstantCLI - {}", selected.name);
-    let report = ui
-        .sync(&title, Duration::ZERO)
-        .context("Pre-launch save sync failed")?;
-    ensure_game_synced(&report, &selected.name, "Pre-launch")?;
-    // Unrelated failures shouldn't block this game, but must remain visible.
-    if let Err(error) = report.ensure_success() {
-        ui.error(&format!("Some other games failed to sync:\n{error:#}"));
-    }
-
-    after_launch(run_launch_command(&selected), || {
-        let report = ui
-            .sync(&title, POST_LAUNCH_SYNC_DELAY)
-            .context("Post-exit save sync failed")?;
-        ensure_game_synced(&report, &selected.name, "Post-exit")?;
-        if let Err(error) = report.ensure_success() {
-            ui.error(&format!("Some other games failed to sync:\n{error:#}"));
+    game_config.validate_ownership(&installations)?;
+    let owner_id = game_config.owner_id(&selected.name);
+    let _owner_lock = crate::game::save_runtime::SaveLock::owner(&owner_id)?;
+    let owner = game_config.resolve_owner(&InstallationsConfig::load()?, &owner_id)?;
+    if let crate::game::launch_command::LaunchCommandKind::Emulator(emulator) =
+        &selected.effective_command.kind
+    {
+        if emulator.platform == crate::game::launch_command::EmulatorPlatform::Pcsx2 {
+            crate::game::platforms::pcsx2::verify(emulator, &owner)?;
+        } else if matches!(owner_id, crate::game::ownership::OwnerId::Group(_)) {
+            anyhow::bail!(
+                "Automatic shared-save launch verification is currently supported for PCSX2. Use explicit sync and a directly tracked PCSX2 launch command"
+            );
         }
+    } else if matches!(owner_id, crate::game::ownership::OwnerId::Group(_)) {
+        anyhow::bail!(
+            "This shared-save launch command cannot be verified or tracked. Use a directly configured PCSX2 command, or sync the declared group manually"
+        );
+    }
+    // PCSX2 batch mode exits when the VM shuts down, retaining the owner lock
+    // for its entire lifetime. Shell parsing rejects unrecognized extra flags.
+    if let crate::game::launch_command::LaunchCommandKind::Emulator(emulator) =
+        &mut selected.effective_command.kind
+        && emulator.platform == crate::game::launch_command::EmulatorPlatform::Pcsx2
+    {
+        emulator.options.batch_mode = true;
+    }
+    let title = format!("InstantCLI - {}", selected.name);
+    let report = ui.sync_owner(&title, Duration::ZERO, &selected.name, &owner_id)?;
+    ensure_game_synced(&report, &selected.name, "Pre-launch")?;
+    ui.notify_conflicts(&report);
+    after_launch(run_launch_command(&selected), || {
+        if let crate::game::launch_command::LaunchCommandKind::Emulator(emulator) =
+            &selected.effective_command.kind
+            && emulator.platform == crate::game::launch_command::EmulatorPlatform::Pcsx2
+        {
+            crate::game::platforms::pcsx2::verify(emulator, &owner)?;
+        }
+        let report = ui.sync_owner(&title, POST_LAUNCH_SYNC_DELAY, &selected.name, &owner_id)?;
+        ensure_game_synced(&report, &selected.name, "Post-exit")?;
         ui.completed(&report);
         Ok(())
     })?;

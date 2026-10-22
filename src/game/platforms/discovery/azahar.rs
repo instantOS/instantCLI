@@ -38,9 +38,6 @@ const FLATPAK_CONFIG_DIR: &str = "~/.var/app/org.azahar_emu.Azahar/config/azahar
 /// SDMC subpath (relative to data dir)
 const SDMC_SUBPATH: &str = "sdmc/Nintendo 3DS";
 
-/// Valid 3DS game file extensions (case-insensitive)
-const AZAHAR_GAME_EXTENSIONS: &[&str] = &["3ds", "3dsx", "cia", "app", "cci", "cxi"];
-
 #[derive(Debug, Clone)]
 pub struct AzaharDiscoveredGame {
     pub display_name: String,
@@ -98,6 +95,17 @@ impl DiscoveredGame for AzaharDiscoveredGame {
 
     fn game_path(&self) -> Option<&PathBuf> {
         self.game_path.as_ref()
+    }
+
+    fn launch_hint(&self) -> Option<super::DiscoveryLaunchHint> {
+        Some(super::DiscoveryLaunchHint::Emulator {
+            platform: crate::game::launch_command::EmulatorPlatform::Azahar,
+            source: match self.install_type {
+                AzaharInstallType::Native => super::EmulatorSaveSource::Native,
+                AzaharInstallType::Flatpak => super::EmulatorSaveSource::Flatpak,
+            },
+            game: self.game_path.clone(),
+        })
     }
 
     fn platform_name(&self) -> &'static str {
@@ -382,12 +390,10 @@ fn collect_rom_sources(config_dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
 
 /// Check if a file has a valid 3DS game extension
 fn is_azahar_game_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| {
-            let lower = ext.to_lowercase();
-            AZAHAR_GAME_EXTENSIONS.iter().any(|&valid| lower == valid)
-        })
+    crate::game::platforms::validation::has_valid_extension(
+        path,
+        crate::game::launch_command::EmulatorPlatform::Azahar.extensions(),
+    )
 }
 
 /// Build an index mapping title IDs to ROM paths.

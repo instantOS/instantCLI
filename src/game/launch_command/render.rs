@@ -121,6 +121,12 @@ fn render_emulator(emulator: &EmulatorLaunchCommand) -> Vec<String> {
             parts.push(shell_escape(&emulator.game.to_string_lossy()));
         }
         EmulatorPlatform::Pcsx2 | EmulatorPlatform::DuckStation => {
+            if let Some(path) = &emulator.options.data_path {
+                parts.extend(["-datapath".into(), shell_escape(&path.to_string_lossy())]);
+            }
+            if let Some(path) = &emulator.options.game_config {
+                parts.extend(["-gamecfg".into(), shell_escape(&path.to_string_lossy())]);
+            }
             if emulator.options.batch_mode {
                 parts.push("-batch".to_string());
             }

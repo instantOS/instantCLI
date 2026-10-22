@@ -1,7 +1,6 @@
 mod decision;
-mod execution;
+pub(crate) mod execution;
 mod types;
-mod ui;
 
 use crate::common::progress::create_spinner;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
@@ -79,6 +78,21 @@ impl SyncReport {
         )
     }
 
+    pub fn conflict_messages(&self) -> Vec<&str> {
+        let mut messages: Vec<_> = self
+            .games
+            .iter()
+            .filter_map(|outcome| match &outcome.status {
+                GameSyncStatus::BackedUpNewest(message)
+                | GameSyncStatus::RestoredNewest(message) => Some(message.as_str()),
+                _ => None,
+            })
+            .collect();
+        messages.sort_unstable();
+        messages.dedup();
+        messages
+    }
+
     /// Error message if the given game's sync failed
     pub fn failure_for(&self, game_name: &str) -> Option<&str> {
         self.games
@@ -110,37 +124,74 @@ pub fn sync_game_saves(
     let installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
-    sync_configured_game_saves(game_name, force, progress, game_config, installations)
+    sync_configured(
+        game_name,
+        force,
+        progress,
+        game_config,
+        installations,
+        &[],
+        true,
+    )
 }
 
-fn sync_configured_game_saves(
+pub(crate) fn sync_held_owner(
+    game_name: String,
+    owner: &crate::game::ownership::OwnerId,
+    progress: &mut dyn FnMut(&str),
+) -> Result<SyncReport> {
+    let config = InstantGameConfig::load()?;
+    anyhow::ensure!(
+        config.owner_id(&game_name) == *owner,
+        "Save ownership changed during play; synchronize the new configuration explicitly"
+    );
+    sync_configured(
+        Some(game_name),
+        false,
+        progress,
+        config,
+        InstallationsConfig::load()?,
+        std::slice::from_ref(owner),
+        true,
+    )
+}
+
+pub(crate) fn sync_held_all(
+    owners: &[crate::game::ownership::OwnerId],
+    progress: &mut dyn FnMut(&str),
+) -> Result<SyncReport> {
+    if owners.is_empty() {
+        return Ok(SyncReport::default());
+    }
+    sync_configured(
+        None,
+        false,
+        progress,
+        InstantGameConfig::load()?,
+        InstallationsConfig::load()?,
+        owners,
+        true,
+    )
+}
+
+fn sync_configured(
     game_name: Option<String>,
     force: bool,
     progress: &mut dyn FnMut(&str),
     game_config: InstantGameConfig,
     installations: InstallationsConfig,
+    held_owners: &[crate::game::ownership::OwnerId],
+    use_disk: bool,
 ) -> Result<SyncReport> {
-    // Determine which games to sync
-    let games_to_sync = if let Some(name) = game_name {
-        // Sync specific game
-        match installations
-            .installations
-            .iter()
-            .find(|inst| inst.game_name.0 == name)
-        {
-            Some(installation) => vec![installation.clone()],
-            None => {
-                ui::report_installation_missing(&name);
-                return Err(anyhow::anyhow!("game installation not found"));
-            }
-        }
-    } else {
-        // Sync all games
-        installations.installations.clone()
+    game_config.validate_ownership(&installations)?;
+    let owners_to_sync = match game_name {
+        Some(name) => vec![game_config.owner_id(&name)],
+        None if !held_owners.is_empty() => held_owners.to_vec(),
+        None => game_config.bound_owner_ids(&installations),
     };
 
-    if games_to_sync.is_empty() {
-        ui::report_no_games_configured();
+    if owners_to_sync.is_empty() {
+        println!("No save owners configured for syncing.");
         return Ok(SyncReport::default());
     }
 
@@ -148,109 +199,142 @@ fn sync_configured_game_saves(
     validation::check_restic_and_game_manager(&game_config)?;
 
     let mut report = SyncReport::default();
+    let mut view = crate::game::restic::cache::SnapshotView::default();
 
-    // Sync each game
-    for installation in games_to_sync {
-        let game_name_plain = installation.game_name.0.clone();
+    // Shared owners are visited once, with outcomes propagated to every member.
+    for owner_id in owners_to_sync {
+        let _owner_lock = if held_owners.contains(&owner_id) {
+            None
+        } else {
+            Some(crate::game::save_runtime::SaveLock::owner(&owner_id)?)
+        };
+        // Reload after acquiring the lock: another operation may have advanced state.
+        let current = if use_disk {
+            InstallationsConfig::load()?
+        } else {
+            installations.clone()
+        };
+        game_config.validate_ownership(&current)?;
+        let installation = game_config.resolve_owner(&current, &owner_id)?;
+        let game_name_plain = installation.name.clone();
 
         let message = format!("{}: Checking sync status...", game_name_plain);
         progress(&message);
         let spinner = create_spinner(message);
-        let action_result = decision::determine_action(&installation, &game_config, force);
+        let action_result =
+            decision::determine_action(&installation, &game_config, force, &mut view);
         spinner.finish_and_clear();
-
-        let status = match action_result {
-            Ok(action) => match action {
-                SyncAction::NoActionNeeded => {
-                    ui::report_no_action_needed(&game_name_plain);
-                    GameSyncStatus::Skipped
-                }
-                SyncAction::WithinTolerance {
-                    direction,
-                    delta_seconds,
-                } => {
-                    ui::report_within_tolerance(&game_name_plain, direction, delta_seconds);
-                    GameSyncStatus::Skipped
-                }
-                SyncAction::RestoreSkipped(snapshot_id) => {
-                    ui::report_restore_skipped(&game_name_plain, &snapshot_id);
-                    GameSyncStatus::Skipped
-                }
-                SyncAction::BackupSkipped(snapshot_id) => {
-                    ui::report_backup_skipped(&game_name_plain, &snapshot_id);
-                    GameSyncStatus::Skipped
-                }
-                SyncAction::CreateBackup => {
-                    let message = format!("{}: Creating backup...", game_name_plain);
-                    progress(&message);
-                    let spinner = create_spinner(message);
-                    let result = execution::perform_backup(&installation, &game_config);
-                    spinner.finish_and_clear();
-                    ui::report_backup_result(&game_name_plain, &result);
-                    sync_status(result, GameSyncStatus::BackedUp)
-                }
-                SyncAction::RestoreFromSnapshot(snapshot_id) => {
-                    let message = format!("{}: Restoring from snapshot...", game_name_plain);
-                    progress(&message);
-                    let spinner = create_spinner(message);
-                    let result =
-                        execution::perform_restore(&installation, &game_config, &snapshot_id);
-                    spinner.finish_and_clear();
-                    ui::report_restore_result(&game_name_plain, &snapshot_id, &result);
-                    sync_status(result, GameSyncStatus::Restored)
-                }
-                SyncAction::RestoreFromLatest(snapshot_id) => {
-                    let message = format!("{}: Restoring latest backup...", game_name_plain);
-                    progress(&message);
-                    let spinner = create_spinner(message);
-                    let result =
-                        execution::perform_restore(&installation, &game_config, &snapshot_id);
-                    spinner.finish_and_clear();
-                    ui::report_restore_latest_result(&game_name_plain, &snapshot_id, &result);
-                    sync_status(result, GameSyncStatus::Restored)
-                }
-                SyncAction::CreateInitialBackup => {
-                    let message = format!("{}: Creating initial backup...", game_name_plain);
-                    progress(&message);
-                    let spinner = create_spinner(message);
-                    let result = execution::perform_backup(&installation, &game_config);
-                    spinner.finish_and_clear();
-                    ui::report_initial_backup_result(&game_name_plain, &result);
-                    sync_status(result, GameSyncStatus::BackedUp)
-                }
-                SyncAction::Error(msg) => {
-                    ui::report_error(&game_name_plain, &msg);
-                    GameSyncStatus::Failed(msg)
-                }
-            },
-            Err(e) => {
-                ui::report_sync_failure(&game_name_plain, &e);
-                GameSyncStatus::Failed(e.to_string())
-            }
+        let result = match action_result {
+            Ok(action) => execute_action(&installation, &game_config, action, &mut view),
+            Err(error) => Err(error),
         };
+        let status = result.unwrap_or_else(|error| GameSyncStatus::Failed(format!("{error:#}")));
+        if let GameSyncStatus::Failed(message) = &status {
+            eprintln!("{}: {message}", installation.name);
+        }
 
         match status {
-            GameSyncStatus::BackedUp => report.summary.backed_up += 1,
-            GameSyncStatus::Restored => report.summary.restored += 1,
+            GameSyncStatus::BackedUp | GameSyncStatus::BackedUpNewest(_) => {
+                report.summary.backed_up += 1
+            }
+            GameSyncStatus::Restored | GameSyncStatus::RestoredNewest(_) => {
+                report.summary.restored += 1
+            }
             GameSyncStatus::Skipped => report.summary.skipped += 1,
             GameSyncStatus::Failed(_) => report.summary.errors += 1,
         }
-        report.games.push(GameSyncOutcome {
-            game: game_name_plain,
-            status,
-        });
+        for member in &installation.members {
+            report.games.push(GameSyncOutcome {
+                game: member.clone(),
+                status: status.clone(),
+            });
+        }
     }
 
     // Print summary
-    ui::report_summary(&report.summary);
+    println!("{}", report.completion_message());
 
     Ok(report)
 }
 
+#[cfg(test)]
 fn sync_status(result: Result<()>, completed: GameSyncStatus) -> GameSyncStatus {
     match result {
         Ok(()) => completed,
         Err(e) => GameSyncStatus::Failed(e.to_string()),
+    }
+}
+
+pub(crate) fn sync_single_owner(
+    owner: &crate::game::ownership::SaveOwner,
+    config: &InstantGameConfig,
+) -> Result<()> {
+    let mut view = crate::game::restic::cache::SnapshotView::default();
+    let status = execute_action(
+        owner,
+        config,
+        decision::determine_action(owner, config, false, &mut view)?,
+        &mut view,
+    )?;
+    if let GameSyncStatus::BackedUpNewest(message) | GameSyncStatus::RestoredNewest(message) =
+        status
+    {
+        println!("{message}");
+    }
+    Ok(())
+}
+
+fn execute_action(
+    owner: &crate::game::ownership::SaveOwner,
+    config: &InstantGameConfig,
+    mut action: SyncAction,
+    view: &mut crate::game::restic::cache::SnapshotView,
+) -> Result<GameSyncStatus> {
+    let mut current = owner.clone();
+    for attempt in 0..3 {
+        match execute_once(&current, config, action, view) {
+            Err(error)
+                if error.is::<crate::game::save_runtime::ConcurrentSaveVersions>()
+                    && attempt < 2 =>
+            {
+                current = config.resolve_owner(&InstallationsConfig::load()?, &owner.id)?;
+                action = SyncAction::ResolveNewest;
+            }
+            result => return result,
+        }
+    }
+    Err(crate::game::save_runtime::ConcurrentSaveVersions.into())
+}
+
+fn execute_once(
+    owner: &crate::game::ownership::SaveOwner,
+    config: &InstantGameConfig,
+    action: SyncAction,
+    view: &mut crate::game::restic::cache::SnapshotView,
+) -> Result<GameSyncStatus> {
+    match action {
+        SyncAction::NoActionNeeded => Ok(GameSyncStatus::Skipped),
+        SyncAction::CreateBackup => {
+            execution::perform_backup(owner, config, view)?;
+            Ok(GameSyncStatus::BackedUp)
+        }
+        SyncAction::RestoreFromSnapshot(id) => {
+            execution::perform_restore_with_view(owner, config, &id, view)?;
+            Ok(GameSyncStatus::Restored)
+        }
+        SyncAction::AcknowledgeSnapshot(id) => {
+            execution::acknowledge_snapshot(owner, config, &id)?;
+            Ok(GameSyncStatus::Skipped)
+        }
+        SyncAction::ResolveNewest => {
+            let (restored, message) = execution::resolve_newest(owner, config, view)?;
+            println!("{message}");
+            Ok(if restored {
+                GameSyncStatus::RestoredNewest(message)
+            } else {
+                GameSyncStatus::BackedUpNewest(message)
+            })
+        }
     }
 }
 
@@ -260,12 +344,14 @@ mod tests {
 
     #[test]
     fn empty_installations_sync_without_initialized_repository() {
-        let report = sync_configured_game_saves(
+        let report = sync_configured(
             None,
             false,
             &mut |_| panic!("Empty sync must not report progress"),
             InstantGameConfig::default(),
             InstallationsConfig::default(),
+            &[],
+            false,
         )
         .unwrap();
         assert!(report.games.is_empty());

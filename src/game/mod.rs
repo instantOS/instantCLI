@@ -7,10 +7,13 @@ pub mod games;
 pub mod launch_command;
 pub mod menu;
 pub mod operations;
+pub(crate) mod ownership;
 pub mod platforms;
 pub(crate) mod reconciliation;
 pub mod repository;
 pub mod restic;
+pub(crate) mod save_groups;
+pub(crate) mod save_runtime;
 pub mod setup;
 pub mod utils;
 

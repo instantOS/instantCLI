@@ -29,6 +29,9 @@ main() {
 	echo "save" >"${epic_extra_save_dir}/profile1.sav"
 	echo "save" >"${steam_save_dir}/save1.sav"
 	echo "save" >"${wine_save_dir}/profile1.sav"
+	mkdir -p "${HOME}/.config/PCSX2/memcards" "${HOME}/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards"
+	echo "card" >"${HOME}/.config/PCSX2/memcards/Native.PS2"
+	echo "card" >"${HOME}/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards/Flatpak.ps2"
 
 	cat >"${XDG_CACHE_HOME}/instant/ludusavi-manifest.yaml" <<'EOF'
 "Sable":
@@ -128,14 +131,22 @@ EOF
 	steam_only_json="$(ins --output json game discover --source steam)"
 	echo "${steam_only_json}" | jq -e '
 		.code == "game.discover" and
-		(.data.games | map(select(.name == "Test Steam Game" and .platform_short == "Steam")) | length) == 1
+		(.data.games | map(select(.name == "Test Steam Game" and .platform_short == "Steam" and .launch_hint.kind == "steam" and .launch_hint.app_id == 12345)) | length) == 1
 	' >/dev/null
 
 	local wine_only_json
 	wine_only_json="$(ins --output json game discover --source wine)"
 	echo "${wine_only_json}" | jq -e '
 		.code == "game.discover" and
-		(.data.games | map(select(.name == "Test Wine Game" and .platform_short == "Wine")) | length) == 1
+		(.data.games | map(select(.name == "Test Wine Game" and .platform_short == "Wine" and .launch_hint.kind == "wine" and .launch_hint.prefix == "'"${wine_prefix}"'")) | length) == 1
+	' >/dev/null
+
+	local ps2_json
+	ps2_json="$(ins --output json game discover --source ps2)"
+	echo "${ps2_json}" | jq -e '
+		(.data.games | length) == 2 and
+		(.data.games | map(select(.name == "PS2 memory cards (Native/AppImage)" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "native" and .launch_hint.game == null)) | length) == 1 and
+		(.data.games | map(select(.name == "PS2 memory cards (Flatpak)" and .launch_hint.platform == "pcsx2" and .launch_hint.source == "flatpak")) | length) == 1
 	' >/dev/null
 
 	local menu_output

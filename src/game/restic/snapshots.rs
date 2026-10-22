@@ -23,15 +23,21 @@ pub fn list_snapshots(game_name: Option<String>) -> Result<()> {
 
     let snapshots_json = match &game_name {
         Some(name) => restic
-            .list_snapshots_filtered(Some(tags::create_game_tags(name)))
+            .list_snapshots_filtered(Some(game_config.owner_id(name).tags()))
             .with_context(|| format!("Failed to list snapshots for '{name}'"))?,
         None => restic
-            .list_snapshots_filtered(Some(vec![tags::INSTANT_GAME_TAG.to_string()]))
+            .list_snapshots_filtered(None)
             .context("Failed to list game snapshots")?,
     };
 
     let mut snapshots: Vec<Snapshot> =
         serde_json::from_str(&snapshots_json).context("Failed to parse snapshot data")?;
+    snapshots.retain(|snapshot| {
+        snapshot
+            .tags
+            .iter()
+            .any(|tag| tag == tags::INSTANT_GAME_TAG || tag == "instantgame-group")
+    });
     snapshots.sort_by_key(|snapshot| std::cmp::Reverse(parse_snapshot_time(&snapshot.time)));
 
     let installations = InstallationsConfig::load().unwrap_or_default();
@@ -40,10 +46,19 @@ pub fn list_snapshots(game_name: Option<String>) -> Result<()> {
         .iter()
         .filter_map(|installation| {
             installation
+                .saves
+                .as_ref()?
                 .nearest_checkpoint
                 .as_ref()
                 .map(|checkpoint| (installation.game_name.0.clone(), checkpoint.clone()))
         })
+        .chain(installations.save_groups.iter().filter_map(|binding| {
+            binding
+                .saves
+                .nearest_checkpoint
+                .as_ref()
+                .map(|checkpoint| (format!("[group:{}]", binding.id), checkpoint.clone()))
+        }))
         .collect();
 
     if snapshots.is_empty() {
@@ -109,7 +124,16 @@ struct SnapshotListEntry {
 
 impl SnapshotListEntry {
     fn from_snapshot(snapshot: &Snapshot, checkpoints: &HashMap<String, String>) -> Self {
-        let game_name = tags::extract_game_name_from_tags(&snapshot.tags);
+        let game_name = if snapshot.tags.iter().any(|tag| tag == "instantgame-group") {
+            snapshot
+                .tags
+                .iter()
+                .find(|tag| !tag.starts_with("instantgame"))
+                .and_then(|tag| tags::decode_game_name_from_tag(tag).ok())
+                .map(|id| format!("[group:{id}]"))
+        } else {
+            tags::extract_game_name_from_tags(&snapshot.tags)
+        };
         let is_current_checkpoint = game_name
             .as_ref()
             .and_then(|name| checkpoints.get(name))
