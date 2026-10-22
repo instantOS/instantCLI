@@ -1,7 +1,3 @@
-use std::path::PathBuf;
-
-use super::EmulatorPlatform;
-
 pub fn matches_flatpak_app<'a>(tokens: &'a [String], app_id: &str) -> Option<&'a [String]> {
     match tokens {
         [flatpak, run, token_app_id, tail @ ..]
@@ -11,16 +7,4 @@ pub fn matches_flatpak_app<'a>(tokens: &'a [String], app_id: &str) -> Option<&'a
         }
         _ => None,
     }
-}
-
-pub fn matches_appimage(path: &str, platform: EmulatorPlatform) -> bool {
-    file_name_lower(path)
-        .is_some_and(|name| name.ends_with(".appimage") && name.contains(platform.id()))
-}
-
-fn file_name_lower(path: &str) -> Option<String> {
-    PathBuf::from(path)
-        .file_name()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_lowercase())
 }

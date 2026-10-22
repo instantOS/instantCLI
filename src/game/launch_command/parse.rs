@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use super::detect::{matches_appimage, matches_flatpak_app};
+use super::detect::matches_flatpak_app;
 use super::render::shell_escape;
 use super::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, GamescopeOptions,
@@ -138,7 +138,7 @@ fn parse_emulator_command(tokens: &[String]) -> Option<LaunchCommandKind> {
         } else {
             tokens
                 .first()
-                .filter(|path| matches_appimage(path, platform))
+                .filter(|path| platform.matches_appimage(std::path::Path::new(path)))
                 .map(|path| {
                     (
                         EmulatorLauncher::AppImage {

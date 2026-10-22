@@ -10,7 +10,7 @@ use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable, FzfWrapper}
 use crate::ui::nerd_font::NerdFont;
 
 use super::LaunchCommandBuilderContext;
-use super::appimage_finder::find_appimages_by_paths;
+use super::appimage_finder::find_appimages;
 use super::flatpak::is_flatpak_app_installed;
 use super::prompts::{
     FileSelectionPrompt, ask_fullscreen, confirm_value, select_file_with_validation,
@@ -21,7 +21,7 @@ use super::validation::{format_valid_extensions, validate_game_file};
 /// Callers doing discovery can provide an installation hint to avoid switching
 /// between independent emulator save/config directories.
 pub(crate) fn detected_launchers(platform: EmulatorPlatform) -> Result<Vec<EmulatorLauncher>> {
-    let mut launchers: Vec<_> = find_appimages_by_paths(platform.appimage_paths())
+    let mut launchers: Vec<_> = find_appimages(platform)
         .into_iter()
         .map(|path| EmulatorLauncher::AppImage { path })
         .collect();
@@ -94,15 +94,8 @@ fn select_launcher(
                 return super::duckstation::select_or_download()
                     .map(|path| path.map(|path| EmulatorLauncher::AppImage { path }));
             }
-            super::prompts::select_appimage_manually(super::prompts::AppImageSelectionPrompt::new(
-                format!("Select {} AppImage", platform.name()),
-                format!(
-                    "No installation detected. Select the {} AppImage.",
-                    platform.name()
-                ),
-                "AppImage not found at: {}".to_string(),
-            ))
-            .map(|path| path.map(|path| EmulatorLauncher::AppImage { path }))
+            super::prompts::select_appimage_manually(platform.name())
+                .map(|path| path.map(|path| EmulatorLauncher::AppImage { path }))
         }
         [launcher] => Ok(Some(launcher.clone())),
         _ => match FzfWrapper::builder()

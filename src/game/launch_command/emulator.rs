@@ -80,28 +80,13 @@ impl EmulatorPlatform {
         }
     }
 
-    pub fn appimage_paths(self) -> &'static [&'static str] {
-        match self {
-            Self::Eden => &[
-                "~/AppImages/eden.appimage",
-                "~/.local/bin/eden.appimage",
-                "~/.local/share/applications/eden.appimage",
-            ],
-            Self::Pcsx2 => &[
-                "~/Emulation/tools/launchers/pcsx2-qt.AppImage",
-                "~/emulation/tools/launchers/pcsx2-qt.AppImage",
-                "~/AppImages/pcsx2-qt.AppImage",
-            ],
-            Self::DuckStation => &[
-                "~/AppImages/DuckStation-x64.AppImage",
-                "~/AppImages/duckstation.AppImage",
-                "~/.local/bin/DuckStation-x64.AppImage",
-                "~/.local/share/applications/DuckStation-x64.AppImage",
-            ],
-            Self::Azahar => &["~/AppImages/azahar.AppImage"],
-            Self::Dolphin => &["~/AppImages/dolphin.AppImage"],
-            Self::Mgba => &["~/AppImages/mgba.AppImage"],
-        }
+    pub fn matches_appimage(self, path: &std::path::Path) -> bool {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                let name = name.to_ascii_lowercase();
+                name.ends_with(".appimage") && name.contains(self.id())
+            })
     }
 
     pub fn supports_batch_mode(self) -> bool {

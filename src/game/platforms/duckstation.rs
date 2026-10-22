@@ -1,5 +1,5 @@
 //! Optional DuckStation AppImage acquisition when no installation is available.
-use super::prompts::{AppImageSelectionPrompt, select_appimage_manually};
+use super::prompts::select_appimage_manually;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -27,7 +27,7 @@ pub(super) fn select_or_download() -> Result<Option<PathBuf>> {
         .confirm_dialog()?
     {
         ConfirmResult::Yes => download_duckstation(),
-        ConfirmResult::No => select_duckstation_manually(),
+        ConfirmResult::No => select_appimage_manually("DuckStation"),
         ConfirmResult::Cancelled => Ok(None),
     }
 }
@@ -114,16 +114,4 @@ fn download_duckstation() -> Result<Option<PathBuf>> {
             Ok(None)
         }
     }
-}
-
-fn select_duckstation_manually() -> Result<Option<PathBuf>> {
-    select_appimage_manually(AppImageSelectionPrompt::new(
-        format!("{} Select DuckStation AppImage", char::from(NerdFont::Disc)),
-        format!(
-            "{} Select the DuckStation AppImage file (e.g., {})",
-            char::from(NerdFont::Info),
-            DEFAULT_DUCKSTATION_PATH
-        ),
-        "DuckStation AppImage not found at: {}".to_string(),
-    ))
 }

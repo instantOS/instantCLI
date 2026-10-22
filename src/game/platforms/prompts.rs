@@ -19,12 +19,6 @@ pub(super) struct FileSelectionPrompt {
     pub streaming_suggestions: Option<SuggestionProducer>,
 }
 
-pub(super) struct AppImageSelectionPrompt {
-    pub header: String,
-    pub picker_hint: String,
-    pub missing_message: String,
-}
-
 impl FileSelectionPrompt {
     pub(super) fn game_file(header: String, picker_hint: String) -> Self {
         Self {
@@ -82,16 +76,6 @@ impl FileSelectionPrompt {
     pub(super) fn streaming_suggestions(mut self, producer: SuggestionProducer) -> Self {
         self.streaming_suggestions = Some(producer);
         self
-    }
-}
-
-impl AppImageSelectionPrompt {
-    pub(super) fn new(header: String, picker_hint: String, missing_message: String) -> Self {
-        Self {
-            header,
-            picker_hint,
-            missing_message,
-        }
     }
 }
 
@@ -181,49 +165,16 @@ pub(super) fn ask_fullscreen() -> Result<Option<bool>> {
     }
 }
 
-pub(super) fn select_appimage_manually(prompt: AppImageSelectionPrompt) -> Result<Option<PathBuf>> {
-    let selection = PathInputBuilder::new()
-        .header(prompt.header)
-        .scope(FilePickerScope::Files)
-        .picker_hint(prompt.picker_hint)
-        .manual_option_label(format!("{} Type AppImage path", char::from(NerdFont::Edit)))
-        .picker_option_label(format!(
-            "{} Browse for AppImage",
-            char::from(NerdFont::FolderOpen)
-        ))
-        .choose()?;
-
-    match selection {
-        PathInputSelection::Manual(input) => {
-            let path = PathBuf::from(shellexpand::tilde(&input).into_owned());
-            if !path.exists() {
-                FzfWrapper::message(&format!(
-                    "{} {}",
-                    char::from(NerdFont::CrossCircle),
-                    prompt
-                        .missing_message
-                        .replace("{}", &path.display().to_string())
-                ))?;
-                return Ok(None);
-            }
-            Ok(Some(path))
-        }
-        PathInputSelection::Picker(path) => {
-            if !path.exists() {
-                FzfWrapper::message(&format!(
-                    "{} {}",
-                    char::from(NerdFont::CrossCircle),
-                    prompt
-                        .missing_message
-                        .replace("{}", &path.display().to_string())
-                ))?;
-                return Ok(None);
-            }
-            Ok(Some(path))
-        }
-        PathInputSelection::WinePrefix(_) => Ok(None),
-        PathInputSelection::Cancelled => Ok(None),
-    }
+pub(super) fn select_appimage_manually(product_name: &str) -> Result<Option<PathBuf>> {
+    select_file_with_validation(
+        FileSelectionPrompt::new(
+            format!("Select {product_name} AppImage"),
+            format!("Select the {product_name} AppImage file"),
+            format!("{} Type AppImage path", char::from(NerdFont::Edit)),
+            format!("{} Browse for AppImage", char::from(NerdFont::FolderOpen)),
+        ),
+        |path| super::validation::validate_game_file(path, product_name, &["appimage"]),
+    )
 }
 
 pub(super) fn confirm_command(command: &impl std::fmt::Display) -> Result<bool> {
