@@ -87,8 +87,8 @@ impl DiscoveredGame for DiscoveredMemcard {
                 },
             )
             .blank()
-            .text(if self.platform == EmulatorPlatform::Pcsx2 {
-                "Shared memory-card directory:"
+            .text(if self.memcard_path.is_dir() {
+                "Folder memory card:"
             } else {
                 "Memory card:"
             })
@@ -97,7 +97,7 @@ impl DiscoveredGame for DiscoveredMemcard {
             .subtext(if self.is_existing() {
                 "Already tracked — press Enter to open game menu"
             } else {
-                "Shared storage — configure once for all participating games"
+                "Track this card privately, or explicitly assign games to a shared save group"
             })
             .build()
     }
@@ -164,21 +164,6 @@ fn scan_directory(
                 .with_context(|| format!("Failed to scan memory cards in {}", dir.display()));
         }
     };
-    if platform == EmulatorPlatform::Pcsx2 {
-        // The directory covers both slots, folder cards, and cards created later.
-        drop(entries);
-        return Ok(vec![DiscoveredMemcard {
-            display_name: match source {
-                EmulatorSaveSource::Native => "PS2 memory cards (Native/AppImage)",
-                EmulatorSaveSource::Flatpak => "PS2 memory cards (Flatpak)",
-            }
-            .into(),
-            memcard_path: dir.to_path_buf(),
-            platform,
-            source,
-            tracked_name: None,
-        }]);
-    }
     let extensions: &[&str] = match platform {
         EmulatorPlatform::Pcsx2 => &["ps2"],
         EmulatorPlatform::DuckStation => &["mcd", "mcr"],
@@ -189,8 +174,11 @@ fn scan_directory(
         let path = entry
             .with_context(|| format!("Failed to read memory card entry in {}", dir.display()))?
             .path();
-        if path.is_file()
-            && has_valid_extension(&path, extensions)
+        let file_card = path.is_file() && has_valid_extension(&path, extensions);
+        let folder_card = platform == EmulatorPlatform::Pcsx2
+            && path.is_dir()
+            && (has_valid_extension(&path, extensions) || path.join("_pcsx2_superblock").is_file());
+        if (file_card || folder_card)
             && let Some(display_name) = display_name_from_stem(&path)
         {
             results.push(DiscoveredMemcard {
@@ -216,13 +204,19 @@ mod tests {
             std::fs::write(temp.path().join(name), b"card").unwrap();
         }
         std::fs::create_dir(temp.path().join("directory.ps2")).unwrap();
+        std::fs::create_dir(temp.path().join("unrelated-directory")).unwrap();
         for (platform, count) in [
-            (EmulatorPlatform::Pcsx2, 1),
+            (EmulatorPlatform::Pcsx2, 2),
             (EmulatorPlatform::DuckStation, 2),
         ] {
             let mut cards =
                 scan_directory(temp.path(), platform, EmulatorSaveSource::Flatpak).unwrap();
             assert_eq!(cards.len(), count);
+            assert!(cards.iter().all(|card| card.save_path() != temp.path()));
+            if platform == EmulatorPlatform::Pcsx2 {
+                assert!(cards.iter().any(|card| card.save_path().is_file()));
+                assert!(cards.iter().any(|card| card.save_path().is_dir()));
+            }
             assert!(matches!(
                 cards[0].launch_hint(),
                 Some(DiscoveryLaunchHint::Emulator {
@@ -236,6 +230,23 @@ mod tests {
             assert_eq!(cards[0].tracked_name(), Some("Tracked game"));
             assert!(cards[0].is_existing());
         }
+    }
+
+    #[test]
+    fn discovers_folder_card_with_superblock_without_an_extension() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let folder = temp.path().join("Shared folder card");
+        std::fs::create_dir(&folder)?;
+        std::fs::write(folder.join("_pcsx2_superblock"), b"card")?;
+        std::fs::create_dir(temp.path().join("not-a-card"))?;
+        let cards = scan_directory(
+            temp.path(),
+            EmulatorPlatform::Pcsx2,
+            EmulatorSaveSource::Native,
+        )?;
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].save_path(), &folder);
+        Ok(())
     }
 
     #[test]

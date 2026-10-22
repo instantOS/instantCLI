@@ -137,7 +137,7 @@ EOF
 	cat >"${TEST_ROOT}/bin/pcsx2-qt" <<'EOF'
 #!/bin/sh
 case " $* " in
-*" -testconfig "*) printf 'DataRoot Directory: %s\n' "$TEST_PCSX2_ROOT"; exit 0 ;;
+*" -testconfig "*) echo "Unexpected emulator configuration probe" >&2; exit 99 ;;
 esac
 : > "$TEST_STARTED"
 cp "$TEST_CARD" "$TEST_LAUNCH_INPUT"
@@ -169,17 +169,10 @@ EOF
 	printf shortcut-cloud >"${b}/cards/card.ps2"
 	stamp "${b}/cards" 60
 	device_ins "${b}" game sync B
-	# An uncovered per-game card override must fail before automatic restore.
+	# Ownership is explicit. Unrelated emulator settings must not expand the
+	# tracked card or block this shortcut, and launch must not probe the emulator.
 	mkdir -p "${a}/config/PCSX2/gamesettings"
 	printf '[Folders]\nMemoryCards = other-cards\n' >"${a}/config/PCSX2/gamesettings/override.ini"
-	if device_ins "${a}" game launch Shortcut >"${TEST_ROOT}/mismatch" 2>&1; then
-		echo "Uncovered PCSX2 card override was accepted" >&2
-		return 1
-	fi
-	assert_output_contains "$(cat "${TEST_ROOT}/mismatch")" "PCSX2 launch mapping mismatch"
-	assert_file_equals "${a}/cards/card.ps2" shortcut-deck
-	[[ ! -e "${TEST_STARTED}" ]]
-	rm "${a}/config/PCSX2/gamesettings/override.ini"
 	INS_GAME_GUI=1 DISPLAY=:test device_ins "${a}" game launch Shortcut >"${TEST_ROOT}/launch" 2>&1 &
 	local launch_pid=$!
 	for _ in $(seq 1 200); do

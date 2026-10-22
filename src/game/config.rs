@@ -123,7 +123,7 @@ impl From<&str> for GameName {
     }
 }
 
-/// Game configuration - shared across devices
+/// Portable game declarations; copying them between devices is explicit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {
     pub name: GameName,

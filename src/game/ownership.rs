@@ -136,7 +136,7 @@ impl InstantGameConfig {
             for (other, other_path) in &paths[..index] {
                 ensure!(
                     !path.starts_with(other_path) && !other_path.starts_with(path),
-                    "Conflicting save ownership: {} ({}) overlaps {} ({})",
+                    "Conflicting save ownership: {} ({}) overlaps {} ({}). For games sharing the exact same path, use game group migrate to convert all affected games together. Independent cards must use separate paths",
                     owner.label(),
                     path.display(),
                     other.label(),

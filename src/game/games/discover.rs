@@ -22,7 +22,7 @@ use crate::ui::preview::FzfPreview;
 
 use super::manager::GameCreationContext;
 
-const DISCOVERY_CACHE_VERSION: u32 = 3;
+const DISCOVERY_CACHE_VERSION: u32 = 4;
 const DISCOVERY_CACHE_FILE: &str = "game-discovery-cache.json";
 const DISCOVERY_CACHE_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -757,6 +757,23 @@ fn find_existing_game_for_save(
                 .is_some_and(|saves| saves.save_path.as_path() == save_path)
         })
         .map(|inst| inst.game_name.0.clone())
+        .or_else(|| {
+            context
+                .installations
+                .save_groups
+                .iter()
+                .find_map(|binding| {
+                    if binding.saves.save_path.as_path() != save_path {
+                        return None;
+                    }
+                    context
+                        .config
+                        .games
+                        .iter()
+                        .find(|game| game.save_group.as_deref() == Some(binding.id.as_str()))
+                        .map(|game| game.name.0.clone())
+                })
+        })
 }
 
 fn discovered_menu_display(display_name: &str, platform_short: &str, existing: bool) -> String {
@@ -1013,6 +1030,38 @@ mod tests {
         let resolved = record_prefix_path(&record);
 
         assert_eq!(resolved, Some(prefix));
+    }
+
+    #[test]
+    fn existing_shared_card_opens_a_member_without_a_private_binding() {
+        use crate::game::config::{OwnedSaves, PathContentKind, SaveGroupBinding, SharedSaveGroup};
+        let mut game = Game::new("Shared game");
+        game.save_group = Some("card".into());
+        let context = GameCreationContext {
+            config: InstantGameConfig {
+                games: vec![game],
+                save_groups: vec![SharedSaveGroup {
+                    id: "card".into(),
+                    name: "Card".into(),
+                }],
+                ..Default::default()
+            },
+            installations: InstallationsConfig {
+                save_groups: vec![SaveGroupBinding {
+                    id: "card".into(),
+                    saves: OwnedSaves::new(
+                        TildePath::new(PathBuf::from("/tmp/shared.ps2")),
+                        PathContentKind::File,
+                    ),
+                }],
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            find_existing_game_for_save(Path::new("/tmp/shared.ps2"), &context).as_deref(),
+            Some("Shared game")
+        );
+        assert!(find_existing_game_for_save(Path::new("/tmp/private.ps2"), &context).is_none());
     }
 
     #[test]

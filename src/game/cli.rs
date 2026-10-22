@@ -7,6 +7,9 @@ use clap_complete::engine::ArgValueCompleter;
 #[derive(Subcommand, Debug, Clone)]
 pub enum GameCommands {
     /// Manage shared save ownership and device-specific bindings
+    #[command(
+        long_about = "Manage shared save ownership and device-specific bindings.\n\nEach group owns exactly one file or directory and one backup history. For PS2, select an individual file card or folder card; a parent directory is an explicit choice that rolls back every contained card together. Configure PCSX2 to use the declared card; ins does not infer card ownership from emulator settings.\n\nGroup IDs are readable names (for example shared-card). The same ID selects the same repository history on another device; renaming the display name preserves it, changing the ID does not. Group declarations and game membership live in games.toml; paths and sync state live in installations.toml. These config files are not automatically synchronized. Declare the same ID and membership, then bind its device-specific path on each device."
+    )]
     Group {
         #[command(subcommand)]
         command: SaveGroupCommands,
@@ -280,6 +283,18 @@ pub enum SaveGroupCommands {
         /// Treat a missing save path as a single file
         #[arg(long, requires = "path")]
         file: bool,
+    },
+    /// Convert private games sharing exactly one path into a new group together
+    #[command(
+        after_help = "Example: ins game group migrate shared-card --name 'Shared PS2 card' 'Game A' 'Game B'\n\nInclude every game sharing this path. Files and private snapshots remain untouched; private checkpoints are not copied into group history. After conversion, use group reconcile shared-card --local to publish current saves, or group import to choose a private snapshot. Unfinished restores must be completed first."
+    )]
+    Migrate {
+        id: String,
+        #[arg(long)]
+        name: String,
+        /// All private games that currently share this card or save directory
+        #[arg(required = true, num_args = 2..)]
+        games: Vec<String>,
     },
     /// Bind an existing group to this device (resets local sync baseline)
     Bind {

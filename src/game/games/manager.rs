@@ -73,9 +73,6 @@ impl GameManager {
                         };
                         return Self::finish_add_game(&mut context, details);
                     }
-                    EmulatorPrefillResult::ConfigureSharedDirectory { path, name } => {
-                        return crate::game::save_groups::configure_discovered(&path, &name);
-                    }
                     EmulatorPrefillResult::Cancelled => {
                         return Ok(());
                     }
