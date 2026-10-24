@@ -29,14 +29,15 @@ impl InstallableApp {
 
 // PDF Viewers
 
-dep!(OKULAR, "Okular", "okular");
-dep!(EVINCE, "Evince", "evince");
-dep!(ZATHURA, "Zathura", "zathura");
+dep!(OKULAR, "Okular", "okular", apk: "okular");
+dep!(EVINCE, "Evince", "evince", apk: "evince");
+dep!(ZATHURA, "Zathura", "zathura", apk: "zathura");
 
 pub static ZATHURA_PDF_MUPDF: Dependency = Dependency {
     name: "Zathura PDF Plugin",
     packages: &[
         PackageDefinition::new("zathura-pdf-mupdf", PackageManager::Pacman),
+        PackageDefinition::new("zathura-pdf-mupdf", PackageManager::Apk),
         PackageDefinition::new("zathura-pdf-poppler", PackageManager::Apt),
     ],
     tests: &[
@@ -45,7 +46,7 @@ pub static ZATHURA_PDF_MUPDF: Dependency = Dependency {
     ],
 };
 
-dep!(MUPDF, "MuPDF", "mupdf");
+dep!(MUPDF, "MuPDF", "mupdf", apk: "mupdf");
 dep!(QPDFVIEW, "qpdfview", "qpdfview");
 
 pub static PDF_VIEWERS: &[InstallableApp] = &[
@@ -78,12 +79,12 @@ pub static PDF_VIEWERS: &[InstallableApp] = &[
 
 // Image Viewers
 
-dep!(IMV, "imv", "imv");
-dep!(FEH, "feh", "feh");
-dep!(EOG, "Eye of GNOME", "eog");
-dep!(GWENVIEW, "Gwenview", "gwenview");
+dep!(IMV, "imv", "imv", apk: "imv");
+dep!(FEH, "feh", "feh", apk: "feh");
+dep!(EOG, "Eye of GNOME", "eog", apk: "eog");
+dep!(GWENVIEW, "Gwenview", "gwenview", apk: "gwenview");
 dep!(SXIV, "sxiv", "sxiv");
-dep!(LOUPE, "Loupe", "loupe");
+dep!(LOUPE, "Loupe", "loupe", apk: "loupe");
 
 pub static IMAGE_VIEWERS: &[InstallableApp] = &[
     InstallableApp {
@@ -120,14 +121,17 @@ pub static IMAGE_VIEWERS: &[InstallableApp] = &[
 
 // Video Players
 
-dep!(VLC, "VLC", "vlc");
-dep!(MPV, "mpv", "mpv");
-dep!(CELLULOID, "Celluloid", "celluloid");
-dep!(TOTEM, "GNOME Videos", "totem");
+dep!(VLC, "VLC", "vlc", apk: "vlc");
+dep!(MPV, "mpv", "mpv", apk: "mpv");
+dep!(CELLULOID, "Celluloid", "celluloid", apk: "celluloid");
+dep!(TOTEM, "GNOME Videos", "totem", apk: "totem");
 
 pub static HARUNA: Dependency = Dependency {
     name: "Haruna",
-    packages: &[PackageDefinition::new("haruna", PackageManager::Pacman)],
+    packages: &[
+        PackageDefinition::new("haruna", PackageManager::Pacman),
+        PackageDefinition::new("haruna", PackageManager::Apk),
+    ],
     tests: &[InstallTest::WhichSucceeds("haruna")],
 };
 
@@ -161,12 +165,12 @@ pub static VIDEO_PLAYERS: &[InstallableApp] = &[
 
 // Text Editors
 
-dep!(GEDIT, "gedit", "gedit");
-dep!(KATE, "Kate", "kate");
-dep!(GNOME_TEXT_EDITOR, "GNOME Text Editor", "gnome-text-editor");
-dep!(MOUSEPAD, "Mousepad", "mousepad");
+dep!(GEDIT, "gedit", "gedit", apk: "gedit");
+dep!(KATE, "Kate", "kate", apk: "kate");
+dep!(GNOME_TEXT_EDITOR, "GNOME Text Editor", "gnome-text-editor", apk: "gnome-text-editor");
+dep!(MOUSEPAD, "Mousepad", "mousepad", apk: "mousepad");
 dep!(XED, "xed", "xed");
-dep!(PLUMA, "pluma", "pluma");
+dep!(PLUMA, "pluma", "pluma", apk: "pluma");
 
 pub static TEXT_EDITORS: &[InstallableApp] = &[
     InstallableApp {
@@ -234,6 +238,7 @@ pub static BREEZE_GTK: Dependency = Dependency {
     name: "Breeze GTK",
     packages: &[
         PackageDefinition::new("breeze-gtk", PackageManager::Pacman),
+        PackageDefinition::new("breeze-gtk", PackageManager::Apk),
         PackageDefinition::new("breeze-gtk-theme", PackageManager::Apt),
     ],
     tests: &[InstallTest::FileExists("/usr/share/themes/Breeze")],
@@ -326,6 +331,7 @@ pub static ADWAITA_ICON_THEME: Dependency = Dependency {
     name: "Adwaita Icons",
     packages: &[
         PackageDefinition::new("adwaita-icon-theme", PackageManager::Pacman),
+        PackageDefinition::new("adwaita-icon-theme", PackageManager::Apk),
         PackageDefinition::new("adwaita-icon-theme", PackageManager::Apt),
     ],
     tests: &[InstallTest::FileExists("/usr/share/icons/Adwaita")],
@@ -335,6 +341,7 @@ pub static PAPIRUS_ICON_THEME: Dependency = Dependency {
     name: "Papirus Icons",
     packages: &[
         PackageDefinition::new("papirus-icon-theme", PackageManager::Pacman),
+        PackageDefinition::new("papirus-icon-theme", PackageManager::Apk),
         PackageDefinition::new("papirus-icon-theme", PackageManager::Apt),
     ],
     tests: &[InstallTest::FileExists("/usr/share/icons/Papirus")],
@@ -397,13 +404,13 @@ pub static GTK_ICON_THEMES: &[InstallableApp] = &[
 
 // File Managers
 
-dep!(NAUTILUS, "Nautilus", "nautilus");
-dep!(DOLPHIN, "Dolphin", "dolphin");
-dep!(THUNAR, "Thunar", "thunar");
-dep!(PCMANFM, "PCManFM", "pcmanfm");
-dep!(PCMANFM_QT, "PCManFM-Qt", "pcmanfm-qt");
-dep!(RANGER, "ranger", "ranger");
-dep!(LF, "lf", "lf");
+dep!(NAUTILUS, "Nautilus", "nautilus", apk: "nautilus");
+dep!(DOLPHIN, "Dolphin", "dolphin", apk: "dolphin");
+dep!(THUNAR, "Thunar", "thunar", apk: "thunar");
+dep!(PCMANFM, "PCManFM", "pcmanfm", apk: "pcmanfm");
+dep!(PCMANFM_QT, "PCManFM-Qt", "pcmanfm-qt", apk: "pcmanfm-qt");
+dep!(RANGER, "ranger", "ranger", apk: "ranger");
+dep!(LF, "lf", "lf", apk: "lf");
 
 pub static FILE_MANAGERS: &[InstallableApp] = &[
     InstallableApp {
@@ -449,6 +456,7 @@ pub static FIREFOX: Dependency = Dependency {
     name: "Firefox",
     packages: &[
         PackageDefinition::new("firefox", PackageManager::Pacman),
+        PackageDefinition::new("firefox", PackageManager::Apk),
         PackageDefinition::new("firefox", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("firefox")],
@@ -458,6 +466,7 @@ pub static CHROMIUM: Dependency = Dependency {
     name: "Chromium",
     packages: &[
         PackageDefinition::new("chromium", PackageManager::Pacman),
+        PackageDefinition::new("chromium", PackageManager::Apk),
         PackageDefinition::new("chromium-browser", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("chromium")],
@@ -467,6 +476,7 @@ pub static FALKON: Dependency = Dependency {
     name: "Falkon",
     packages: &[
         PackageDefinition::new("falkon", PackageManager::Pacman),
+        PackageDefinition::new("falkon", PackageManager::Apk),
         PackageDefinition::new("falkon", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("falkon")],
@@ -476,6 +486,7 @@ pub static EPIPHANY: Dependency = Dependency {
     name: "GNOME Web (Epiphany)",
     packages: &[
         PackageDefinition::new("epiphany", PackageManager::Pacman),
+        PackageDefinition::new("epiphany", PackageManager::Apk),
         PackageDefinition::new("epiphany-browser", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("epiphany")],
@@ -506,11 +517,11 @@ pub static WEB_BROWSERS: &[InstallableApp] = &[
 
 // Archive Managers
 
-dep!(FILE_ROLLER, "File Roller", "file-roller");
-dep!(ARK, "Ark", "ark");
-dep!(ENGRAMPA, "Engrampa", "engrampa");
-dep!(XARCHIVER, "Xarchiver", "xarchiver");
-dep!(LXQT_ARCHIVER, "LXQt Archiver", "lxqt-archiver");
+dep!(FILE_ROLLER, "File Roller", "file-roller", apk: "file-roller");
+dep!(ARK, "Ark", "ark", apk: "ark");
+dep!(ENGRAMPA, "Engrampa", "engrampa", apk: "engrampa");
+dep!(XARCHIVER, "Xarchiver", "xarchiver", apk: "xarchiver");
+dep!(LXQT_ARCHIVER, "LXQt Archiver", "lxqt-archiver", apk: "lxqt-archiver");
 
 pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
     InstallableApp {

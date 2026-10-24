@@ -19,6 +19,14 @@ ins --help
 
 See [npm packaging and CI setup](npm/PUBLISHING.md) for release configuration.
 
+## Alpine and postmarketOS settings
+
+`ins settings` uses apk on Alpine, postmarketOS, and distributions declaring
+`ID_LIKE=alpine`. You can browse, install, preview, and remove system packages,
+and install supported applications from the curated settings menus. Package
+changes run directly as root, or through sudo/doas for regular users. On minimal
+Alpine installations, settings installs Bash for its menu previews before opening.
+
 ## Features
 
 - dotfile management

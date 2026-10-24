@@ -14,6 +14,7 @@ pub static FZF: Dependency = Dependency {
     name: "fzf",
     packages: &[
         PackageDefinition::new("fzf", PackageManager::Pacman),
+        PackageDefinition::new("fzf", PackageManager::Apk),
         PackageDefinition::new("fzf", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("fzf")],
@@ -23,6 +24,7 @@ pub static GIT: Dependency = Dependency {
     name: "git",
     packages: &[
         PackageDefinition::new("git", PackageManager::Pacman),
+        PackageDefinition::new("git", PackageManager::Apk),
         PackageDefinition::new("git", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("git")],
@@ -32,6 +34,7 @@ pub static DELTA: Dependency = Dependency {
     name: "delta",
     packages: &[
         PackageDefinition::new("git-delta", PackageManager::Pacman),
+        PackageDefinition::new("delta", PackageManager::Apk),
         PackageDefinition::new("git-delta", PackageManager::Apt),
         PackageDefinition::new("git-delta", PackageManager::Dnf),
         PackageDefinition::new("git-delta", PackageManager::Cargo),
@@ -41,7 +44,10 @@ pub static DELTA: Dependency = Dependency {
 
 pub static GUM: Dependency = Dependency {
     name: "gum",
-    packages: &[PackageDefinition::new("gum", PackageManager::Pacman)],
+    packages: &[
+        PackageDefinition::new("gum", PackageManager::Pacman),
+        PackageDefinition::new("gum", PackageManager::Apk),
+    ],
     tests: &[InstallTest::WhichSucceeds("gum")],
 };
 
@@ -116,7 +122,10 @@ pub static ARCH_INSTALL_SCRIPTS: Dependency = Dependency {
 
 pub static TOPGRADE: Dependency = Dependency {
     name: "topgrade",
-    packages: &[PackageDefinition::new("topgrade", PackageManager::Pacman)],
+    packages: &[
+        PackageDefinition::new("topgrade", PackageManager::Pacman),
+        PackageDefinition::new("topgrade", PackageManager::Apk),
+    ],
     tests: &[InstallTest::WhichSucceeds("topgrade")],
 };
 
@@ -128,6 +137,7 @@ pub static RESTIC: Dependency = Dependency {
     name: "restic",
     packages: &[
         PackageDefinition::new("restic", PackageManager::Pacman),
+        PackageDefinition::new("restic", PackageManager::Apk),
         PackageDefinition::new("restic", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("restic")],
@@ -163,6 +173,7 @@ pub static SMARTMONTOOLS: Dependency = Dependency {
     name: "smartmontools",
     packages: &[
         PackageDefinition::new("smartmontools", PackageManager::Pacman),
+        PackageDefinition::new("smartmontools", PackageManager::Apk),
         PackageDefinition::new("smartmontools", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("smartctl")],

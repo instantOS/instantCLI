@@ -19,6 +19,7 @@ pub static UDISKIE: Dependency = Dependency {
     name: "udiskie",
     packages: &[
         PackageDefinition::new("udiskie", PackageManager::Pacman),
+        PackageDefinition::new("udiskie", PackageManager::Apk),
         PackageDefinition::new("udiskie", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("udiskie")],
@@ -30,6 +31,7 @@ pub static BLUEZ: Dependency = Dependency {
     name: "BlueZ bluetooth daemon",
     packages: &[
         PackageDefinition::new("bluez", PackageManager::Pacman),
+        PackageDefinition::new("bluez", PackageManager::Apk),
         PackageDefinition::new("bluez", PackageManager::Apt),
     ],
     tests: &[
@@ -42,6 +44,7 @@ pub static BLUEZ_UTILS: Dependency = Dependency {
     name: "BlueZ utilities",
     packages: &[
         PackageDefinition::new("bluez-utils", PackageManager::Pacman),
+        PackageDefinition::new("bluez", PackageManager::Apk),
         PackageDefinition::new("bluez", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("bluetoothctl")],
@@ -65,6 +68,7 @@ pub static FASTFETCH: Dependency = Dependency {
     name: "fastfetch",
     packages: &[
         PackageDefinition::new("fastfetch", PackageManager::Pacman),
+        PackageDefinition::new("fastfetch", PackageManager::Apk),
         PackageDefinition::new("fastfetch", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("fastfetch")],
@@ -76,6 +80,7 @@ pub static GNOME_FIRMWARE: Dependency = Dependency {
     name: "GNOME Firmware manager",
     packages: &[
         PackageDefinition::new("gnome-firmware", PackageManager::Pacman),
+        PackageDefinition::new("gnome-firmware", PackageManager::Apk),
         PackageDefinition::new("gnome-firmware", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("gnome-firmware")],
@@ -85,6 +90,7 @@ pub static CHROMIUM: Dependency = Dependency {
     name: "Chromium browser",
     packages: &[
         PackageDefinition::new("chromium", PackageManager::Pacman),
+        PackageDefinition::new("chromium", PackageManager::Apk),
         PackageDefinition::new("chromium-browser", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("chromium")],
@@ -99,6 +105,7 @@ pub static XDG_UTILS: Dependency = Dependency {
     name: "xdg-utils",
     packages: &[
         PackageDefinition::new("xdg-utils", PackageManager::Pacman),
+        PackageDefinition::new("xdg-utils", PackageManager::Apk),
         PackageDefinition::new("xdg-utils", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("xdg-open")],
@@ -110,6 +117,7 @@ pub static NM_CONNECTION_EDITOR: Dependency = Dependency {
     name: "Network connection editor",
     packages: &[
         PackageDefinition::new("nm-connection-editor", PackageManager::Pacman),
+        PackageDefinition::new("network-manager-applet", PackageManager::Apk),
         PackageDefinition::new("network-manager-gnome", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("nm-connection-editor")],
@@ -119,6 +127,7 @@ pub static NMTUI: Dependency = Dependency {
     name: "Network Manager TUI",
     packages: &[
         PackageDefinition::new("networkmanager", PackageManager::Pacman),
+        PackageDefinition::new("networkmanager-tui", PackageManager::Apk),
         PackageDefinition::new("network-manager", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("nmtui")],
@@ -130,6 +139,7 @@ pub static YAZI: Dependency = Dependency {
     name: "Yazi file manager",
     packages: &[
         PackageDefinition::new("yazi", PackageManager::Pacman),
+        PackageDefinition::new("yazi", PackageManager::Apk),
         PackageDefinition::new("yazi", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("yazi")],
@@ -137,7 +147,10 @@ pub static YAZI: Dependency = Dependency {
 
 pub static AWWW: Dependency = Dependency {
     name: "awww",
-    packages: &[PackageDefinition::new("awww", PackageManager::Pacman)],
+    packages: &[
+        PackageDefinition::new("awww", PackageManager::Pacman),
+        PackageDefinition::new("awww", PackageManager::Apk),
+    ],
     tests: &[InstallTest::WhichSucceeds("awww")],
 };
 
@@ -151,6 +164,7 @@ pub static SWAYBG: Dependency = Dependency {
     name: "swaybg",
     packages: &[
         PackageDefinition::new("swaybg", PackageManager::Pacman),
+        PackageDefinition::new("swaybg", PackageManager::Apk),
         PackageDefinition::new("swaybg", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("swaybg")],
@@ -160,6 +174,7 @@ pub static ZENITY: Dependency = Dependency {
     name: "Zenity dialogs",
     packages: &[
         PackageDefinition::new("zenity", PackageManager::Pacman),
+        PackageDefinition::new("zenity", PackageManager::Apk),
         PackageDefinition::new("zenity", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("zenity")],
@@ -171,6 +186,7 @@ pub static CUPS: Dependency = Dependency {
     name: "CUPS print server",
     packages: &[
         PackageDefinition::new("cups", PackageManager::Pacman),
+        PackageDefinition::new("cups", PackageManager::Apk),
         PackageDefinition::new("cups", PackageManager::Apt),
     ],
     tests: &[
@@ -183,6 +199,7 @@ pub static CUPS_FILTERS: Dependency = Dependency {
     name: "cups-filters",
     packages: &[
         PackageDefinition::new("cups-filters", PackageManager::Pacman),
+        PackageDefinition::new("cups-filters", PackageManager::Apk),
         PackageDefinition::new("cups-filters", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("cupsfilter")],
@@ -192,6 +209,7 @@ pub static GHOSTSCRIPT: Dependency = Dependency {
     name: "Ghostscript",
     packages: &[
         PackageDefinition::new("ghostscript", PackageManager::Pacman),
+        PackageDefinition::new("ghostscript", PackageManager::Apk),
         PackageDefinition::new("ghostscript", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("gs")],
@@ -201,6 +219,7 @@ pub static AVAHI: Dependency = Dependency {
     name: "Avahi",
     packages: &[
         PackageDefinition::new("avahi", PackageManager::Pacman),
+        PackageDefinition::new("avahi", PackageManager::Apk),
         PackageDefinition::new("avahi-daemon", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("avahi-daemon")],
@@ -210,6 +229,7 @@ pub static SYSTEM_CONFIG_PRINTER: Dependency = Dependency {
     name: "Printer configuration utility",
     packages: &[
         PackageDefinition::new("system-config-printer", PackageManager::Pacman),
+        PackageDefinition::new("system-config-printer", PackageManager::Apk),
         PackageDefinition::new("system-config-printer", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("system-config-printer")],
@@ -243,6 +263,7 @@ pub static PIPER: Dependency = Dependency {
     name: "Piper mouse configurator",
     packages: &[
         PackageDefinition::new("piper", PackageManager::Pacman),
+        PackageDefinition::new("piper", PackageManager::Apk),
         PackageDefinition::new("piper", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("piper")],
@@ -252,6 +273,7 @@ pub static BLUEMAN: Dependency = Dependency {
     name: "Blueman",
     packages: &[
         PackageDefinition::new("blueman", PackageManager::Pacman),
+        PackageDefinition::new("blueman", PackageManager::Apk),
         PackageDefinition::new("blueman", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("blueman-manager")],
@@ -263,6 +285,7 @@ pub static GNOME_DISKS: Dependency = Dependency {
     name: "GNOME Disks",
     packages: &[
         PackageDefinition::new("gnome-disk-utility", PackageManager::Pacman),
+        PackageDefinition::new("gnome-disk-utility", PackageManager::Apk),
         PackageDefinition::new("gnome-disk-utility", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("gnome-disks")],
@@ -272,6 +295,7 @@ pub static GPARTED: Dependency = Dependency {
     name: "GParted",
     packages: &[
         PackageDefinition::new("gparted", PackageManager::Pacman),
+        PackageDefinition::new("gparted", PackageManager::Apk),
         PackageDefinition::new("gparted", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("gparted")],
@@ -291,6 +315,7 @@ pub static FLATPAK: Dependency = Dependency {
     name: "Flatpak",
     packages: &[
         PackageDefinition::new("flatpak", PackageManager::Pacman),
+        PackageDefinition::new("flatpak", PackageManager::Apk),
         PackageDefinition::new("flatpak", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("flatpak")],

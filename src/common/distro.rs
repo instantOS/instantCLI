@@ -33,6 +33,10 @@ pub enum OperatingSystem {
     CentOS,
     /// OpenSUSE (including Leap and Tumbleweed)
     OpenSUSE,
+    /// Alpine Linux
+    Alpine,
+    /// postmarketOS (Alpine-based)
+    PostmarketOS,
     /// Termux (Android)
     Termux,
     /// Unknown distribution with ID
@@ -76,6 +80,8 @@ impl OperatingSystem {
         }
 
         match id.as_str() {
+            "alpine" => Self::Alpine,
+            "postmarketos" => Self::PostmarketOS,
             "instantos" => Self::InstantOS,
             "arch" => Self::Arch,
             "manjaro" => Self::Manjaro,
@@ -91,7 +97,9 @@ impl OperatingSystem {
             "opensuse" | "opensuse-leap" | "opensuse-tumbleweed" => Self::OpenSUSE,
             _ => {
                 // For unknown IDs, check ID_LIKE for family detection
-                if id_like.contains("arch") {
+                if id_like.split_whitespace().any(|id| id == "alpine") {
+                    Self::Alpine
+                } else if id_like.contains("arch") {
                     Self::Arch
                 } else if id_like.contains("ubuntu") {
                     Self::Ubuntu
@@ -126,8 +134,14 @@ impl OperatingSystem {
             Self::Termux => Some(Self::Debian),
             // CentOS is Fedora/RHEL-based
             Self::CentOS => Some(Self::Fedora),
+            Self::PostmarketOS => Some(Self::Alpine),
             // Root distributions and Unknown have no parent
-            Self::Arch | Self::Debian | Self::Fedora | Self::OpenSUSE | Self::Unknown(_) => None,
+            Self::Arch
+            | Self::Debian
+            | Self::Fedora
+            | Self::OpenSUSE
+            | Self::Alpine
+            | Self::Unknown(_) => None,
         }
     }
 
@@ -204,6 +218,7 @@ impl OperatingSystem {
         use crate::common::package::PackageManager as PM;
         match self {
             // Root distributions
+            Self::Alpine => Some(PM::Apk),
             Self::Arch => Some(PM::Pacman),
             Self::Debian => Some(PM::Apt),
             Self::Fedora => Some(PM::Dnf),
@@ -234,6 +249,8 @@ impl OperatingSystem {
             Self::Fedora => "Fedora",
             Self::CentOS => "CentOS",
             Self::OpenSUSE => "openSUSE",
+            Self::Alpine => "Alpine Linux",
+            Self::PostmarketOS => "postmarketOS",
             Self::Termux => "Termux",
             Self::Unknown(_) => "Unknown",
         }
@@ -308,6 +325,34 @@ fn get_total_ram_mb() -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apk_distributions_and_derivatives() {
+        use crate::common::package::PackageManager;
+        for (release, expected) in [
+            ("ID=alpine\n", OperatingSystem::Alpine),
+            (
+                "ID=postmarketos\nID_LIKE=alpine\n",
+                OperatingSystem::PostmarketOS,
+            ),
+            ("ID=nura\nID_LIKE=\"alpine\"\n", OperatingSystem::Alpine),
+            (
+                "ID=derivative\nID_LIKE=\"other alpine\"\n",
+                OperatingSystem::Alpine,
+            ),
+        ] {
+            let os = OperatingSystem::parse_os_release(release);
+            assert_eq!(os, expected);
+            assert!(os.in_family(&OperatingSystem::Alpine));
+            assert_eq!(os.native_package_manager(), Some(PackageManager::Apk));
+            assert!(!os.in_family(&OperatingSystem::Debian));
+        }
+        assert_eq!(
+            OperatingSystem::parse_os_release("ID=unknown\nID_LIKE=notalpine\n")
+                .native_package_manager(),
+            None
+        );
+    }
 
     #[test]
     fn test_parse_arch() {

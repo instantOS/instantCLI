@@ -175,6 +175,19 @@ fn stream_available(manager: PackageManager) -> Result<()> {
                 )
             },
         ),
+        PackageManager::Apk => stream_and_print(
+            Command::new("apk").args(["--no-cache", "search", "-q"]),
+            |line| Some(line.to_string()),
+            |pkg| {
+                print_package_row(
+                    manager,
+                    &pkg,
+                    &pkg,
+                    pkg.clone(),
+                    preview_command(preview_id),
+                )
+            },
+        ),
         PackageManager::Pkg => stream_and_print(
             Command::new("pkg").args(["list-all"]),
             parse_pkg_name,
@@ -240,6 +253,11 @@ fn stream_installed(manager: PackageManager) -> Result<()> {
         PackageManager::Zypper => stream_and_print(
             Command::new("zypper").args(["se", "--installed-only"]),
             parse_zypper_package_name,
+            |pkg| print_installed_package_row(manager, &pkg, &pkg),
+        ),
+        PackageManager::Apk => stream_and_print(
+            Command::new("apk").arg("info"),
+            |line| Some(line.to_string()),
             |pkg| print_installed_package_row(manager, &pkg, &pkg),
         ),
         PackageManager::Pkg => stream_and_print(
@@ -373,6 +391,7 @@ fn preview_id_for_manager(manager: PackageManager) -> PreviewId {
         PackageManager::Zypper => PreviewId::Zypper,
         PackageManager::Pacman => PreviewId::Pacman,
         PackageManager::Snap => PreviewId::Snap,
+        PackageManager::Apk => PreviewId::Apk,
         PackageManager::Pkg => PreviewId::Pkg,
         PackageManager::Flatpak => PreviewId::Flatpak,
         PackageManager::Aur => PreviewId::Aur,

@@ -28,6 +28,7 @@ impl Setting for ManageInstalledPackages {
                 OperatingSystem::Debian,
                 OperatingSystem::Fedora,
                 OperatingSystem::OpenSUSE,
+                OperatingSystem::Alpine,
             ])
             .build()
     }

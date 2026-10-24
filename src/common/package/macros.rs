@@ -19,6 +19,32 @@
 /// ```
 #[macro_export]
 macro_rules! dep {
+    // Explicit APK mapping: package names are verified rather than inferred
+    // from another distribution, where names and availability may differ.
+    ($name:ident, $display:expr, $pkg:expr, apk: $apk:expr) => {
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                packages: &[
+                    $crate::common::package::PackageDefinition::new(
+                        $pkg,
+                        $crate::common::package::PackageManager::Pacman,
+                    ),
+                    $crate::common::package::PackageDefinition::new(
+                        $pkg,
+                        $crate::common::package::PackageManager::Apt,
+                    ),
+                    $crate::common::package::PackageDefinition::new(
+                        $apk,
+                        $crate::common::package::PackageManager::Apk,
+                    ),
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $pkg,
+                )],
+            };
+    };
+
     // Simple: same package name for pacman and apt
     ($name:ident, $display:expr, $pkg:expr) => {
         pub static $name: $crate::common::package::Dependency =
