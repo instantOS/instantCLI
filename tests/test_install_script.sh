@@ -233,6 +233,7 @@ test_local_validation_precedes_animation() (
 )
 
 test_arm_cli_target_detection() (
+	detect_libc() { printf 'gnu\n'; }
 	local mock_arch releases
 	unset TERMUX_VERSION STEAM_DECK
 	detect_steam_deck() { return 1; }
@@ -248,6 +249,37 @@ test_arm_cli_target_detection() (
 	release_json="$(find_working_release "${releases}")"
 	find_asset_urls
 	assert_equals "https://example.invalid/ins-armv7-unknown-linux-gnueabihf-v1.2.3.tgz" "${asset_url}"
+)
+
+test_musl_target_detection() (
+	local mock_arch releases
+	unset TERMUX_VERSION STEAM_DECK
+	detect_libc() { printf 'musl\n'; }
+	# Even a Steam Deck override must not select a glibc AppImage on musl.
+	detect_steam_deck() { return 0; }
+	uname() { printf '%s\n' "${mock_arch}"; }
+	for mock_arch in x86_64 amd64 aarch64 arm64; do
+		detect_target
+		case "${mock_arch}" in
+		x86_64 | amd64) assert_equals "x86_64-unknown-linux-musl" "${TARGET}" ;;
+		*) assert_equals "aarch64-unknown-linux-musl" "${TARGET}" ;;
+		esac
+		assert_equals 0 "${USE_APPIMAGE}"
+		releases="[{\"tag_name\":\"v1\",\"assets\":[{\"browser_download_url\":\"https://example.invalid/ins-aarch64-unknown-linux-gnu-v1.tgz\"},{\"browser_download_url\":\"https://example.invalid/ins-${TARGET}-v1.tgz\"}]}]"
+		release_json="$(find_working_release "${releases}")"
+		find_asset_urls
+		assert_equals "https://example.invalid/ins-${TARGET}-v1.tgz" "${asset_url}"
+		if find_working_release '[{"assets":[{"browser_download_url":"https://example.invalid/ins-aarch64-unknown-linux-gnu-v1.tgz"}]}]' >/dev/null; then
+			echo "musl must not fall back to glibc" >&2
+			return 1
+		fi
+	done
+	for mock_arch in armv7l armv8l; do
+		if (detect_target) >/dev/null 2>&1; then
+			echo "Unsupported musl ARM selected a release target" >&2
+			return 1
+		fi
+	done
 )
 
 # Release selection (find_working_release) and asset extraction (find_asset_urls)
@@ -569,6 +601,7 @@ test_published_checksum_download_failure_is_fatal
 test_non_tty_download_is_quiet
 test_local_validation_precedes_animation
 test_arm_cli_target_detection
+test_musl_target_detection
 test_unsupported_termux_arm_does_not_use_glibc_target
 test_help_documents_install_dir_environment
 test_release_selection_and_extraction_agree

@@ -232,6 +232,24 @@ detect_steam_deck() {
 	return 1
 }
 
+# Detect musl before glibc compatibility tools, which may also exist on Alpine.
+# Refuse unknown runtimes rather than assuming a GNU/Linux binary will execute.
+detect_libc() {
+	for loader in /lib/ld-musl-*.so.1; do
+		if [ -e "$loader" ]; then
+			printf 'musl\n'
+			return
+		fi
+	done
+	if ldd --version 2>&1 | grep -qi musl; then
+		printf 'musl\n'
+	elif getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
+		printf 'gnu\n'
+	else
+		fatal "could not identify the system libc; refusing to install a potentially incompatible binary"
+	fi
+}
+
 # Map the runtime architecture to release-asset naming and choose archive/AppImage.
 # Termux is handled separately to avoid installing glibc binaries into Android.
 detect_target() {
@@ -250,14 +268,17 @@ detect_target() {
 		esac
 	fi
 
+	libc=$(detect_libc) || exit 1
+
 	case "$arch" in
 	x86_64 | amd64)
-		TARGET="x86_64-unknown-linux-gnu"
+		TARGET="x86_64-unknown-linux-$libc"
 		;;
 	aarch64 | arm64)
-		TARGET="aarch64-unknown-linux-gnu"
+		TARGET="aarch64-unknown-linux-$libc"
 		;;
 	armv7l | armv8l)
+		[ "$libc" = gnu ] || fatal "no prebuilt binary for $arch with musl (Alpine/postmarketOS); available musl builds support x86_64 and aarch64"
 		TARGET="armv7-unknown-linux-gnueabihf"
 		;;
 	*)
@@ -265,7 +286,7 @@ detect_target() {
 		;;
 	esac
 
-	if detect_steam_deck; then
+	if [ "$TARGET" = "x86_64-unknown-linux-gnu" ] && detect_steam_deck; then
 		USE_APPIMAGE=1
 		log "Steam Deck detected, using AppImage"
 	else

@@ -8,7 +8,7 @@ fetch_release_json() {
 		"$API_URL") || fatal "failed to fetch releases metadata"
 
 	# Try each release until we find one with our asset
-	release_json=$(find_working_release "$all_releases") || fatal "no working release found with assets for $TARGET"
+	release_json=$(find_working_release "$all_releases") || fatal "no compatible release asset found for $TARGET; refusing to install a different architecture or libc"
 }
 
 # Print the first complete, non-draft release object with an artifact matching
