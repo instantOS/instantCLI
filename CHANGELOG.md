@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.24](https://github.com/instantOS/instantCLI/compare/v0.14.23...v0.14.24) - 2026-10-24
+
+### Added
+
+- show a tray indicator during assist screen recording
+- add display subcommand
+
+### Fixed
+
+- postmarket
+- match recording tray stop behavior and instantWM styling
+- encrypted grub theming and password
+- better welcome UI
+- instantWM dependencies
+- unreadable tty text
+- live iso bootstrap problem
+- console mode selections hard to view
+- add nerd font fallback icons
+
+### Other
+
+- Discover PCSX2 games independently of memory-card ownership
+- Keep PS2 save histories per card and support safe group migration
+- Implement shared save ownership and automatic newest-save sync
+- simplify appimage scanning
+- unify game discovery and emulator launcher handling
+- bump
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- pass
+- Discover console fonts and persist portable installer font snapshots
+- Add installer console font picker with live previews and persistence
+- Bootstrap instantOS signing key offline and add Doctor repair
+- activate npm
+- init npm js support
+- bump stuff
+- Use persistent UUIDs for freshly formatted swap in fstab
+
 ## [0.14.23](https://github.com/instantOS/instantCLI/compare/v0.14.22...v0.14.23) - 2026-09-30
 
 ### Fixed
