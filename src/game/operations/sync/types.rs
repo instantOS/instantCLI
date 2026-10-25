@@ -1,10 +1,10 @@
 #[derive(Debug, PartialEq)]
 pub enum SyncAction {
     NoActionNeeded,
-    CreateBackup,
+    CreateBackup(String),
     RestoreFromSnapshot(String),
     ResolveNewest,
-    AcknowledgeSnapshot(String),
+    AcknowledgeSnapshot { id: String, content: String },
 }
 
 /// Outcome status for a single game's sync

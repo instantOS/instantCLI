@@ -19,6 +19,8 @@ pub enum PackageManager {
     Dnf,
     /// Zypper - OpenSUSE
     Zypper,
+    /// APK - Alpine Linux family
+    Apk,
     /// Pkg - Termux
     Pkg,
 
@@ -43,7 +45,7 @@ impl PackageManager {
     pub fn is_native(&self) -> bool {
         matches!(
             self,
-            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Pkg
+            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Apk | Self::Pkg
         )
     }
 
@@ -64,7 +66,7 @@ impl PackageManager {
     pub fn priority(&self) -> u8 {
         match self {
             // Native package managers - highest priority (prebuilt packages)
-            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Pkg => 0,
+            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Apk | Self::Pkg => 0,
             // Flatpak/Snap - prebuilt, sandboxed, low resource usage
             Self::Flatpak | Self::Snap => 1,
             // AUR - compiles from source, moderate resource usage
@@ -80,7 +82,7 @@ impl PackageManager {
     pub fn is_available(&self) -> bool {
         match self {
             // Native managers - delegate to OperatingSystem
-            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Pkg => {
+            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Apk | Self::Pkg => {
                 OperatingSystem::detect().native_package_manager() == Some(*self)
             }
 
@@ -103,6 +105,9 @@ impl PackageManager {
             Self::Apt => ("sudo", &["apt", "install", "-y"]),
             Self::Dnf => ("sudo", &["dnf", "install", "-y"]),
             Self::Zypper => ("sudo", &["zypper", "install", "-y"]),
+            Self::Apk if nix::unistd::geteuid().is_root() => ("apk", &["--no-cache", "add"]),
+            Self::Apk if which::which("sudo").is_ok() => ("sudo", &["apk", "--no-cache", "add"]),
+            Self::Apk => ("doas", &["apk", "--no-cache", "add"]),
             Self::Pkg => ("pkg", &["install", "-y"]),
             Self::Flatpak => ("flatpak", &["install", "-y", "flathub"]),
             Self::Aur => {
@@ -120,6 +125,7 @@ impl PackageManager {
             Self::Apt => "APT",
             Self::Dnf => "DNF",
             Self::Zypper => "Zypper",
+            Self::Apk => "APK",
             Self::Pkg => "Pkg",
             Self::Flatpak => "Flatpak",
             Self::Aur => "AUR",
@@ -138,6 +144,7 @@ impl PackageManager {
             Self::Apt => "apt",
             Self::Dnf => "dnf",
             Self::Zypper => "zypper",
+            Self::Apk => "apk",
             Self::Pkg => "pkg",
             Self::Flatpak => "flatpak",
             Self::Aur => "aur",
@@ -154,6 +161,9 @@ impl PackageManager {
             Self::Apt => ("sudo", &["apt", "remove", "-y"]),
             Self::Dnf => ("sudo", &["dnf", "remove", "-y"]),
             Self::Zypper => ("sudo", &["zypper", "remove", "-y"]),
+            Self::Apk if nix::unistd::geteuid().is_root() => ("apk", &["del"]),
+            Self::Apk if which::which("sudo").is_ok() => ("sudo", &["apk", "del"]),
+            Self::Apk => ("doas", &["apk", "del"]),
             Self::Pkg => ("pkg", &["uninstall", "-y"]),
             Self::Flatpak => ("flatpak", &["uninstall", "-y"]),
             Self::Aur => ("yay", &["-R", "--noconfirm"]),
@@ -181,6 +191,7 @@ impl std::str::FromStr for PackageManager {
             "apt" => Ok(PackageManager::Apt),
             "dnf" => Ok(PackageManager::Dnf),
             "zypper" => Ok(PackageManager::Zypper),
+            "apk" => Ok(PackageManager::Apk),
             "pkg" => Ok(PackageManager::Pkg),
             "flatpak" => Ok(PackageManager::Flatpak),
             "aur" => Ok(PackageManager::Aur),
@@ -205,6 +216,20 @@ pub fn detect_aur_helper() -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apk_is_native_and_has_add_del_commands() {
+        let manager = PackageManager::Apk;
+        assert!(manager.is_native());
+        assert!(!manager.is_universal());
+        assert_eq!(manager.priority(), 0);
+        assert_eq!(manager.as_str().parse::<PackageManager>(), Ok(manager));
+        let (program, args) = manager.install_command();
+        assert!(matches!(program, "apk" | "sudo" | "doas"));
+        assert_eq!(args.last(), Some(&"add"));
+        let (_, args) = manager.uninstall_command();
+        assert_eq!(args.last(), Some(&"del"));
+    }
 
     #[test]
     fn test_is_native() {
@@ -329,6 +354,7 @@ mod tests {
             PackageManager::Apt,
             PackageManager::Dnf,
             PackageManager::Zypper,
+            PackageManager::Apk,
             PackageManager::Pkg,
             PackageManager::Flatpak,
             PackageManager::Aur,

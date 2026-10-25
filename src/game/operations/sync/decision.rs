@@ -32,18 +32,31 @@ pub fn determine_action(
         });
     }
     if let Some(head) = heads.first()
-        && save_runtime::snapshot_digest(head) == Some(local.as_str())
         && owner
             .baseline
             .as_ref()
             .is_none_or(|baseline| baseline.remote_head.as_deref() != Some(head.id.as_str()))
     {
-        return Ok(SyncAction::AcknowledgeSnapshot(head.id.clone()));
+        let matches = match save_runtime::snapshot_digest(head) {
+            Some(remote) => remote == local,
+            None if owner.baseline.is_none() => {
+                crate::game::restic::backup::GameBackup::new(config.clone())
+                    .snapshot_content_digest(owner, head)?
+                    == local
+            }
+            None => false,
+        };
+        if matches {
+            return Ok(SyncAction::AcknowledgeSnapshot {
+                id: head.id.clone(),
+                content: local,
+            });
+        }
     }
     match save_runtime::baseline_action(owner, &local, heads.first().map(|head| head.id.as_str())) {
-        BaselineAction::Skip if force => Ok(SyncAction::CreateBackup),
+        BaselineAction::Skip if force => Ok(SyncAction::CreateBackup(local)),
         BaselineAction::Skip => Ok(SyncAction::NoActionNeeded),
-        BaselineAction::Backup => Ok(SyncAction::CreateBackup),
+        BaselineAction::Backup => Ok(SyncAction::CreateBackup(local)),
         BaselineAction::Restore(id) => Ok(SyncAction::RestoreFromSnapshot(id)),
         BaselineAction::Reconcile => Ok(SyncAction::ResolveNewest),
     }

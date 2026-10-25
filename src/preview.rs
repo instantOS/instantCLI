@@ -98,6 +98,8 @@ pub enum PreviewId {
     Snap,
     #[value(name = "pkg")]
     Pkg,
+    #[value(name = "apk")]
+    Apk,
     #[value(name = "flatpak")]
     Flatpak,
     #[value(name = "aur")]
@@ -232,6 +234,7 @@ fn should_use_collect_preview_cache(id: PreviewId, ctx: &PreviewContext) -> bool
                 | PreviewId::Zypper
                 | PreviewId::Pacman
                 | PreviewId::Snap
+                | PreviewId::Apk
                 | PreviewId::Pkg
                 | PreviewId::Flatpak
                 | PreviewId::Aur
@@ -324,9 +327,9 @@ fn default_app_spec(id: PreviewId) -> Option<DefaultAppSpec> {
 /// Returns `Some(result)` if this preview ID supports streaming, `None` otherwise.
 fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()>> {
     use package::{
-        render_apt_impl, render_aur_impl, render_cargo_impl, render_dnf_impl, render_flatpak_impl,
-        render_manager_preview_streaming as mgr_stream, render_pacman_impl, render_pkg_impl,
-        render_snap_impl, render_zypper_impl,
+        render_apk_impl, render_apt_impl, render_aur_impl, render_cargo_impl, render_dnf_impl,
+        render_flatpak_impl, render_manager_preview_streaming as mgr_stream, render_pacman_impl,
+        render_pkg_impl, render_snap_impl, render_zypper_impl,
     };
 
     match id {
@@ -340,6 +343,7 @@ fn try_render_streaming(id: PreviewId, ctx: &PreviewContext) -> Option<Result<()
         PreviewId::Zypper => Some(mgr_stream(id, ctx, render_zypper_impl)),
         PreviewId::Pacman => Some(mgr_stream(id, ctx, render_pacman_impl)),
         PreviewId::Snap => Some(mgr_stream(id, ctx, render_snap_impl)),
+        PreviewId::Apk => Some(mgr_stream(id, ctx, render_apk_impl)),
         PreviewId::Pkg => Some(mgr_stream(id, ctx, render_pkg_impl)),
         PreviewId::Flatpak => Some(mgr_stream(id, ctx, render_flatpak_impl)),
         PreviewId::Aur => Some(mgr_stream(id, ctx, render_aur_impl)),

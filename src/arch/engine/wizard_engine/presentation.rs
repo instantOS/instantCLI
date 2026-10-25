@@ -451,7 +451,7 @@ fn abort_preview() -> FzfPreview {
 
 fn display_step_answer(id: StepId, answer: &str, is_sensitive: bool) -> String {
     if id == StepId::ConsoleFont && !is_sensitive {
-        crate::arch::console_font::answer_label(answer)
+        crate::common::console_font::answer_label(answer)
     } else {
         display_answer(answer, is_sensitive)
     }
@@ -483,10 +483,10 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(
             directory.path().join("custom.psf"),
-            crate::arch::console_font::tests::psf1(),
+            crate::common::console_font::tests::psf1(),
         )
         .unwrap();
-        let font = crate::arch::console_font::discover(directory.path())
+        let font = crate::common::console_font::discover(directory.path())
             .unwrap()
             .into_iter()
             .find(|font| font.name() == "custom")

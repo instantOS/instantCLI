@@ -308,13 +308,76 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           mkdir -p artifacts
-          mv target/deb/ins_${VERSION}_amd64.deb artifacts/
-          cd artifacts && sha256sum ins_${VERSION}_amd64.deb > ins_${VERSION}_amd64.deb.sha256
+          mv "target/deb/ins_${VERSION}_amd64.deb" artifacts/
+          cd artifacts && sha256sum "ins_${VERSION}_amd64.deb" > "ins_${VERSION}_amd64.deb.sha256"
       - name: Upload deb package
         uses: actions/upload-artifact@v7
         with:
           name: ins-${{ steps.vars.outputs.version }}-deb
           path: artifacts/
+  apk:
+    name: Build Alpine package (${{ matrix.arch }})
+    runs-on: ubuntu-26.04
+    needs: cross-compile
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Extract version
+        id: vars
+        run: |
+          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
+          if [[ -z "$version" ]]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Download musl build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ins-${{ steps.vars.outputs.version }}-${{ matrix.arch }}-unknown-linux-musl
+          path: dist
+      - name: Extract binary from tarball
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: tar -xzf "dist/ins-${ARCH}-unknown-linux-musl-v${VERSION}.tgz" -C dist
+      - name: Build .apk package
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work -e ARCH -e VERSION alpine:3.22 sh -ec '
+            apk add --no-cache abuild binutils
+            SUDO= abuild-keygen -a -n -i
+            ./utils/build_apk.sh "dist/ins-${ARCH}-unknown-linux-musl-v${VERSION}/ins" "$ARCH"
+          '
+      - name: Smoke test Alpine installation
+        if: matrix.arch == 'x86_64'
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          docker run --rm -v "$PWD/target/apk:/packages:ro" -e VERSION alpine:3.22 sh -ec '
+            cd /packages
+            sha256sum -c "ins-${VERSION}-r0-x86_64.apk.sha256"
+            apk add --no-cache --allow-untrusted "./ins-${VERSION}-r0-x86_64.apk"
+            ins --version
+            ins --help > /dev/null
+            apk info -e ins bash fzf git
+            test -f /usr/share/applications/ins-settings.desktop
+            test -f /usr/share/licenses/ins/emoji-catalog-LICENSE
+            test -f /usr/lib/systemd/user/ins-notify.service
+          '
+      - name: Upload apk package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ins-${{ steps.vars.outputs.version }}-apk-${{ matrix.arch }}
+          path: |
+            target/apk/*.apk
+            target/apk/*.apk.sha256
   release:
     name: Publish GitHub release
     runs-on: ubuntu-26.04
@@ -325,6 +388,7 @@ jobs:
       - cross-compile
       - pkgbuild
       - deb
+      - apk
     permissions:
       contents: write
     steps:

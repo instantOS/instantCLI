@@ -20,6 +20,20 @@ pub fn run_settings_ui(
     privileged_flag: bool,
     navigation: Option<SettingsNavigation>,
 ) -> Result<()> {
+    // Minimal Alpine installations lack Bash, which executes menu previews.
+    // Bootstrap it before opening the first dialog, just as fzf is bootstrapped.
+    if crate::common::distro::OperatingSystem::detect().native_package_manager()
+        == Some(crate::common::package::PackageManager::Apk)
+        && which::which("bash").is_err()
+    {
+        eprintln!("Bash is required for settings previews; installing it with apk...");
+        crate::common::package::install_package_names(
+            crate::common::package::PackageManager::Apk,
+            &["bash"],
+        )
+        .context("installing Bash for settings previews")?;
+    }
+
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
 

@@ -68,6 +68,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&appearance::Animations),
             CategoryNode::setting(&appearance::DarkMode),
             CategoryNode::setting(&appearance::CursorTheme),
+            CategoryNode::setting(&appearance::TtyFont),
             CategoryNode::group("Wallpaper")
                 .description("Desktop background images and colored wallpapers.")
                 .child(CategoryNode::setting(&appearance::SetWallpaper))

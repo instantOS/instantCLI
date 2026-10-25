@@ -56,6 +56,7 @@ fn is_package_installed(manager: PackageManager, package: &str) -> bool {
                         .starts_with("ii")
             })
             .unwrap_or(false),
+        PackageManager::Apk => status_ok(Command::new("apk").args(["info", "-e", package])),
         // DNF and Zypper are both RPM-based.
         PackageManager::Dnf | PackageManager::Zypper => {
             status_ok(Command::new("rpm").arg("-q").arg(package))
@@ -197,6 +198,7 @@ fn render_for_manager(
         PackageManager::Zypper => render_zypper_impl(package, preview),
         PackageManager::Pacman => render_pacman_impl(package, preview),
         PackageManager::Snap => render_snap_impl(package, preview),
+        PackageManager::Apk => render_apk_impl(package, preview),
         PackageManager::Pkg => render_pkg_impl(package, preview),
         PackageManager::Flatpak => render_flatpak_impl(package, preview),
         PackageManager::Aur => render_aur_impl(package, preview),
@@ -902,5 +904,33 @@ pub(crate) fn render_cargo_impl(package: &str, preview: &mut PreviewWriter) -> R
         }
     }
 
+    Ok(())
+}
+
+/// APK search includes repository metadata even for packages not yet installed.
+pub(crate) fn render_apk_impl(package: &str, preview: &mut PreviewWriter) -> Result<()> {
+    preview
+        .header(NerdFont::Package, package)
+        .line(colors::TEAL, None, "APK Package");
+    render_install_status(PackageManager::Apk, package, preview);
+    preview.blank();
+    let output = cmd!(
+        "apk",
+        "--no-cache",
+        "search",
+        "--exact",
+        "--verbose",
+        package
+    )
+    .stderr_null()
+    .read()
+    .unwrap_or_default();
+    if output.is_empty() {
+        preview.subtext("No package information available");
+    } else {
+        for line in output.lines() {
+            preview.text(line);
+        }
+    }
     Ok(())
 }

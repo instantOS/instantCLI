@@ -32,7 +32,7 @@ pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
 }
 
 // ============================================================================
-// Simple Package Installer (Debian, Fedora, openSUSE, Termux)
+// Simple Package Installer (Debian, Fedora, openSUSE, Alpine, Termux)
 // ============================================================================
 
 /// Run a simple single-manager package installer.

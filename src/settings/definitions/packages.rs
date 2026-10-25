@@ -21,6 +21,7 @@ use crate::ui::prelude::*;
 /// - Debian-based: apt (or pkg on Termux)
 /// - Fedora-based: dnf
 /// - openSUSE: zypper
+/// - Alpine/postmarketOS: apk
 pub struct InstallPackages;
 
 impl Setting for InstallPackages {
@@ -35,6 +36,7 @@ impl Setting for InstallPackages {
                 OperatingSystem::Debian,
                 OperatingSystem::Fedora,
                 OperatingSystem::OpenSUSE,
+                OperatingSystem::Alpine,
             ])
             .build()
     }

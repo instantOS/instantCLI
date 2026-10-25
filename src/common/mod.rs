@@ -29,3 +29,6 @@ pub mod xkb;
 
 // Re-export commonly used types
 pub use tilde_path::{TildePath, home_dir};
+
+pub(crate) mod console_font;
+pub(crate) mod console_font_picker;
