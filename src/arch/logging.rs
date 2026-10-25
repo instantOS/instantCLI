@@ -460,7 +460,7 @@ fn build_support_report(
                 && id.answer_privacy() == AnswerPrivacy::SystemDetail);
         if include {
             let display = if *id == crate::arch::engine::StepId::ConsoleFont {
-                crate::arch::console_font::answer_label(answer)
+                crate::common::console_font::answer_label(answer)
             } else {
                 answer.clone()
             };

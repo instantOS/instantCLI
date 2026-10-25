@@ -402,13 +402,7 @@ fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
         }
         println!("[DRY RUN] Write /etc/vconsole.conf:\n{contents}");
     } else {
-        if let Some(data) = plan.console_font.data() {
-            let directory = target_root().join("usr/share/kbd/consolefonts");
-            std::fs::create_dir_all(&directory)
-                .context("Creating target console font directory")?;
-            std::fs::write(directory.join("ins-selected.psf"), data)
-                .context("Installing selected console font")?;
-        }
+        crate::common::console_font::install_snapshot(&target_root(), &plan.console_font)?;
         std::fs::write(target_root().join("etc/vconsole.conf"), contents)
             .context("Writing console keyboard and font configuration")?;
     }
@@ -708,13 +702,13 @@ mod tests {
     #[test]
     fn console_configuration_persists_font_and_keymap_and_plans_font_package() {
         let mut plan = crate::arch::engine::test_install_plan();
-        plan.console_font = crate::arch::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        plan.console_font = crate::common::console_font::ConsoleFont::parse("ter-v32n").unwrap();
         super::configure_vconsole(&plan, &MockRunner::new()).unwrap();
         let contents =
             std::fs::read_to_string(super::target_root().join("etc/vconsole.conf")).unwrap();
         assert_eq!(contents, "KEYMAP=us\nFONT=ter-v32n\n");
         assert!(super::config_package_list(&plan).contains(&"terminus-font".to_string()));
-        plan.console_font = crate::arch::console_font::ConsoleFont::default();
+        plan.console_font = crate::common::console_font::ConsoleFont::default();
         assert!(super::config_package_list(&plan).contains(&"kbd".to_string()));
     }
 
@@ -722,16 +716,16 @@ mod tests {
     fn selected_snapshot_is_written_to_target_without_original_package() {
         let mut plan = crate::arch::engine::test_install_plan();
         let directory = tempfile::tempdir().unwrap();
-        let data = crate::arch::console_font::tests::psf1();
+        let data = crate::common::console_font::tests::psf1();
         std::fs::write(directory.path().join("custom.psf"), &data).unwrap();
-        plan.console_font = crate::arch::console_font::discover(directory.path())
+        plan.console_font = crate::common::console_font::discover(directory.path())
             .unwrap()
             .into_iter()
             .find(|font| font.name() == "custom")
             .unwrap();
         let answer = plan.console_font.to_answer().unwrap();
         drop(directory);
-        plan.console_font = crate::arch::console_font::ConsoleFont::parse(&answer).unwrap();
+        plan.console_font = crate::common::console_font::ConsoleFont::parse(&answer).unwrap();
         super::configure_vconsole(&plan, &MockRunner::new()).unwrap();
         let root = super::target_root();
         assert_eq!(

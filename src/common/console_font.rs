@@ -128,6 +128,12 @@ impl ConsoleFont {
         {
             return suggestion.label.to_string();
         }
+        if self.name == INSTALLED_NAME {
+            return match self.info {
+                Some(info) => format!("Previously selected font ({}x{})", info.width, info.height),
+                None => "Previously selected font".to_string(),
+            };
+        }
         match self.info {
             Some(info) => format!("{} ({}x{})", self.name, info.width, info.height),
             None => self.name.clone(),
@@ -434,6 +440,45 @@ fn parse_psf(data: &[u8]) -> Result<FontInfo> {
     })
 }
 
+/// Preserve keyboard settings and comments while replacing font-specific maps.
+pub(crate) fn vconsole_config(contents: &str, font: &ConsoleFont) -> String {
+    crate::common::config_edit::set_keys(
+        contents,
+        &[
+            ("FONT", font.installed_name()),
+            ("FONT_MAP", ""),
+            ("FONT_UNIMAP", ""),
+        ],
+    )
+    .content
+}
+
+pub(crate) fn configured_font(contents: &str) -> Result<Option<String>> {
+    let mut font = None;
+    for line in contents.lines() {
+        let Some((key, value)) = line.trim().split_once('=') else {
+            continue;
+        };
+        if key.trim() == "FONT" {
+            let words = shell_words::split(value).context("Invalid FONT in vconsole.conf")?;
+            ensure!(words.len() <= 1, "Invalid FONT in vconsole.conf");
+            font = words.into_iter().next();
+        }
+    }
+    Ok(font)
+}
+
+/// Install the same validated font snapshot used by the picker and saved answers.
+pub(crate) fn install_snapshot(root: &Path, font: &ConsoleFont) -> Result<()> {
+    if let Some(data) = font.data() {
+        let directory = root.join("usr/share/kbd/consolefonts");
+        std::fs::create_dir_all(&directory).context("Creating console font directory")?;
+        std::fs::write(directory.join(format!("{INSTALLED_NAME}.psf")), data)
+            .context("Installing selected console font")?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -570,6 +615,64 @@ pub(crate) mod tests {
         assert_eq!(
             discover(&directory.path().join("missing")).unwrap(),
             [ConsoleFont::default()]
+        );
+    }
+}
+
+#[cfg(test)]
+mod configuration_tests {
+    use super::*;
+
+    #[test]
+    fn font_changes_preserve_keyboard_and_replace_conflicting_maps() {
+        let original = "# Local console settings\nKEYMAP=de-latin1\nKEYMAP_TOGGLE=us\nFONT=old\nFONT=duplicate\nFONT_MAP=old-map\nFONT_UNIMAP=old-unicode\nOTHER=value\n";
+        let result = vconsole_config(original, &ConsoleFont::default());
+        assert_eq!(
+            result,
+            "# Local console settings\nKEYMAP=de-latin1\nKEYMAP_TOGGLE=us\nFONT=default8x16\nFONT_MAP=\nFONT_UNIMAP=\nOTHER=value\n"
+        );
+        assert_eq!(
+            configured_font(&result).unwrap().as_deref(),
+            Some(DEFAULT_NAME)
+        );
+    }
+
+    #[test]
+    fn configured_font_reads_quoted_custom_names_and_never_executes_shell() {
+        assert_eq!(
+            configured_font("# FONT=ignored\nFONT = 'custom font'\n")
+                .unwrap()
+                .as_deref(),
+            Some("custom font")
+        );
+        assert_eq!(configured_font("FONT=\n").unwrap(), None);
+        assert_eq!(configured_font("KEYMAP=us\n").unwrap(), None);
+        assert!(configured_font("FONT='unterminated").is_err());
+        assert_eq!(
+            configured_font("FONT='$(touch /tmp/no)'\n")
+                .unwrap()
+                .as_deref(),
+            Some("$(touch /tmp/no)")
+        );
+    }
+
+    #[test]
+    fn installed_snapshot_is_discoverable_and_preselectable_after_source_removal() {
+        let root = tempfile::tempdir().unwrap();
+        let font = ConsoleFont::from_psf("custom".to_string(), tests::psf1()).unwrap();
+        install_snapshot(root.path(), &font).unwrap();
+        let directory = root.path().join("usr/share/kbd/consolefonts");
+        let installed = discover(&directory)
+            .unwrap()
+            .into_iter()
+            .find(|font| font.name() == INSTALLED_NAME)
+            .unwrap();
+        assert_eq!(installed.data(), font.data());
+        assert_eq!(
+            configured_font(&vconsole_config("", &font))
+                .unwrap()
+                .as_deref(),
+            Some(INSTALLED_NAME)
         );
     }
 }

@@ -8,6 +8,7 @@ mod cursor;
 mod dark_mode;
 mod gtk;
 mod qt;
+mod tty_font;
 mod wallpaper;
 
 // Re-export all setting structs
@@ -16,6 +17,7 @@ pub use cursor::CursorTheme;
 pub use dark_mode::DarkMode;
 pub use gtk::{GtkIconTheme, GtkMenuIcons, GtkTheme, ResetGtk};
 pub use qt::ResetQt;
+pub use tty_font::TtyFont;
 pub use wallpaper::{
     ApplyColoredWallpaper, RandomWallpaper, SetWallpaper, WallpaperBgColor, WallpaperFgColor,
     WallpaperLogo,

@@ -525,7 +525,7 @@ pub struct InstallPlan {
     pub username: Username,
     pub password: LoginPassword,
     pub keymap: ConsoleKeymap,
-    pub console_font: crate::arch::console_font::ConsoleFont,
+    pub console_font: crate::common::console_font::ConsoleFont,
     pub timezone: Timezone,
     pub locale: LocaleName,
     pub mirror_region: Option<String>,
@@ -661,11 +661,11 @@ impl TryFrom<&InstallContext> for InstallPlan {
             username: Username::parse(required(StepId::Username)?)?,
             password: LoginPassword::parse(required(StepId::Password)?)?,
             keymap: ConsoleKeymap::parse(required(StepId::Keymap)?)?,
-            console_font: crate::arch::console_font::ConsoleFont::parse(
+            console_font: crate::common::console_font::ConsoleFont::parse(
                 context
                     .get_answer(&StepId::ConsoleFont)
                     .map(String::as_str)
-                    .unwrap_or(crate::arch::console_font::DEFAULT_NAME),
+                    .unwrap_or(crate::common::console_font::DEFAULT_NAME),
             )?,
             timezone: Timezone::parse(required(StepId::Timezone)?)?,
             locale: LocaleName::parse(required(StepId::Locale)?)?,
@@ -704,7 +704,7 @@ pub(crate) fn test_install_plan() -> InstallPlan {
         username: Username::parse("test-user").unwrap(),
         password: LoginPassword::parse("test-password").unwrap(),
         keymap: ConsoleKeymap::parse("us").unwrap(),
-        console_font: crate::arch::console_font::ConsoleFont::default(),
+        console_font: crate::common::console_font::ConsoleFont::default(),
         timezone: Timezone::parse("UTC").unwrap(),
         locale: LocaleName::parse("en_US.UTF-8").unwrap(),
         mirror_region: None,
