@@ -51,11 +51,27 @@ impl DefaultCommand {
 const DESKTOP_DEFAULTS: &[(&str, &[&str])] = &[
     (
         "filemanager",
-        &["nautilus", "dolphin", "thunar", "pcmanfm", "pcmanfm-qt"],
+        &[
+            "nautilus",
+            "nemo",
+            "caja",
+            "dolphin",
+            "thunar",
+            "pcmanfm",
+            "pcmanfm-qt",
+        ],
     ),
     (
         "browser",
-        &["firefox", "chromium", "google-chrome", "brave"],
+        &[
+            "firefox",
+            "librewolf",
+            "chromium",
+            "google-chrome",
+            "brave",
+            "falkon",
+            "epiphany",
+        ],
     ),
     (
         "editor",
