@@ -197,6 +197,15 @@ sudo pacman -Sy git fzf restic sqlite --needed
 sudo apt update; sudo apt install -y git fzf restic sqlite3 pkg-config libssl-dev libgit2-dev libsqlite3-dev
 ```
 
+#### Alpine / postmarketOS
+
+On musl-based systems the default Rust target is statically linked, so the
+static SQLite library is required in addition to the development headers:
+
+```bash
+sudo apk add git fzf restic sqlite sqlite-dev sqlite-static pkgconfig openssl-dev libgit2-dev
+```
+
 ## Development
 
 ### Building
