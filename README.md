@@ -27,6 +27,23 @@ and install supported applications from the curated settings menus. Package
 changes run directly as root, or through sudo/doas for regular users. On minimal
 Alpine installations, settings installs Bash for its menu previews before opening.
 
+## Alpine packages
+
+Releases include `.apk` packages for x86_64 and ARM64 (aarch64), built from the
+static musl binaries. Download the package and its `.sha256` file from
+[GitHub releases](https://github.com/instantOS/instantCLI/releases), then verify
+and install them (replace the version and architecture as needed):
+
+```sh
+sha256sum -c ins-0.14.23-r0-aarch64.apk.sha256
+# As root:
+apk add --no-cache --allow-untrusted ./ins-0.14.23-r0-aarch64.apk
+```
+
+These standalone packages use a temporary CI signing key, rather than a trusted
+Alpine repository key, so local installation requires `--allow-untrusted`.
+See [Alpine packaging](apk/README.md) for local build instructions.
+
 ## Features
 
 - dotfile management

@@ -1,0 +1,31 @@
+# Maintainer: paperbenni <paperbenni@gmail.com>
+# Packages the static musl binary produced by the release cross-compile job.
+pkgname=ins
+pkgver=@VERSION@
+pkgrel=0
+pkgdesc="Instant CLI - command-line utilities"
+url="https://instantos.io"
+arch="x86_64 aarch64"
+license="GPL-2.0-only"
+depends="bash fzf git"
+options="!check !strip !tracedeps"
+source="payload.tar.gz"
+builddir="$srcdir"
+
+build() {
+	:
+}
+
+package() {
+	install -Dm755 ins "$pkgdir/usr/bin/ins"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/ins/LICENSE"
+	install -Dm644 emoji-catalog-LICENSE \
+		"$pkgdir/usr/share/licenses/ins/emoji-catalog-LICENSE"
+	install -Dm644 README.md "$pkgdir/usr/share/doc/ins/README.md"
+	for desktop_file in desktop/*.desktop; do
+		install -Dm644 "$desktop_file" \
+			"$pkgdir/usr/share/applications/${desktop_file##*/}"
+	done
+	install -Dm644 ins-notify.service \
+		"$pkgdir/usr/lib/systemd/user/ins-notify.service"
+}
