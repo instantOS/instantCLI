@@ -14,7 +14,10 @@ pub enum GameSyncStatus {
     BackedUp,
     /// A snapshot was restored to this device
     Restored,
+    /// Local saves won automatic reconciliation. The message explains the
+    /// choice for terminal output and desktop notifications.
     BackedUpNewest(String),
+    /// Remote saves won automatic reconciliation; carries the choice message.
     RestoredNewest(String),
     /// Local contents already match the synchronized baseline
     Skipped,

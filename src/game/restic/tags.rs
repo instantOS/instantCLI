@@ -240,6 +240,7 @@ mod tests {
         use crate::restic::wrapper::Snapshot;
 
         let snapshots = vec![Snapshot {
+            original: None,
             id: "abc123def456".to_string(),
             short_id: "abc123de".to_string(),
             time: "2025-01-01T12:00:00Z".to_string(),

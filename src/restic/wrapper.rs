@@ -305,6 +305,87 @@ impl ResticWrapper {
         Ok(())
     }
 
+    /// Copy a snapshot's tree and metadata, then tag only the copy. Never
+    /// retag the original: its ID may be another device's saved checkpoint.
+    /// Rewrite without file filters reuses the tree without reading save data.
+    pub(crate) fn copy_snapshot_with_tags(
+        &self,
+        source: &Snapshot,
+        tags: &[String],
+    ) -> Result<String, ResticError> {
+        let created = chrono::Utc::now();
+        let time = created.format("%Y-%m-%d %H:%M:%S%.9f").to_string();
+        let run = |args: &[String]| -> Result<(), ResticError> {
+            let mut command = self.base_command();
+            command.env("TZ", "UTC").args(args);
+            let output = self.execute_and_log_command(command, args)?;
+            if !output.status.success() {
+                return Err(ResticError::from_exit_code(
+                    output.status.code().unwrap_or(1),
+                    &String::from_utf8(output.stderr)?,
+                ));
+            }
+            Ok(())
+        };
+        run(&[
+            "rewrite".into(),
+            "--new-time".into(),
+            time,
+            source.id.clone(),
+        ])?;
+        let is_copy = |snapshot: &Snapshot| {
+            snapshot.original.as_deref() == Some(source.id.as_str())
+                && snapshot.tree == source.tree
+                && snapshot.paths == source.paths
+                && chrono::DateTime::parse_from_rfc3339(&snapshot.time)
+                    .is_ok_and(|time| time == created)
+        };
+        let mut rewrite_tags = source.tags.clone();
+        if !rewrite_tags.iter().any(|tag| tag == "rewrite") {
+            rewrite_tags.push("rewrite".into());
+        }
+        // Listing also works with older restic releases whose rewrite/tag
+        // commands do not emit machine-readable new snapshot IDs.
+        let copies: Vec<_> = self
+            .list_snapshots()?
+            .into_iter()
+            .filter(|snapshot| is_copy(snapshot) && snapshot.tags == rewrite_tags)
+            .collect();
+        if copies.len() != 1 {
+            return Err(ResticError::CommandFailed(
+                "Could not identify the copied snapshot; original snapshots were not removed"
+                    .into(),
+            ));
+        }
+        let mut args = vec!["tag".into()];
+        for tag in tags {
+            args.extend(["--set".into(), tag.clone()]);
+        }
+        args.push(copies[0].id.clone());
+        run(&args)?;
+        let snapshots = self.list_snapshots()?;
+        if !snapshots.iter().any(|snapshot| snapshot.id == source.id) {
+            return Err(ResticError::CommandFailed(
+                "Original checkpoint changed during history compaction; retention was not applied"
+                    .into(),
+            ));
+        }
+        let copies: Vec<_> = snapshots
+            .into_iter()
+            .filter(|snapshot| {
+                is_copy(snapshot)
+                    && snapshot.tags.len() == tags.len()
+                    && tags.iter().all(|tag| snapshot.tags.contains(tag))
+            })
+            .collect();
+        if copies.len() != 1 {
+            return Err(ResticError::CommandFailed(
+                "Could not verify compacted history; original snapshots were not removed".into(),
+            ));
+        }
+        Ok(copies[0].id.clone())
+    }
+
     pub fn restore(
         &self,
         snapshot_id: &str,
@@ -505,6 +586,7 @@ pub struct BackupSummary {
 pub struct Snapshot {
     pub time: String,
     pub parent: Option<String>,
+    pub original: Option<String>,
     pub tree: String,
     pub paths: Vec<String>,
     pub hostname: String,

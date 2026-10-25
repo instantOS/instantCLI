@@ -58,6 +58,14 @@ pub fn determine_action(
         BaselineAction::Skip => Ok(SyncAction::NoActionNeeded),
         BaselineAction::Backup => Ok(SyncAction::CreateBackup(local)),
         BaselineAction::Restore(id) => Ok(SyncAction::RestoreFromSnapshot(id)),
+        BaselineAction::Reconcile
+            if local != "missing"
+                && heads
+                    .first()
+                    .is_some_and(|head| save_runtime::snapshot_matches_baseline(owner, head)) =>
+        {
+            Ok(SyncAction::CreateBackup(local))
+        }
         BaselineAction::Reconcile => Ok(SyncAction::ResolveNewest),
     }
 }
