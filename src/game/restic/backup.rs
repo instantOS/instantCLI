@@ -50,10 +50,48 @@ impl GameBackup {
         Self { config }
     }
 
+    /// Compare old snapshots without content tags against local saves without
+    /// replacing live files or changing their checkpoint. Only needed once when
+    /// adopting a legacy baseline; timestamps alone cannot prove equality.
+    pub(crate) fn snapshot_content_digest(
+        &self,
+        owner: &SaveOwner,
+        snapshot: &crate::restic::wrapper::Snapshot,
+    ) -> Result<String> {
+        anyhow::ensure!(
+            snapshot.paths.len() == 1,
+            "Snapshot must contain exactly one owned file or directory"
+        );
+        let temporary = tempfile::tempdir().context("Creating legacy save comparison directory")?;
+        let path = temporary.path().join("saves");
+        self.restore_untracked(&RestoreRequest {
+            owner: &owner.id,
+            snapshot_id: &snapshot.id,
+            snapshot_time: &snapshot.time,
+            path: &path,
+            save_path_type: owner.save_path_type,
+            snapshot_source_path: snapshot.paths.first().map(String::as_str),
+            observed_head: None,
+        })
+        .context("Comparing legacy backup contents")?;
+        crate::game::save_runtime::content_digest(&path)
+    }
+
     pub(crate) fn backup_owner(
         &self,
         owner: &SaveOwner,
         extra_tags: &[String],
+    ) -> Result<BackupResult> {
+        self.backup_owner_with_content(owner, extra_tags, None)
+    }
+
+    /// Reuse the sync decision's digest, then verify it again after restic has
+    /// read the files. A concurrent edit still prevents advancing the baseline.
+    pub(crate) fn backup_owner_with_content(
+        &self,
+        owner: &SaveOwner,
+        extra_tags: &[String],
+        observed_content: Option<&str>,
     ) -> Result<BackupResult> {
         // Validate that save path exists
         let save_path_buf = owner.save_path.as_path();
@@ -85,7 +123,10 @@ impl GameBackup {
         .context("Failed to initialize restic wrapper")?;
 
         // Save lineage requires a snapshot even when restic detects no changes.
-        let content = crate::game::save_runtime::content_digest(save_path_buf)?;
+        let content = match observed_content {
+            Some(content) => content.to_owned(),
+            None => crate::game::save_runtime::content_digest(save_path_buf)?,
+        };
         let modified = crate::game::save_runtime::latest_save_time(save_path_buf)?
             .context("Save path has no modification time")?;
         let mut tags = owner.id.tags();

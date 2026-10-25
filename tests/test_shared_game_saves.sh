@@ -56,7 +56,14 @@ EOF
 	stamp "${a}/cards" 600
 	TEST_RESTIC_CALLS="${TEST_ROOT}/upload-calls" device_ins "${a}" game sync A
 	assert_restic_calls "${TEST_ROOT}/upload-calls" snapshots=2 backup=1
-	TEST_RESTIC_CALLS="${TEST_ROOT}/restore-calls" device_ins "${b}" game sync B
+	local restored_json
+	restored_json="$(TEST_RESTIC_CALLS="${TEST_ROOT}/restore-calls" device_ins "${b}" --output json game sync B)"
+	printf '%s\n' "${restored_json}" | python3 -c '
+import json,sys
+events = [json.loads(line) for line in sys.stdin]
+assert sum(e["code"] == "game.sync.restore.completed" for e in events) == 1, events
+assert events[-1]["data"]["restored"] == 1, events
+'
 	assert_restic_calls "${TEST_ROOT}/restore-calls" snapshots=1 restore=1
 	assert_file_equals "${b}/cards/card.ps2" initial
 
@@ -95,6 +102,24 @@ PY
 	# A no-op sync shares one repository read across private and shared owners.
 	TEST_RESTIC_CALLS="${TEST_ROOT}/noop-calls" device_ins "${a}" game sync
 	assert_restic_calls "${TEST_ROOT}/noop-calls" snapshots=1
+	# Two history branches with identical contents need a join snapshot, but must
+	# not download or overwrite the already matching local saves.
+	python3 - "${a}" "${repo}" <<'PY'
+import os,pathlib,subprocess,sys,tomllib
+device,repo = sys.argv[1:]
+config = tomllib.loads((pathlib.Path(device)/'config/instant/games/installations.toml').read_text())
+content = config['save_groups'][0]['baseline']['content']
+subprocess.run(['restic', '-r', repo, 'backup', '--tag', 'instantgame-group',
+    '--tag', 'Y2FyZHM=', '--tag', 'instantgame-parent:root',
+    '--tag', 'instantgame-content:'+content, '--tag', 'instantgame-save-time:2099-01-01T00:00:00Z',
+    device+'/cards'], env=dict(os.environ, RESTIC_PASSWORD='testpass'), check=True, stdout=subprocess.DEVNULL)
+PY
+	local before_join
+	before_join="$(stat -c '%Y:%i' "${a}/cards/card.ps2")"
+	resolved="$(TEST_RESTIC_CALLS="${TEST_ROOT}/matching-calls" device_ins "${a}" game sync B)"
+	assert_output_contains "${resolved}" "Kept matching local saves and reconciled history"
+	assert_restic_calls "${TEST_ROOT}/matching-calls" snapshots=2 backup=1
+	[[ "${before_join}" == "$(stat -c '%Y:%i' "${a}/cards/card.ps2")" ]]
 	device_ins "${a}" game snapshots cards >"${TEST_ROOT}/private-history"
 	if grep -q '\[group:cards\]' "${TEST_ROOT}/private-history"; then
 		echo "Private game selected group history" >&2

@@ -1,11 +1,13 @@
 mod decision;
 pub(crate) mod execution;
 mod types;
+mod ui;
 
-use crate::common::progress::create_spinner;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::utils::validation;
+use crate::ui::Level;
 use anyhow::{Context, Result};
+use serde_json::json;
 use types::{GameSyncOutcome, GameSyncStatus, SyncAction};
 
 /// Summary of sync operation results
@@ -191,7 +193,12 @@ fn sync_configured(
     };
 
     if owners_to_sync.is_empty() {
-        println!("No save owners configured for syncing.");
+        ui::report(
+            Level::Info,
+            "game.sync.none",
+            "No save owners configured for syncing.",
+            json!({"action": "no_games"}),
+        );
         return Ok(SyncReport::default());
     }
 
@@ -220,17 +227,30 @@ fn sync_configured(
 
         let message = format!("{}: Checking sync status...", game_name_plain);
         progress(&message);
-        let spinner = create_spinner(message);
-        let action_result =
-            decision::determine_action(&installation, &game_config, force, &mut view);
-        spinner.finish_and_clear();
+        let action_result = ui::stage(message, || {
+            decision::determine_action(&installation, &game_config, force, &mut view)
+        });
         let result = match action_result {
-            Ok(action) => execute_action(&installation, &game_config, action, &mut view),
+            Ok(action) => {
+                let stage = match &action {
+                    SyncAction::CreateBackup(_) => "Backing up saves...",
+                    SyncAction::RestoreFromSnapshot(_) => "Restoring saves...",
+                    SyncAction::ResolveNewest => "Reconciling save versions...",
+                    _ => "Checking synchronized saves...",
+                };
+                progress(&format!("{}: {stage}", installation.name));
+                execute_action(&installation, &game_config, action, &mut view)
+            }
             Err(error) => Err(error),
         };
         let status = result.unwrap_or_else(|error| GameSyncStatus::Failed(format!("{error:#}")));
         if let GameSyncStatus::Failed(message) = &status {
-            eprintln!("{}: {message}", installation.name);
+            ui::report(
+                Level::Error,
+                "game.sync.failed",
+                &format!("{}: {message}", installation.name),
+                json!({"game": installation.name, "error": message}),
+            );
         }
 
         match status {
@@ -252,7 +272,17 @@ fn sync_configured(
     }
 
     // Print summary
-    println!("{}", report.completion_message());
+    ui::report(
+        Level::Info,
+        "game.sync.summary",
+        &report.completion_message(),
+        json!({
+            "backed_up": report.summary.backed_up,
+            "restored": report.summary.restored,
+            "skipped": report.summary.skipped,
+            "errors": report.summary.errors,
+        }),
+    );
 
     Ok(report)
 }
@@ -270,17 +300,10 @@ pub(crate) fn sync_single_owner(
     config: &InstantGameConfig,
 ) -> Result<()> {
     let mut view = crate::game::restic::cache::SnapshotView::default();
-    let status = execute_action(
-        owner,
-        config,
-        decision::determine_action(owner, config, false, &mut view)?,
-        &mut view,
-    )?;
-    if let GameSyncStatus::BackedUpNewest(message) | GameSyncStatus::RestoredNewest(message) =
-        status
-    {
-        println!("{message}");
-    }
+    let action = ui::stage(format!("{}: Checking sync status...", owner.name), || {
+        decision::determine_action(owner, config, false, &mut view)
+    })?;
+    execute_action(owner, config, action, &mut view)?;
     Ok(())
 }
 
@@ -313,22 +336,34 @@ fn execute_once(
     view: &mut crate::game::restic::cache::SnapshotView,
 ) -> Result<GameSyncStatus> {
     match action {
-        SyncAction::NoActionNeeded => Ok(GameSyncStatus::Skipped),
-        SyncAction::CreateBackup => {
-            execution::perform_backup(owner, config, view)?;
+        SyncAction::NoActionNeeded => {
+            ui::already_in_sync(&owner.name);
+            Ok(GameSyncStatus::Skipped)
+        }
+        SyncAction::CreateBackup(content) => {
+            execution::perform_backup(owner, config, &content, view)?;
             Ok(GameSyncStatus::BackedUp)
         }
         SyncAction::RestoreFromSnapshot(id) => {
             execution::perform_restore_with_view(owner, config, &id, view)?;
             Ok(GameSyncStatus::Restored)
         }
-        SyncAction::AcknowledgeSnapshot(id) => {
-            execution::acknowledge_snapshot(owner, config, &id)?;
+        SyncAction::AcknowledgeSnapshot { id, content } => {
+            ui::stage(
+                format!("{}: Verifying synchronized saves...", owner.name),
+                || execution::acknowledge_snapshot(owner, config, &id, &content),
+            )?;
+            ui::already_in_sync(&owner.name);
             Ok(GameSyncStatus::Skipped)
         }
         SyncAction::ResolveNewest => {
             let (restored, message) = execution::resolve_newest(owner, config, view)?;
-            println!("{message}");
+            ui::report(
+                Level::Success,
+                "game.sync.reconciled",
+                &message,
+                json!({"game": owner.name, "action": if restored { "restored_newest" } else { "backed_up_newest" }}),
+            );
             Ok(if restored {
                 GameSyncStatus::RestoredNewest(message)
             } else {
