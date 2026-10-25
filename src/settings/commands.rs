@@ -93,7 +93,20 @@ pub fn dispatch_settings_command(
         None => super::ui::run_settings_ui(debug, privileged_flag, navigation),
         Some(SettingsCommands::Apply) => apply::run_nonpersistent_apply(debug, privileged_flag),
         Some(SettingsCommands::EnsureDefaults) => {
-            super::default_commands::ensure_default_links_complete()
+            // `ensure-defaults` is a repair/setup helper: create every symlink
+            // we can, but do not fail the whole command just because the system
+            // is missing one of the optional desktop applications.  Report the
+            // gaps (with the candidate applications that would satisfy them) so
+            // the user knows what to install.
+            super::default_commands::ensure_default_links()?;
+            let missing = super::default_commands::missing_default_links();
+            if !missing.is_empty() {
+                eprintln!("Warning: no installed default application could be found for:");
+                for (alias, candidates) in missing {
+                    eprintln!("  {}: install one of {}", alias, candidates.join(", "));
+                }
+            }
+            Ok(())
         }
         Some(SettingsCommands::List {
             categories_only,

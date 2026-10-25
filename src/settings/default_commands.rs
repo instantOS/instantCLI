@@ -57,16 +57,40 @@ const DESKTOP_DEFAULTS: &[(&str, &[&str])] = &[
         "browser",
         &["firefox", "chromium", "google-chrome", "brave"],
     ),
-    ("editor", &["nvim-qt", "neovide", "code", "gedit", "kate"]),
+    (
+        "editor",
+        &[
+            "nvim-qt",
+            "neovide",
+            "code",
+            "gedit",
+            "kate",
+            "gnome-text-editor",
+            "mousepad",
+            "xed",
+            "pluma",
+        ],
+    ),
     ("appmenu", &["appmenu", "instantmenu_smartrun"]),
     (
         "lockscreen",
-        &["ilock", "swaylock", "gtklock", "slock", "i3lock"],
+        &[
+            "ilock",
+            "hyprlock",
+            "swaylock",
+            "gtklock",
+            "slock",
+            "i3lock",
+            "waylock",
+        ],
     ),
     (
         "systemmonitor",
         &[
             "missioncenter",
+            "plasma-systemmonitor",
+            "ksysguard",
+            "xfce4-taskmanager",
             "mate-system-monitor",
             "gnome-system-monitor",
         ],
@@ -95,17 +119,41 @@ pub fn ensure_default_links() -> Result<()> {
     Ok(())
 }
 
+/// Return the default-command aliases that still have no installed target.
+///
+/// This is the non-fatal companion to [`ensure_default_links_complete`]: callers
+/// that only want to create whatever symlinks are possible can use it to report
+/// the remaining gaps without aborting.
+pub fn missing_default_links() -> Vec<(&'static str, &'static [&'static str])> {
+    let default_dir = match default_dir() {
+        Ok(path) => path,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut missing = Vec::new();
+    for command in [
+        DefaultCommand::Terminal,
+        DefaultCommand::TerminalFileManager,
+    ] {
+        if !is_executable(&default_dir.join(command.alias())) {
+            missing.push((command.alias(), command.candidates()));
+        }
+    }
+    for (alias, candidates) in DESKTOP_DEFAULTS {
+        if !is_executable(&default_dir.join(alias)) {
+            missing.push((*alias, *candidates));
+        }
+    }
+    missing
+}
+
+#[allow(dead_code)]
 pub fn ensure_default_links_complete() -> Result<()> {
     ensure_default_links()?;
-    let default_dir = default_dir()?;
-    let missing: Vec<&str> = [
-        DefaultCommand::Terminal.alias(),
-        DefaultCommand::TerminalFileManager.alias(),
-    ]
-    .into_iter()
-    .chain(DESKTOP_DEFAULTS.iter().map(|(alias, _)| *alias))
-    .filter(|alias| !is_executable(&default_dir.join(alias)))
-    .collect();
+    let missing: Vec<&str> = missing_default_links()
+        .into_iter()
+        .map(|(alias, _)| alias)
+        .collect();
 
     if !missing.is_empty() {
         bail!(
