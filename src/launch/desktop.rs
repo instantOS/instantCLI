@@ -39,15 +39,16 @@ impl DesktopAppDetails {
             return Err(anyhow::anyhow!("Empty Exec command"));
         }
 
-        let mut cmd = std::process::Command::new(&parts[0]);
-
-        for arg in &parts[1..] {
-            cmd.arg(arg);
-        }
-
         if self.terminal {
-            crate::common::terminal::wrap_with_terminal(&mut cmd)?;
+            instantos_terminal::Launcher::new(&parts[0])
+                .args(&parts[1..])
+                .spawn_detached()
+                .context("Failed to launch terminal desktop app")?;
+            return Ok(());
         }
+
+        let mut cmd = std::process::Command::new(&parts[0]);
+        cmd.args(&parts[1..]);
 
         cmd.stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

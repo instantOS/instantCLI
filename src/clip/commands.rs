@@ -224,9 +224,11 @@ fn launch_in_terminal(debug: bool) -> Result<()> {
     }
     args.push("clip".to_string());
     let executable = std::env::current_exe()?;
-    crate::common::terminal::TerminalLauncher::new(executable.to_string_lossy().as_ref())
-        .class("ins-clip")
+    instantos_terminal::Launcher::new(executable.as_os_str())
+        .app_id("ins-clip")
         .title("Clipboard History")
         .args(args)
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }

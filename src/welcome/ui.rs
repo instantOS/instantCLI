@@ -431,10 +431,12 @@ fn configure_network(debug: bool) -> Result<()> {
         );
     }
 
-    crate::common::terminal::TerminalLauncher::new("nmtui")
-        .class("ins-network")
+    instantos_terminal::Launcher::new("nmtui")
+        .app_id("ins-network")
         .title("Network Setup")
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn toggle_autostart() -> Result<()> {
@@ -459,12 +461,14 @@ fn install_instantos(debug: bool) -> Result<()> {
         );
     }
 
-    crate::common::terminal::TerminalLauncher::new("ins")
+    instantos_terminal::Launcher::new("ins")
         .arg("arch")
         .arg("install")
-        .class("ins-install")
+        .app_id("ins-install")
         .title("instantOS Installation")
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn welcome_items(

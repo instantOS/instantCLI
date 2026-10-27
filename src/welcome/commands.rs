@@ -34,13 +34,13 @@ fn launch_welcome_in_terminal(force_live: bool, debug: bool) -> Result<()> {
     let args = terminal_args(force_live, debug);
 
     let current_exe = std::env::current_exe()?;
-    let exe_str = current_exe.to_string_lossy();
-
-    crate::common::terminal::TerminalLauncher::new(exe_str.as_ref())
-        .class("ins-welcome")
+    instantos_terminal::Launcher::new(current_exe.as_os_str())
+        .app_id("ins-welcome")
         .title("Welcome to instantOS")
         .args(&args)
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn terminal_args(force_live: bool, debug: bool) -> Vec<String> {

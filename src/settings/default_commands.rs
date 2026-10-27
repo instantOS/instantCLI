@@ -32,17 +32,9 @@ impl DefaultCommand {
         }
     }
 
-    pub const fn candidates(self) -> &'static [&'static str] {
+    pub fn candidates(self) -> &'static [&'static str] {
         match self {
-            Self::Terminal => &[
-                "kitty",
-                "ghostty",
-                "wezterm",
-                "foot",
-                "alacritty",
-                "xterm",
-                "st",
-            ],
+            Self::Terminal => instantos_terminal::candidates(),
             Self::TerminalFileManager => &["yazi", "ranger", "lf", "nnn", "vifm", "mc"],
         }
     }
@@ -86,7 +78,18 @@ pub fn ensure_default_links() -> Result<()> {
         DefaultCommand::Terminal,
         DefaultCommand::TerminalFileManager,
     ] {
-        ensure_alias(&default_dir, command.alias(), command.candidates())?;
+        if command == DefaultCommand::Terminal {
+            // Absence is reported by ensure_default_links_complete; other defaults
+            // must still be initialized on systems without a terminal installed.
+            if let Err(error) =
+                instantos_terminal::ensure_default(&default_dir.join(command.alias()))
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(error.into());
+            }
+        } else {
+            ensure_alias(&default_dir, command.alias(), command.candidates())?;
+        }
     }
     for (alias, candidates) in DESKTOP_DEFAULTS {
         ensure_alias(&default_dir, alias, candidates)?;
@@ -147,7 +150,12 @@ pub fn set_default_command(command: DefaultCommand, executable: &Path) -> Result
     let default_dir = default_dir()?;
     fs::create_dir_all(&default_dir)
         .with_context(|| format!("creating {}", default_dir.display()))?;
-    replace_symlink(&default_dir.join(command.alias()), executable)
+    if command == DefaultCommand::Terminal {
+        instantos_terminal::set_default(&default_dir.join(command.alias()), executable)?;
+        Ok(())
+    } else {
+        replace_symlink(&default_dir.join(command.alias()), executable)
+    }
 }
 
 fn default_dir() -> Result<PathBuf> {

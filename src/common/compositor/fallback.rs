@@ -7,7 +7,11 @@ pub struct Fallback;
 impl ScratchpadProvider for Fallback {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
         // For fallback, show just spawns the terminal
-        super::create_terminal_process(config)
+        config
+            .launcher()
+            .spawn_detached()
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     fn hide(&self, _config: &ScratchpadConfig) -> Result<()> {

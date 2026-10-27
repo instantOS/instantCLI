@@ -271,11 +271,11 @@ fn launch_settings_in_terminal(navigation: &Option<SettingsNavigation>, debug: b
     }
 
     let current_exe = std::env::current_exe()?;
-    let exe_str = current_exe.to_string_lossy();
-
-    crate::common::terminal::TerminalLauncher::new(exe_str.as_ref())
-        .class("ins-settings")
+    instantos_terminal::Launcher::new(current_exe.as_os_str())
+        .app_id("ins-settings")
         .title("Settings")
         .args(&args)
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }

@@ -1,6 +1,6 @@
 use super::display_server::DisplayServer;
 use crate::scratchpad::config::ScratchpadConfig;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::Path;
@@ -16,18 +16,6 @@ pub(crate) mod ipc_tree;
 pub mod kwin;
 pub mod niri;
 pub mod sway;
-
-pub fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
-    let term_cmd = config.terminal_command();
-    let bg_cmd = format!("nohup {term_cmd} >/dev/null 2>&1 &");
-
-    Command::new("sh")
-        .args(["-c", &bg_cmd])
-        .output()
-        .context("Failed to launch terminal in background")?;
-
-    Ok(())
-}
 
 /// Trait for scratchpad providers
 pub trait ScratchpadProvider: Send + Sync {

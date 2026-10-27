@@ -104,12 +104,12 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // cannot accidentally start an invisible TUI.
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         let current_exe = std::env::current_exe()?;
-        crate::common::terminal::TerminalLauncher::new(current_exe.to_string_lossy())
+        instantos_terminal::Launcher::new(current_exe.as_os_str())
             .arg("arch")
             .arg("install")
-            .class("ins-install")
+            .app_id("ins-install")
             .title("instantOS Installation")
-            .launch()?;
+            .spawn_detached()?;
         return Ok(());
     }
 

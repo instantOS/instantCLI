@@ -1,7 +1,7 @@
 use super::config::{INSTANT_KDL_HEADER, WindowManager, WmConfigManager};
-use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
+use super::{ScratchpadProvider, ScratchpadWindowInfo};
 use crate::common::xkb;
-use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
+use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::fs;
@@ -378,7 +378,10 @@ fn create_and_show_scratchpad(
     config: &ScratchpadConfig,
     current_workspace: &NiriWorkspace,
 ) -> Result<()> {
-    launch_scratchpad_terminal(config).context("Failed to launch niri scratchpad terminal")?;
+    config
+        .launcher()
+        .spawn_detached()
+        .context("Failed to launch niri scratchpad terminal")?;
 
     let mut attempts = 0;
     while attempts < 40 {
@@ -404,25 +407,6 @@ fn create_and_show_scratchpad(
         "niri scratchpad window '{}' did not appear after launch",
         config.window_class()
     )
-}
-
-fn launch_scratchpad_terminal(config: &ScratchpadConfig) -> Result<()> {
-    match &config.terminal {
-        Terminal::Kitty => {
-            let term_cmd = config
-                .terminal_command()
-                .replacen("kitty ", "kitty --detach ", 1);
-            let bg_cmd = format!("nohup {term_cmd} >/dev/null 2>&1 &");
-
-            Command::new("sh")
-                .args(["-c", &bg_cmd])
-                .output()
-                .context("Failed to launch kitty scratchpad in detached mode")?;
-
-            Ok(())
-        }
-        _ => create_terminal_process(config),
-    }
 }
 
 fn position_scratchpad_window(window: &NiriWindow, config: &ScratchpadConfig) -> Result<()> {

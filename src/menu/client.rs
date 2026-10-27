@@ -380,7 +380,7 @@ impl HostedMenuClient {
             MenuRequest::Stop => Ok(MenuResponse::Error(
                 "Menu server is not running in fallback mode".to_string(),
             )),
-            _ => self.invoke_kitty_worker(request),
+            _ => self.invoke_terminal_worker(request),
         }
     }
 
@@ -404,7 +404,7 @@ impl HostedMenuClient {
     /// [`super::fallback::run_worker`] (`menu fallback-worker`). The
     /// request is written to `request.json`, the terminal renders the
     /// dialog, and `response.json` carries the reply back — no socket.
-    fn invoke_kitty_worker(&self, request: MenuRequest) -> Result<MenuResponse> {
+    fn invoke_terminal_worker(&self, request: MenuRequest) -> Result<MenuResponse> {
         let current_exe = std::env::current_exe()
             .context("Failed to determine current executable for menu fallback")?;
 
@@ -426,12 +426,11 @@ impl HostedMenuClient {
             response_path.to_string_lossy().to_string(),
         ];
 
-        let status =
-            crate::common::terminal::TerminalLauncher::new(current_exe.to_string_lossy().as_ref())
-                .class("insmenu-fallback")
-                .title("InstantCLI Menu")
-                .args(&args)
-                .launch_and_wait()?;
+        let status = instantos_terminal::Launcher::new(current_exe.as_os_str())
+            .app_id("insmenu-fallback")
+            .title("InstantCLI Menu")
+            .args(&args)
+            .status()?;
 
         if !status.success() {
             anyhow::bail!("Fallback menu terminal exited with status {status}");
