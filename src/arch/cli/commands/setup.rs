@@ -32,13 +32,11 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
     // a terminal so fzf prompts are never started invisibly.
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         let current_exe = std::env::current_exe()?;
-        let launcher = crate::common::terminal::TerminalLauncher::new(
-            current_exe.to_string_lossy().to_string(),
-        )
-        .args(setup_relaunch_args(user.as_deref(), dry_run))
-        .class("ins-setup")
-        .title("instantOS Setup");
-        launcher.launch()?;
+        let launcher = instantos_terminal::Launcher::new(current_exe.as_os_str())
+            .args(setup_relaunch_args(user.as_deref(), dry_run))
+            .app_id("ins-setup")
+            .title("instantOS Setup");
+        launcher.spawn_detached()?;
         return Ok(());
     }
 

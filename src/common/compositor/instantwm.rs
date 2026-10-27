@@ -1,4 +1,4 @@
-use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
+use super::{ScratchpadProvider, ScratchpadWindowInfo};
 use crate::common::instantwmctl;
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::Result;
@@ -73,7 +73,7 @@ impl ScratchpadProvider for InstantWM {
 
 impl InstantWM {
     fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
-        create_terminal_process(config)?;
+        config.launcher().spawn_detached()?;
 
         let min_delay = Duration::from_millis(20);
         let max_delay = Duration::from_millis(200);

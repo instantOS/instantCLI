@@ -3,10 +3,8 @@ use anyhow::Result;
 use colored::*;
 
 pub mod config;
-pub mod terminal;
 
 pub use config::ScratchpadConfig;
-pub use terminal::Terminal;
 
 /// Shared arguments for scratchpad commands that create/configure terminals
 #[derive(clap::Args, Debug, Clone)]
@@ -15,17 +13,36 @@ pub struct ScratchpadCreateArgs {
     #[arg(long, default_value = "instantscratchpad")]
     pub name: String,
     /// Terminal command to launch
-    #[arg(long, default_value = "kitty")]
-    pub terminal: String,
-    /// Command to run inside the terminal (e.g., "fish", "ranger", "yazi")
     #[arg(long)]
-    pub command: Option<String>,
+    pub terminal: Option<std::ffi::OsString>,
+    /// Program and arguments to run inside the terminal, after --
+    #[arg(last = true)]
+    pub command: Vec<std::ffi::OsString>,
+    /// Explicit shell script to run instead of a program and argument vector
+    #[arg(long, conflicts_with = "command")]
+    pub shell_command: Option<String>,
     /// Terminal width as percentage of screen
     #[arg(long, default_value = "50")]
     pub width_pct: u32,
     /// Terminal height as percentage of screen
     #[arg(long, default_value = "60")]
     pub height_pct: u32,
+}
+
+impl ScratchpadCreateArgs {
+    fn into_config(self) -> ScratchpadConfig {
+        let mut launcher = if let Some(script) = self.shell_command {
+            instantos_terminal::Launcher::new("sh").args(["-c", &script])
+        } else if let Some((program, args)) = self.command.split_first() {
+            instantos_terminal::Launcher::new(program).args(args)
+        } else {
+            instantos_terminal::Launcher::default()
+        };
+        if let Some(terminal) = self.terminal {
+            launcher = launcher.terminal(terminal);
+        }
+        ScratchpadConfig::with_launcher(self.name, launcher, self.width_pct, self.height_pct)
+    }
 }
 
 /// Shared arguments for scratchpad commands that only need identification
@@ -62,21 +79,9 @@ impl ScratchpadCommand {
         match self {
             ScratchpadCommand::Toggle(args) => {
                 if debug {
-                    eprintln!("Toggle scratchpad with config:");
-                    eprintln!("  name: {}", args.name);
-                    eprintln!("  terminal: {}", args.terminal);
-                    eprintln!("  command: {:?}", args.command);
-                    eprintln!("  width_pct: {}", args.width_pct);
-                    eprintln!("  height_pct: {}", args.height_pct);
+                    eprintln!("Toggle scratchpad: {args:?}");
                 }
-
-                let config = ScratchpadConfig::with_params(
-                    args.name,
-                    Terminal::from(args.terminal),
-                    args.command,
-                    args.width_pct,
-                    args.height_pct,
-                );
+                let config = args.into_config();
 
                 match compositor.provider().toggle(&config) {
                     Ok(()) => Ok(0),
@@ -88,21 +93,9 @@ impl ScratchpadCommand {
             }
             ScratchpadCommand::Show(args) => {
                 if debug {
-                    eprintln!("Show scratchpad with config:");
-                    eprintln!("  name: {}", args.name);
-                    eprintln!("  terminal: {}", args.terminal);
-                    eprintln!("  command: {:?}", args.command);
-                    eprintln!("  width_pct: {}", args.width_pct);
-                    eprintln!("  height_pct: {}", args.height_pct);
+                    eprintln!("Show scratchpad: {args:?}");
                 }
-
-                let config = ScratchpadConfig::with_params(
-                    args.name,
-                    Terminal::from(args.terminal),
-                    args.command,
-                    args.width_pct,
-                    args.height_pct,
-                );
+                let config = args.into_config();
 
                 match compositor.provider().show(&config) {
                     Ok(()) => Ok(0),

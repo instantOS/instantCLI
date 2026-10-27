@@ -241,8 +241,6 @@ pub fn remove_game_from_desktop(name: &str) -> Result<bool> {
 
 /// Add the game menu to the desktop
 pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
-    use crate::common::terminal::{detect_terminal, get_execute_flag};
-
     let menu_name = "ins game menu";
 
     // Check if already exists
@@ -254,23 +252,11 @@ pub fn add_menu_to_desktop() -> Result<(bool, Option<PathBuf>)> {
         .to_string_lossy()
         .to_string();
 
-    let terminal = detect_terminal();
-    let terminal_path = which::which(&terminal).context("Failed to find terminal emulator")?;
-    let terminal_str = terminal_path.to_string_lossy().to_string();
-    let execute_flag = get_execute_flag(&terminal);
-
-    // Build exec command
-    // On SteamOS with AppImage, we need --appimage-extract-and-run
+    // Let the CLI launcher follow the current preference, including fallback.
     let exec = if is_appimage() && OperatingSystem::detect() == OperatingSystem::SteamOS {
-        format!(
-            "{} {} \"{}\" --appimage-extract-and-run game menu",
-            terminal_str, execute_flag, ins_bin
-        )
+        format!("\"{}\" --appimage-extract-and-run game menu --gui", ins_bin)
     } else {
-        format!(
-            "{} {} \"{}\" game menu",
-            terminal_str, execute_flag, ins_bin
-        )
+        format!("\"{}\" game menu --gui", ins_bin)
     };
 
     let icon = "utilities-terminal";

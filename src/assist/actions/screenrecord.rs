@@ -15,7 +15,6 @@ use crate::common::audio::{
     pactl_defaults,
 };
 use crate::common::paths;
-use crate::common::shell::shell_quote;
 use crate::menu::client::HostedMenuClient;
 use crate::settings::store::{
     SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, SettingsStore,
@@ -900,21 +899,18 @@ fn open_recording_in_file_manager(path_str: &str, parent_dir: &str) -> Result<()
 }
 
 fn open_recording_in_yazi(path_str: &str) -> Result<()> {
-    crate::common::terminal::TerminalLauncher::new("yazi")
+    instantos_terminal::Launcher::new("yazi")
         .title("Recording")
         .arg(path_str)
-        .launch()?;
+        .spawn_detached()?;
     Ok(())
 }
 
 fn open_terminal_in_directory(parent_dir: &str) -> Result<()> {
-    crate::common::terminal::TerminalLauncher::new("bash")
+    instantos_terminal::Launcher::default()
         .title("Recording Directory")
-        .args([
-            "-c",
-            &format!("cd {} && exec bash", shell_quote(parent_dir)),
-        ])
-        .launch()?;
+        .working_directory(parent_dir)
+        .spawn_detached()?;
     Ok(())
 }
 

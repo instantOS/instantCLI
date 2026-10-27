@@ -583,8 +583,6 @@ pub fn remove_game_from_steam(game_name: &str) -> Result<(bool, bool)> {
 }
 
 pub fn add_game_menu_to_steam() -> Result<(bool, bool)> {
-    use crate::common::terminal::{detect_terminal, get_execute_flag};
-
     let steam_running = is_steam_running();
     if steam_running {
         eprintln!(
@@ -604,12 +602,7 @@ pub fn add_game_menu_to_steam() -> Result<(bool, bool)> {
     let ins_bin = crate::common::shell::resolve_current_binary();
     let ins_bin_str = ins_bin.to_string_lossy().to_string();
 
-    let terminal = detect_terminal();
-    let terminal_path = which::which(&terminal).context("Failed to find terminal emulator")?;
-    let terminal_str = terminal_path.to_string_lossy().to_string();
-    let execute_flag = get_execute_flag(&terminal);
-
-    let exe = format!("\"{}\"", terminal_str);
+    let exe = format!("\"{}\"", ins_bin_str);
     let start_dir = format!(
         "\"{}\"",
         ins_bin
@@ -622,12 +615,9 @@ pub fn add_game_menu_to_steam() -> Result<(bool, bool)> {
     // On SteamOS with AppImage, we need --appimage-extract-and-run
     use crate::common::distro::OperatingSystem;
     let launch_options = if is_appimage() && OperatingSystem::detect() == OperatingSystem::SteamOS {
-        format!(
-            "{} \"{}\" --appimage-extract-and-run game menu",
-            execute_flag, ins_bin_str
-        )
+        "--appimage-extract-and-run game menu --gui".to_string()
     } else {
-        format!("{} \"{}\" game menu", execute_flag, ins_bin_str)
+        "game menu --gui".to_string()
     };
 
     let app_name = "ins game menu";

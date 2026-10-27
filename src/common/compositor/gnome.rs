@@ -1,4 +1,4 @@
-use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
+use super::{ScratchpadProvider, ScratchpadWindowInfo};
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -85,7 +85,7 @@ impl ScratchpadProvider for Gnome {
             Self::call_dbus_method("Unminimize", &[window.id.to_string()])?;
             Self::call_dbus_method("Activate", &[window.id.to_string()])?;
         } else {
-            create_terminal_process(config)?;
+            config.launcher().spawn_detached()?;
         }
         Ok(())
     }
@@ -108,7 +108,7 @@ impl ScratchpadProvider for Gnome {
                 Self::call_dbus_method("Activate", &[window.id.to_string()])?;
             }
         } else {
-            create_terminal_process(config)?;
+            config.launcher().spawn_detached()?;
         }
         Ok(())
     }
