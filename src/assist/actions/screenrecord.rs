@@ -5,10 +5,12 @@
 
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
+use crate::assist::geometry::Geometry;
 use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notification};
 use crate::common::audio::{
     AudioSourceInfo, default_source_names, list_audio_source_names, list_audio_sources_short,
@@ -21,7 +23,26 @@ use crate::settings::store::{
     is_audio_sources_default, parse_audio_source_selection,
 };
 
-const PID_FILE: &str = "wf-recorder.pid";
+/// Written by the detached shell wrapper, which `exec`s into the recorder and
+/// therefore keeps the PID it reports. Read back by us immediately after spawn.
+const PID_FILE: &str = "ins-record.pid";
+/// Written by us: the PID plus everything needed to validate and clean up.
+const STATE_FILE: &str = "ins-record.state";
+/// The recorder's stderr. Both ffmpeg and wf-recorder put the actual reason
+/// for a failure here, so this must survive until the recording is stopped.
+const LOG_FILE: &str = "ins-record.log";
+
+/// Pad video frames without changing the capture bounds.
+const EVEN_FRAME_FILTER: &str = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
+
+/// How long to wait for the wrapper to report a PID before giving up.
+const PID_REPORT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Grace period between the wrapper reporting a PID and confirming the
+/// recorder is still alive. Long enough for `exec` to have failed on a missing
+/// binary, short enough to be invisible.
+const RECORDER_PROBE_DELAY: Duration = Duration::from_millis(50);
+/// Lines of recorder stderr to quote back when a recording produces no output.
+const LOG_TAIL_LINES: usize = 12;
 const KOOHA_FLATPAK_ID: &str = "io.github.seadve.Kooha";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,6 +91,14 @@ fn get_runtime_dir() -> PathBuf {
 
 fn get_pid_file() -> PathBuf {
     get_runtime_dir().join(PID_FILE)
+}
+
+fn get_state_file() -> PathBuf {
+    get_runtime_dir().join(STATE_FILE)
+}
+
+fn get_log_file() -> PathBuf {
+    get_runtime_dir().join(LOG_FILE)
 }
 
 #[derive(Debug)]
@@ -322,55 +351,101 @@ fn unload_audio_modules(module_ids: &[u32]) {
     }
 }
 
-fn is_recording() -> bool {
-    let pid_file = get_pid_file();
-    if !pid_file.exists() {
-        return false;
-    }
-
-    match read_recording_pid_info(&pid_file) {
-        Ok(info) => {
-            let proc_path = format!("/proc/{}", info.pid);
-            if std::path::Path::new(&proc_path).exists() {
-                return true;
-            }
-
-            cleanup_recording_state(&pid_file, &info.audio_module_ids);
-        }
-        Err(_) => {
-            let _ = fs::remove_file(&pid_file);
-        }
-    }
-
-    false
+fn process_is_alive(pid: u32) -> bool {
+    fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            stat.rsplit_once(") ")
+                .map(|(_, tail)| !tail.starts_with('Z'))
+        })
+        .unwrap_or(false)
 }
 
-#[derive(Debug)]
-struct RecordingPidInfo {
-    pid: i32,
+fn is_recording() -> Result<bool> {
+    is_recording_at(&get_state_file())
+}
+
+fn is_recording_at(state_file: &Path) -> Result<bool> {
+    if !state_file.exists() {
+        return Ok(false);
+    }
+    let state = match read_recorder_state(state_file) {
+        Ok(state) => state,
+        Err(err) => {
+            remove_recorder_files(state_file, LogDisposition::Keep);
+            return Err(err);
+        }
+    };
+    if process_is_alive(state.pid) {
+        return Ok(true);
+    }
+    // Surface failures before allowing another recording to overwrite the log.
+    stop_recording_at(state_file)?;
+    Ok(false)
+}
+
+/// Whether the recorder actually wrote a non-empty file.
+///
+/// A recorder that starts and immediately fails leaves a 0-byte file behind,
+/// which looks like success to anything that only checks for existence.
+fn recording_produced_output(output_path: &Option<PathBuf>) -> bool {
+    output_path
+        .as_ref()
+        .is_some_and(|path| fs::metadata(path).is_ok_and(|meta| meta.len() > 0))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RecorderState {
+    pid: u32,
     output_path: Option<PathBuf>,
     audio_module_ids: Vec<u32>,
 }
 
-fn read_recording_pid_info(pid_file: &Path) -> Result<RecordingPidInfo> {
-    let content = fs::read_to_string(pid_file).context("Failed to read PID file")?;
+fn read_recorder_state(state_file: &Path) -> Result<RecorderState> {
+    let content = fs::read_to_string(state_file).context("Failed to read recorder state file")?;
+    decode_recorder_state(&content)
+}
+
+fn decode_recorder_state(content: &str) -> Result<RecorderState> {
     let mut lines = content.lines();
 
-    let pid: i32 = lines
+    let pid: u32 = lines
         .next()
-        .context("PID file is empty")?
+        .context("Recorder state file is empty")?
         .trim()
         .parse()
-        .context("Invalid PID in file")?;
+        .context("Invalid PID in recorder state file")?;
 
-    let output_path = lines.next().map(|s| PathBuf::from(s.trim()));
+    let output_path = lines
+        .next()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from);
+
     let audio_module_ids = lines.next().map(parse_audio_module_ids).unwrap_or_default();
 
-    Ok(RecordingPidInfo {
+    Ok(RecorderState {
         pid,
         output_path,
         audio_module_ids,
     })
+}
+
+fn encode_recorder_state(state: &RecorderState) -> String {
+    let modules = state
+        .audio_module_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<String>>()
+        .join(",");
+
+    let output_path = state
+        .output_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+
+    format!("{}\n{}\n{}\n", state.pid, output_path, modules)
 }
 
 fn parse_audio_module_ids(line: &str) -> Vec<u32> {
@@ -381,41 +456,127 @@ fn parse_audio_module_ids(line: &str) -> Vec<u32> {
         .collect()
 }
 
-fn signal_recorder_stop(pid: i32) -> Result<()> {
-    Command::new("kill")
+fn signal_recorder_stop(pid: u32) -> Result<()> {
+    let status = Command::new("kill")
         .args(["-INT", &pid.to_string()])
         .status()
         .context("Failed to send SIGINT to recorder")?;
+    anyhow::ensure!(
+        status.success() || !process_is_alive(pid),
+        "Failed to stop recorder {pid}"
+    );
     Ok(())
 }
 
-fn wait_for_process_exit(pid: i32) {
-    for _ in 0..50 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        let proc_path = format!("/proc/{}", pid);
-        if !std::path::Path::new(&proc_path).exists() {
-            break;
+fn wait_for_process_exit(pid: u32) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if !process_is_alive(pid) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    anyhow::bail!("Recorder {pid} did not stop within five seconds; recording state retained")
+}
+
+/// Whether the recorder log is still worth keeping on disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogDisposition {
+    /// Keep the log: it is the only record of why the recording produced
+    /// nothing, so it is left behind for the user to read.
+    Keep,
+    Discard,
+}
+
+impl From<bool> for LogDisposition {
+    fn from(recording_succeeded: bool) -> Self {
+        if recording_succeeded {
+            Self::Discard
+        } else {
+            Self::Keep
         }
     }
 }
 
-fn cleanup_recording_state(pid_file: &Path, audio_module_ids: &[u32]) {
-    let _ = fs::remove_file(pid_file);
-    unload_audio_modules(audio_module_ids);
+/// Drop the PID and state files, plus the recorder log once it is no longer
+/// needed.
+fn remove_recorder_files(state_file: &Path, disposition: LogDisposition) {
+    let _ = fs::remove_file(state_file.with_file_name(PID_FILE));
+    let _ = fs::remove_file(state_file);
+    if disposition == LogDisposition::Discard {
+        let _ = fs::remove_file(state_file.with_file_name(LOG_FILE));
+    }
+}
+
+/// Read the last `LOG_TAIL_LINES` non-empty lines from the recorder log.
+///
+/// ffmpeg and wf-recorder report the actual reason for a failure on stderr —
+/// "height not divisible by 2", unknown encoder, unreadable output path.
+/// Sending that to `/dev/null` turned every encoder rejection into the useless
+/// "recorder failed to start", so it is kept on disk and quoted back here.
+fn read_log_tail(log_file: &Path) -> Option<String> {
+    let content = fs::read_to_string(log_file).ok()?;
+    let lines: Vec<&str> = content
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    let start = lines.len().saturating_sub(LOG_TAIL_LINES);
+    Some(lines[start..].join("\n"))
+}
+
+/// Describe why a recording produced no usable output.
+fn no_output_error(state: &RecorderState, log_file: &Path) -> anyhow::Error {
+    let detail = match read_log_tail(log_file) {
+        Some(tail) => format!("\n\nRecorder output:\n{tail}"),
+        None => String::new(),
+    };
+
+    anyhow::anyhow!(
+        "Recording produced no video data.{detail}\n\nThe empty file was left at {}.",
+        state
+            .output_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "the output path".to_string())
+    )
 }
 
 fn stop_recording() -> Result<Option<PathBuf>> {
-    let pid_file = get_pid_file();
-    if !pid_file.exists() {
+    stop_recording_at(&get_state_file())
+}
+
+fn stop_recording_at(state_file: &Path) -> Result<Option<PathBuf>> {
+    if !state_file.exists() {
         return Ok(None);
     }
 
-    let info = read_recording_pid_info(&pid_file)?;
-    signal_recorder_stop(info.pid)?;
-    wait_for_process_exit(info.pid);
-    cleanup_recording_state(&pid_file, &info.audio_module_ids);
+    let state = read_recorder_state(state_file)?;
+    if process_is_alive(state.pid) {
+        signal_recorder_stop(state.pid)?;
+        wait_for_process_exit(state.pid)?;
+    }
+    unload_audio_modules(&state.audio_module_ids);
 
-    Ok(info.output_path)
+    // Check the output before discarding state, so a failed recording reports
+    // why instead of silently leaving a 0-byte file behind.
+    let produced_output = recording_produced_output(&state.output_path);
+
+    remove_recorder_files(state_file, LogDisposition::from(produced_output));
+
+    if !produced_output {
+        return Err(no_output_error(
+            &state,
+            &state_file.with_file_name(LOG_FILE),
+        ));
+    }
+
+    Ok(state.output_path)
 }
 
 fn generate_recording_filename(format: RecordingFormat) -> String {
@@ -437,32 +598,8 @@ fn recording_output_path(format: RecordingFormat) -> Result<PathBuf> {
     Ok(paths::videos_dir()?.join(&filename))
 }
 
-fn parse_geometry_string(geometry: &str) -> Option<(String, String, String)> {
-    // Expected format: WxH+X+Y
-    let x_idx = geometry.find('x')?;
-    let w = &geometry[..x_idx];
-    let rest = &geometry[x_idx + 1..];
-
-    // Find where H ends (at first + or -)
-    let offset_idx = rest.find(['+', '-'])?;
-    let h = &rest[..offset_idx];
-    let offsets = &rest[offset_idx..];
-
-    // Find the second sign for Y offset
-    let second_sign_idx = offsets[1..].find(['+', '-'])? + 1;
-    let x = &offsets[..second_sign_idx];
-    let y = &offsets[second_sign_idx..];
-
-    // Return (WxH, X, Y) with leading + stripped from X/Y
-    Some((
-        format!("{}x{}", w, h),
-        x.trim_start_matches('+').to_string(),
-        y.trim_start_matches('+').to_string(),
-    ))
-}
-
 fn build_ffmpeg_args(
-    geometry: Option<&str>,
+    geometry: Option<&Geometry>,
     format: RecordingFormat,
     output_path: &Path,
     audio_target: Option<&AudioTarget>,
@@ -475,22 +612,18 @@ fn build_ffmpeg_args(
         "1".to_string(),
     ];
 
-    if let Some(geom) = geometry {
-        if let Some((size, x, y)) = parse_geometry_string(geom) {
+    match geometry {
+        Some(geom) => {
             args.push("-video_size".to_string());
-            args.push(size);
+            args.push(format!("{}x{}", geom.width, geom.height));
             args.push("-i".to_string());
-            args.push(format!(":0.0+{},{}", x, y));
-        } else {
-            // Fallback if parsing fails - try full screen or error?
-            // Safer to error or fallback to full screen
+            args.push(format!(":0.0+{},{}", geom.x, geom.y));
+        }
+        // Fullscreen
+        None => {
             args.push("-i".to_string());
             args.push(":0.0".to_string());
         }
-    } else {
-        // Fullscreen
-        args.push("-i".to_string());
-        args.push(":0.0".to_string());
     }
 
     // Audio options
@@ -524,6 +657,9 @@ fn build_ffmpeg_args(
         }
     }
 
+    // Pad the encoded frame, keeping the selected capture region within screen bounds.
+    args.extend(["-vf".to_string(), EVEN_FRAME_FILTER.to_string()]);
+
     // Pixel format
     args.push("-pix_fmt".to_string());
     args.push("yuv420p".to_string());
@@ -541,50 +677,98 @@ fn build_ffmpeg_args(
     Ok(args)
 }
 
-fn spawn_ffmpeg(args: &[String], audio_module_ids: &[u32]) -> Result<u32> {
-    let mut setsid_cmd = Command::new("setsid");
-    setsid_cmd
-        .arg("--fork")
-        .arg("ffmpeg")
+/// POSIX sh wrapper that records its own PID and then `exec`s the recorder.
+///
+/// `exec` replaces the shell's process image without changing the PID, so the
+/// value written here is the recorder's real PID for the entire recording.
+const RECORDER_WRAPPER: &str = "echo $$ > \"$1\"; shift; exec \"$@\"";
+
+/// Start `program` in its own session and return its real PID.
+///
+/// `setsid --fork` always forks, so the PID from `spawn()` belongs to a
+/// process that exits immediately and is useless for signalling. The previous
+/// code worked around that with a fixed 200 ms sleep followed by
+/// `pgrep -n <name>`, which matches by *name* system-wide: it could adopt an
+/// unrelated recorder and later SIGINT the wrong process, or miss entirely and
+/// report a successful start as a failure.
+///
+/// The wrapper reports its own PID instead, so there is no race and no
+/// guessing. `stderr` goes to a log file rather than a pipe: the recorder is
+/// long-running and noisy, and an undrained pipe would eventually fill and
+/// block it mid-recording.
+fn spawn_detached_recorder(program: &str, args: &[String]) -> Result<u32> {
+    let pid_file = get_pid_file();
+    let log_file = get_log_file();
+
+    let _ = fs::remove_file(&pid_file);
+
+    let log_handle = File::create(&log_file).context("Failed to create recorder log file")?;
+
+    let mut cmd = Command::new("setsid");
+    cmd.arg("--fork")
+        .arg("sh")
+        .arg("-c")
+        .arg(RECORDER_WRAPPER)
+        // `$0` is a placeholder `sh` requires; it is never read.
+        .arg("ins-record-wrapper")
+        .arg(&pid_file)
+        .arg(program)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::from(log_handle));
 
-    if let Err(err) = setsid_cmd.spawn() {
-        unload_audio_modules(audio_module_ids);
-        return Err(err).context("Failed to start ffmpeg via setsid");
+    let status = cmd
+        .status()
+        .with_context(|| format!("Failed to start {program} via setsid"))?;
+    anyhow::ensure!(status.success(), "setsid failed to start {program}");
+
+    let pid = wait_for_pid_report(&pid_file)?;
+
+    // Allow exec and early initialization to complete before reporting success.
+    // A missing program leaves a PID report but exits immediately.
+    std::thread::sleep(RECORDER_PROBE_DELAY);
+    if !process_is_alive(pid) {
+        let detail = read_log_tail(&log_file).unwrap_or_default();
+        anyhow::bail!(
+            "{program} exited immediately and never began recording.{}",
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!("\n\nRecorder output:\n{detail}")
+            }
+        );
     }
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    let pgrep_output = match Command::new("pgrep").arg("-n").arg("ffmpeg").output() {
-        Ok(output) => output,
-        Err(err) => {
-            unload_audio_modules(audio_module_ids);
-            return Err(err).context("Failed to find ffmpeg PID");
-        }
-    };
-
-    if !pgrep_output.status.success() {
-        unload_audio_modules(audio_module_ids);
-        anyhow::bail!("ffmpeg failed to start");
-    }
-
-    let pid_str = String::from_utf8_lossy(&pgrep_output.stdout);
-    let pid: u32 = pid_str
-        .trim()
-        .parse()
-        .inspect_err(|_err| {
-            unload_audio_modules(audio_module_ids);
-        })
-        .context("Failed to parse ffmpeg PID")?;
 
     Ok(pid)
 }
 
+fn wait_for_pid_report(pid_file: &Path) -> Result<u32> {
+    let deadline = Instant::now() + PID_REPORT_TIMEOUT;
+
+    loop {
+        if let Some(pid) = read_reported_pid(pid_file) {
+            return Ok(pid);
+        }
+
+        if Instant::now() >= deadline {
+            break;
+        }
+
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    anyhow::bail!("Recorder did not report its process id within {PID_REPORT_TIMEOUT:?}")
+}
+
+fn read_reported_pid(pid_file: &Path) -> Option<u32> {
+    fs::read_to_string(pid_file)
+        .ok()
+        .and_then(|content| content.trim().parse().ok())
+}
+
 fn build_wf_recorder_args(
-    geometry: Option<&str>,
+    geometry: Option<&Geometry>,
     format: RecordingFormat,
     output_path: &Path,
     audio_target: Option<&AudioTarget>,
@@ -594,7 +778,7 @@ fn build_wf_recorder_args(
 
     if let Some(geom) = geometry {
         args.push("-g".to_string());
-        args.push(geom.to_string());
+        args.push(geom.to_slurp());
     }
 
     if let Some(target) = audio_target {
@@ -626,67 +810,17 @@ fn build_wf_recorder_args(
         args.push(format!("{}={}", key, value));
     }
 
+    args.extend(["-F".to_string(), EVEN_FRAME_FILTER.to_string()]);
+
     args.push("-x".to_string());
     args.push("yuv420p".to_string());
 
     Ok(args)
 }
 
-fn spawn_wf_recorder(args: &[String], audio_module_ids: &[u32]) -> Result<u32> {
-    let mut setsid_cmd = Command::new("setsid");
-    setsid_cmd
-        .arg("--fork")
-        .arg("wf-recorder")
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-
-    if let Err(err) = setsid_cmd.spawn() {
-        unload_audio_modules(audio_module_ids);
-        return Err(err).context("Failed to start wf-recorder via setsid");
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    let pgrep_output = match Command::new("pgrep").arg("-n").arg("wf-recorder").output() {
-        Ok(output) => output,
-        Err(err) => {
-            unload_audio_modules(audio_module_ids);
-            return Err(err).context("Failed to find wf-recorder PID");
-        }
-    };
-
-    if !pgrep_output.status.success() {
-        unload_audio_modules(audio_module_ids);
-        anyhow::bail!("wf-recorder failed to start");
-    }
-
-    let pid_str = String::from_utf8_lossy(&pgrep_output.stdout);
-    let pid: u32 = pid_str
-        .trim()
-        .parse()
-        .inspect_err(|_err| {
-            unload_audio_modules(audio_module_ids);
-        })
-        .context("Failed to parse wf-recorder PID")?;
-
-    Ok(pid)
-}
-
-fn write_recording_pid_file(pid: u32, output_path: &Path, audio_module_ids: &[u32]) -> Result<()> {
-    let pid_content = if audio_module_ids.is_empty() {
-        format!("{}\n{}", pid, output_path.display())
-    } else {
-        let module_list = audio_module_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<String>>()
-            .join(",");
-        format!("{}\n{}\n{}", pid, output_path.display(), module_list)
-    };
-
-    fs::write(get_pid_file(), pid_content).context("Failed to write PID file")
+fn write_recorder_state(state: &RecorderState) -> Result<()> {
+    fs::write(get_state_file(), encode_recorder_state(state))
+        .context("Failed to write recorder state file")
 }
 
 mod indicator;
@@ -704,10 +838,23 @@ fn spawn_recording_indicator(pid: u32) -> Result<()> {
     Ok(())
 }
 
-fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Result<()> {
+fn start_recording_impl(geometry: Option<Geometry>, format: RecordingFormat) -> Result<()> {
     ensure_recording_support()?;
 
     let output_path = recording_output_path(format)?;
+
+    let config = AreaSelectionConfig::new();
+    let is_wayland = config.display_server().is_wayland();
+
+    // Reject unsupported compositors before touching audio. Creating the null
+    // sink and loopbacks first would orphan those Pulse modules on this path.
+    if is_wayland {
+        use crate::assist::utils::check_screen_recording_support;
+        if !check_screen_recording_support() {
+            // Error already shown via menu, just return a quiet error
+            anyhow::bail!("Screen recording not supported on this compositor");
+        }
+    }
 
     let settings = SettingsStore::load().ok();
     let selection_mode = audio_selection_mode(settings.as_ref());
@@ -718,35 +865,45 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         .unwrap_or_default();
     let framerate = recording_framerate(settings.as_ref());
 
-    let config = AreaSelectionConfig::new();
-    let pid = if config.display_server().is_wayland() {
-        // Check for unsupported Wayland compositors
-        use crate::assist::utils::check_screen_recording_support;
-        if !check_screen_recording_support() {
-            // Error already shown via menu, just return a quiet error
-            anyhow::bail!("Screen recording not supported on this compositor");
-        }
-        let wf_args = build_wf_recorder_args(
-            geometry,
+    let (program, args) = if is_wayland {
+        let args = build_wf_recorder_args(
+            geometry.as_ref(),
             format,
             &output_path,
             audio_target.as_ref(),
             framerate,
         )?;
-        spawn_wf_recorder(&wf_args, &audio_module_ids)?
+        ("wf-recorder", args)
     } else {
-        let ffmpeg_args = build_ffmpeg_args(
-            geometry,
+        let args = build_ffmpeg_args(
+            geometry.as_ref(),
             format,
             &output_path,
             audio_target.as_ref(),
             framerate,
         )?;
-        spawn_ffmpeg(&ffmpeg_args, &audio_module_ids)?
+        ("ffmpeg", args)
     };
 
-    if let Err(err) = write_recording_pid_file(pid, &output_path, &audio_module_ids) {
-        unload_audio_modules(&audio_module_ids);
+    let pid = match spawn_detached_recorder(program, &args) {
+        Ok(pid) => pid,
+        Err(err) => {
+            unload_audio_modules(&audio_module_ids);
+            return Err(err);
+        }
+    };
+
+    let state = RecorderState {
+        pid,
+        output_path: Some(output_path.clone()),
+        audio_module_ids,
+    };
+
+    if let Err(err) = write_recorder_state(&state) {
+        signal_recorder_stop(pid).ok();
+        wait_for_process_exit(pid)?;
+        unload_audio_modules(&state.audio_module_ids);
+        remove_recorder_files(&get_state_file(), LogDisposition::Keep);
         return Err(err);
     }
 
@@ -764,27 +921,27 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
 }
 
 pub fn screen_record_area() -> Result<()> {
-    if is_recording() {
+    if is_recording()? {
         return toggle_recording();
     }
 
     let config = AreaSelectionConfig::new();
     let geometry = config.select_area()?;
-    start_recording_impl(Some(&geometry), RecordingFormat::Mp4)
+    start_recording_impl(Some(geometry), RecordingFormat::Mp4)
 }
 
 pub fn screen_record_area_webm() -> Result<()> {
-    if is_recording() {
+    if is_recording()? {
         return toggle_recording();
     }
 
     let config = AreaSelectionConfig::new();
     let geometry = config.select_area()?;
-    start_recording_impl(Some(&geometry), RecordingFormat::WebM)
+    start_recording_impl(Some(geometry), RecordingFormat::WebM)
 }
 
 pub fn screen_record_fullscreen() -> Result<()> {
-    if is_recording() {
+    if is_recording()? {
         return toggle_recording();
     }
 
@@ -801,7 +958,7 @@ pub fn open_kooha() -> Result<()> {
 }
 
 pub fn toggle_recording() -> Result<()> {
-    if is_recording() {
+    if is_recording()? {
         if let Some(output_path) = stop_recording()? {
             show_post_recording_menu(&output_path)?;
         } else {
@@ -952,10 +1109,181 @@ fn show_post_recording_menu(output_path: &std::path::Path) -> Result<()> {
 }
 
 pub fn stop_recording_action() -> Result<()> {
-    if !is_recording() {
+    if !is_recording()? {
         show_notification("No recording", "No screen recording in progress")?;
         return Ok(());
     }
 
     toggle_recording()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_state_reports_error_and_allows_next_attempt() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let state_file = dir.path().join(STATE_FILE);
+        fs::write(&state_file, "invalid pid\n")?;
+        assert!(is_recording_at(&state_file).is_err());
+        assert!(!state_file.exists());
+        assert!(!is_recording_at(&state_file)?);
+        Ok(())
+    }
+
+    #[test]
+    fn dead_recorder_reports_failure_before_clearing_state() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let output_path = dir.path().join("empty.mp4");
+        fs::write(&output_path, [])?;
+        let state_file = dir.path().join(STATE_FILE);
+        let log_file = dir.path().join(LOG_FILE);
+        let state = RecorderState {
+            pid: u32::MAX,
+            output_path: Some(output_path),
+            audio_module_ids: vec![],
+        };
+        fs::write(&state_file, encode_recorder_state(&state))?;
+        fs::write(&log_file, "encoder failed\n")?;
+        let error = is_recording_at(&state_file).unwrap_err().to_string();
+        assert!(error.contains("encoder failed"));
+        assert!(!state_file.exists());
+        assert!(log_file.exists());
+        assert!(!is_recording_at(&state_file)?);
+        Ok(())
+    }
+
+    #[test]
+    fn odd_area_is_padded_without_expanding_capture_bounds() {
+        let geometry = Geometry {
+            x: 1,
+            y: 0,
+            width: 1919,
+            height: 1079,
+        };
+        let wf = build_wf_recorder_args(
+            Some(&geometry),
+            RecordingFormat::Mp4,
+            Path::new("/tmp/out.mp4"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(wf.windows(2).any(|pair| pair == ["-g", "1,0 1919x1079"]));
+        assert!(wf.windows(2).any(|pair| pair == ["-F", EVEN_FRAME_FILTER]));
+        let ff = build_ffmpeg_args(
+            Some(&geometry),
+            RecordingFormat::Mp4,
+            Path::new("/tmp/out.mp4"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(
+            ff.windows(2)
+                .any(|pair| pair == ["-video_size", "1919x1079"])
+        );
+        assert!(ff.windows(2).any(|pair| pair == ["-vf", EVEN_FRAME_FILTER]));
+    }
+
+    #[test]
+    fn fullscreen_recording_has_no_geometry_args() {
+        let wf = build_wf_recorder_args(
+            None,
+            RecordingFormat::Mp4,
+            Path::new("/tmp/out.mp4"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(!wf.contains(&"-g".to_string()));
+
+        let ff = build_ffmpeg_args(
+            None,
+            RecordingFormat::Mp4,
+            Path::new("/tmp/out.mp4"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(!ff.contains(&"-video_size".to_string()));
+        assert!(ff.contains(&":0.0".to_string()));
+    }
+
+    #[test]
+    fn recorder_state_round_trips() {
+        let state = RecorderState {
+            pid: 4242,
+            output_path: Some(PathBuf::from("/home/user/Videos/recording.mp4")),
+            audio_module_ids: vec![11, 22],
+        };
+
+        let decoded = decode_recorder_state(&encode_recorder_state(&state)).unwrap();
+        assert_eq!(decoded, state);
+    }
+
+    #[test]
+    fn recorder_state_handles_no_audio_modules() {
+        let state = RecorderState {
+            pid: 7,
+            output_path: None,
+            audio_module_ids: Vec::new(),
+        };
+
+        let encoded = encode_recorder_state(&state);
+        let mut lines = encoded.lines();
+
+        assert_eq!(lines.next(), Some("7"));
+        assert_eq!(lines.next(), Some(""));
+        assert_eq!(lines.next(), Some(""));
+    }
+
+    #[test]
+    fn parses_audio_module_ids() {
+        assert_eq!(parse_audio_module_ids("1,2,3"), vec![1, 2, 3]);
+        assert_eq!(parse_audio_module_ids(" 4 , 5 "), vec![4, 5]);
+        assert_eq!(parse_audio_module_ids(""), Vec::<u32>::new());
+        assert_eq!(parse_audio_module_ids("nope"), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn detached_recorder_reports_the_real_pid() -> Result<()> {
+        // Integration check for the shell wrapper: the PID written must be the
+        // PID of the exec'd process, not of `sh` or `setsid`.
+        let dir = tempfile::tempdir()?;
+        let pid_file = dir.path().join(PID_FILE);
+
+        let mut cmd = Command::new("setsid");
+        cmd.arg("--fork")
+            .arg("sh")
+            .arg("-c")
+            .arg(RECORDER_WRAPPER)
+            .arg("test-wrapper")
+            .arg(&pid_file)
+            .arg("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        assert!(cmd.status()?.success());
+
+        let pid = wait_for_pid_report(&pid_file).expect("wrapper should report a PID");
+
+        let deadline = Instant::now() + PID_REPORT_TIMEOUT;
+        let cmdline = loop {
+            let cmdline = fs::read_to_string(format!("/proc/{pid}/cmdline"))?;
+            if cmdline.starts_with("sleep\0") || Instant::now() >= deadline {
+                break cmdline;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let alive = process_is_alive(pid);
+        signal_recorder_stop(pid)?;
+        wait_for_process_exit(pid)?;
+        assert!(alive);
+        assert!(cmdline.starts_with("sleep\0"), "got {cmdline:?}");
+        let _ = fs::remove_file(&pid_file);
+        Ok(())
+    }
 }

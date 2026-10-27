@@ -1,8 +1,10 @@
 /// Shared utility functions for assists
 use anyhow::{Context, Result};
 use std::io::Write;
+use std::os::unix::process::CommandExt as _;
 use std::process::{Command, ExitStatus};
 
+use crate::assist::geometry::Geometry;
 use crate::common::compositor::CompositorType;
 use crate::common::display_server::DisplayServer;
 use crate::common::shell::shell_quote;
@@ -349,8 +351,7 @@ impl AreaSelectionConfig {
     }
 
     /// Select screen area using appropriate tools for the current display server
-    /// Returns geometry string that can be used with screenshot tools
-    pub fn select_area(&self) -> Result<String> {
+    pub fn select_area(&self) -> Result<Geometry> {
         match self.display_server {
             DisplayServer::Wayland => {
                 // Check for unsupported Wayland compositors
@@ -366,7 +367,7 @@ impl AreaSelectionConfig {
     }
 
     /// Select area on Wayland using slurp with configurable color
-    fn select_area_wayland(&self) -> Result<String> {
+    fn select_area_wayland(&self) -> Result<Geometry> {
         let color_hex = self.color.wayland_hex();
 
         let mut cmd = Command::new("slurp");
@@ -388,11 +389,11 @@ impl AreaSelectionConfig {
             anyhow::bail!("No area selected");
         }
 
-        Ok(geometry)
+        Geometry::parse_slurp(&geometry)
     }
 
     /// Select area on X11 using slop with configurable color and compositing support
-    fn select_area_x11(&self) -> Result<String> {
+    fn select_area_x11(&self) -> Result<Geometry> {
         let rgb_color = self.color.x11_rgb();
 
         let mut cmd = Command::new("slop");
@@ -423,7 +424,7 @@ impl AreaSelectionConfig {
             anyhow::bail!("No area selected");
         }
 
-        Ok(geometry)
+        Geometry::parse_x11(&geometry)
     }
 
     /// Get the display server for this configuration
@@ -480,6 +481,15 @@ fn xclip_copy_command(mime_type: Option<&str>) -> Command {
     command
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    // Detach the clipboard owner so closing a transient terminal does not
+    // send it SIGHUP and discard the selection. setsid is safe after fork.
+    unsafe {
+        command.pre_exec(|| {
+            nix::unistd::setsid()
+                .map(|_| ())
+                .map_err(std::io::Error::from)
+        });
+    }
     command
 }
 
@@ -514,10 +524,13 @@ pub fn copy_image_to_clipboard(
 }
 
 /// Capture screenshot of selected area to memory (as PNG bytes)
-pub fn capture_area_to_memory(geometry: &str, display_server: &DisplayServer) -> Result<Vec<u8>> {
+pub fn capture_area_to_memory(
+    geometry: &Geometry,
+    display_server: &DisplayServer,
+) -> Result<Vec<u8>> {
     if display_server.is_wayland() {
         let grim_output = Command::new("grim")
-            .args(["-g", geometry, "-"])
+            .args(["-g", &geometry.to_slurp(), "-"])
             .output()
             .context("Failed to capture screenshot with grim")?;
 
@@ -528,7 +541,7 @@ pub fn capture_area_to_memory(geometry: &str, display_server: &DisplayServer) ->
         Ok(grim_output.stdout)
     } else if display_server.is_x11() {
         let import_output = Command::new("import")
-            .args(["-window", "root", "-crop", geometry, "png:-"])
+            .args(["-window", "root", "-crop", &geometry.to_x11(), "png:-"])
             .output()
             .context("Failed to capture screenshot with import")?;
 
@@ -544,13 +557,13 @@ pub fn capture_area_to_memory(geometry: &str, display_server: &DisplayServer) ->
 
 /// Capture screenshot of selected area to file
 pub fn capture_area_to_file(
-    geometry: &str,
+    geometry: &Geometry,
     file_path: &std::path::Path,
     display_server: &DisplayServer,
 ) -> Result<()> {
     if display_server.is_wayland() {
         let status = Command::new("grim")
-            .args(["-g", geometry])
+            .args(["-g", &geometry.to_slurp()])
             .arg(file_path)
             .status()
             .context("Failed to capture screenshot with grim")?;
@@ -560,7 +573,7 @@ pub fn capture_area_to_file(
         }
     } else if display_server.is_x11() {
         let status = Command::new("import")
-            .args(["-window", "root", "-crop", geometry])
+            .args(["-window", "root", "-crop", &geometry.to_x11()])
             .arg(file_path)
             .status()
             .context("Failed to capture screenshot with import")?;

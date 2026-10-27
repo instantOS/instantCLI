@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod deps;
+pub mod geometry;
 
 pub mod commands;
 pub mod execute;

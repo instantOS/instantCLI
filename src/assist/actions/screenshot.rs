@@ -334,33 +334,6 @@ pub fn screenshot_area_to_pictures() -> Result<()> {
     Ok(())
 }
 
-/// Parse slurp geometry string (e.g., "100,200 300x400") into (x, y, width, height)
-fn parse_slurp_geometry(geometry: &str) -> Result<(i32, i32, i32, i32)> {
-    // Format: "x,y widthxheight"
-    let parts: Vec<&str> = geometry.split_whitespace().collect();
-    if parts.len() != 2 {
-        anyhow::bail!("Invalid geometry format: {}", geometry);
-    }
-
-    let pos_parts: Vec<&str> = parts[0].split(',').collect();
-    let size_parts: Vec<&str> = parts[1].split('x').collect();
-
-    if pos_parts.len() != 2 || size_parts.len() != 2 {
-        anyhow::bail!("Invalid geometry format: {}", geometry);
-    }
-
-    let x: i32 = pos_parts[0]
-        .parse()
-        .context("Failed to parse x coordinate")?;
-    let y: i32 = pos_parts[1]
-        .parse()
-        .context("Failed to parse y coordinate")?;
-    let width: i32 = size_parts[0].parse().context("Failed to parse width")?;
-    let height: i32 = size_parts[1].parse().context("Failed to parse height")?;
-
-    Ok((x, y, width, height))
-}
-
 /// Wait for an XWayland window with the given class to appear, using exponential backoff.
 /// Returns Ok(true) if window found, Ok(false) if timed out.
 fn wait_for_xwayland_window(class: &str, max_attempts: u32) -> Result<bool> {
@@ -403,14 +376,8 @@ pub fn screenshot_freeze() -> Result<()> {
     let temp_path = std::env::temp_dir().join(format!("ins_freeze_{}.png", std::process::id()));
     std::fs::write(&temp_path, &screenshot_data).context("Failed to write temporary screenshot")?;
 
-    // feh is an X11 app and always expects the X11 geometry format "WxH+X+Y"
-    let geometry_arg = if display_server.is_wayland() {
-        let (x, y, width, height) = parse_slurp_geometry(&geometry)?;
-        format!("{}x{}+{}+{}", width, height, x, y)
-    } else {
-        // slop already returns the geometry in the "WxH+X+Y" format
-        geometry.clone()
-    };
+    // feh expects X11 geometry on every backend.
+    let geometry_arg = geometry.to_x11();
 
     // On instantWM (X11 and Wayland), ask it to float the next matching
     // window without a WM border. Floating is what makes instantWM honor
@@ -449,10 +416,9 @@ pub fn screenshot_freeze() -> Result<()> {
         // Make it floating and position it exactly
         // Use "class" for XWayland apps (not "app_id" which is for native Wayland)
         // Use "move absolute position" to avoid title bar offset issues
-        let (x, y, _, _) = parse_slurp_geometry(&geometry)?;
         let sway_cmd = format!(
             "[class=\"{}\"] floating enable, border none, move absolute position {} {}",
-            FREEZE_WINDOW_CLASS, x, y
+            FREEZE_WINDOW_CLASS, geometry.x, geometry.y
         );
         let _ = sway::swaymsg(&sway_cmd);
     }

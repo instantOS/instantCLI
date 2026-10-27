@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::Command;
 
+use crate::assist::geometry::Geometry;
 use crate::assist::utils::{
     capture_area_to_memory, copy_to_clipboard, show_notification, show_notification_with_icon,
 };
@@ -26,10 +27,10 @@ fn pick_color_universal_wayland(display_server: &DisplayServer) -> Result<Option
 
     // Capture screenshot of 1x1 pixel at selected coordinates
     let slurp_str = String::from_utf8_lossy(&slurp_output.stdout);
-    let geometry = slurp_str.trim();
 
-    // Capture the area to memory using grim (handled by utils)
-    let screenshot_data = capture_area_to_memory(geometry, display_server)?;
+    // Capture exactly the selected 1x1 pixel with grim.
+    let geometry = Geometry::parse_slurp(slurp_str.trim())?;
+    let screenshot_data = capture_area_to_memory(&geometry, display_server)?;
 
     // Use ImageMagick to extract color from the single pixel
     // We use info:- with a specific format to get the hex color directly

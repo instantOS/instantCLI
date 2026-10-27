@@ -1,11 +1,11 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use ksni::TrayMethods;
 
 use super::{
-    RecordingPidInfo, cleanup_recording_state, get_pid_file, read_recording_pid_info,
-    show_notification, stop_recording_action,
+    RecorderState, get_state_file, process_is_alive, read_recorder_state, show_notification,
+    stop_recording, stop_recording_action,
 };
 
 struct RecordingTray {
@@ -105,8 +105,8 @@ fn recording_icon(size: i32) -> ksni::Icon {
     }
 }
 
-fn matches_recording(info: &RecordingPidInfo, pid: u32) -> bool {
-    i32::try_from(pid).ok() == Some(info.pid)
+fn matches_recording(info: &RecorderState, pid: u32) -> bool {
+    info.pid == pid
 }
 
 pub(crate) fn run(pid: u32) -> Result<()> {
@@ -123,8 +123,8 @@ pub(crate) fn run(pid: u32) -> Result<()> {
 }
 
 async fn monitor(pid: u32) -> Result<bool> {
-    let pid_file = get_pid_file();
-    let info = match read_recording_pid_info(&pid_file) {
+    let state_file = get_state_file();
+    let info = match read_recorder_state(&state_file) {
         Ok(info) if matches_recording(&info, pid) => info,
         _ => return Ok(false),
     };
@@ -152,20 +152,15 @@ async fn monitor(pid: u32) -> Result<bool> {
     let stop_requested = loop {
         tokio::time::sleep(Duration::from_millis(250)).await;
         // An old helper must never stop a newer recording.
-        if !read_recording_pid_info(&pid_file).is_ok_and(|current| {
+        if !read_recorder_state(&state_file).is_ok_and(|current| {
             matches_recording(&current, pid) && current.output_path == info.output_path
         }) {
             break false;
         }
-        let running = fs::read_to_string(format!("/proc/{pid}/stat"))
-            .ok()
-            .and_then(|stat| {
-                stat.rsplit_once(") ")
-                    .map(|(_, tail)| !tail.starts_with('Z'))
-            })
-            .unwrap_or(false);
-        if !running {
-            cleanup_recording_state(&pid_file, &info.audio_module_ids);
+        if !process_is_alive(pid) {
+            if let Err(err) = stop_recording() {
+                let _ = show_notification("Recording failed", &format!("{err:#}"));
+            }
             break false;
         }
         if requests.try_recv().is_ok() {
@@ -202,7 +197,7 @@ mod tests {
 
     #[test]
     fn helper_only_matches_its_own_recorder() {
-        let info = RecordingPidInfo {
+        let info = RecorderState {
             pid: 42,
             output_path: None,
             audio_module_ids: vec![],
