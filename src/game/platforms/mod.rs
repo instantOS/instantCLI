@@ -10,6 +10,7 @@ mod duckstation;
 mod emulator;
 mod flatpak;
 pub mod ludusavi;
+mod presentation;
 mod prompts;
 mod steam_launcher;
 mod umu;
@@ -314,12 +315,15 @@ fn launcher_display(launcher: LauncherType, recommended: bool) -> String {
             "{} Steam{suffix}",
             format_icon_colored(NerdFont::Steam, colors::SAPPHIRE)
         ),
-        LauncherType::Emulator(platform) => format!(
-            "{} {} ({}){suffix}",
-            format_icon_colored(NerdFont::Gamepad, colors::GREEN),
-            platform.name(),
-            platform.system_name(),
-        ),
+        LauncherType::Emulator(platform) => {
+            let (icon, color) = presentation::style(platform);
+            format!(
+                "{} {} ({}){suffix}",
+                format_icon_colored(icon, color),
+                platform.name(),
+                platform.system_name(),
+            )
+        }
         LauncherType::Back => format!("{} Back", format_back_icon()),
     }
 }
@@ -425,22 +429,7 @@ fn launcher_preview(
         }
         LauncherType::Emulator(platform) => {
             let preset = context.and_then(|ctx| ctx.preset_for(launcher));
-            PreviewBuilder::new()
-                .header(NerdFont::Gamepad, platform.name())
-                .text(platform.system_name())
-                .blank()
-                .field(
-                    "Supported files",
-                    &validation::format_valid_extensions(platform.extensions()),
-                )
-                .text("Select an available native, Flatpak, or AppImage installation.")
-                .field(
-                    "Reason",
-                    preset
-                        .map(|preset| preset.reason.as_str())
-                        .unwrap_or("<none>"),
-                )
-                .build()
+            presentation::launcher_preview(platform, preset.map(|preset| preset.reason.as_str()))
         }
         LauncherType::Back => PreviewBuilder::new()
             .header(NerdFont::ArrowLeft, "Back")
@@ -586,6 +575,16 @@ mod tests {
     use crate::game::launch_command::{
         EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, SteamLaunchCommand,
     };
+
+    #[test]
+    fn emulator_choices_keep_distinct_icons_and_recommendations() {
+        let dolphin = launcher_display(LauncherType::Emulator(EmulatorPlatform::Dolphin), true);
+        let pcsx2 = launcher_display(LauncherType::Emulator(EmulatorPlatform::Pcsx2), false);
+        assert!(dolphin.contains(&char::from(NerdFont::Fish).to_string()));
+        assert!(pcsx2.contains(&char::from(NerdFont::Disc).to_string()));
+        assert!(dolphin.contains("[recommended]"));
+        assert!(!pcsx2.contains("[recommended]"));
+    }
 
     #[test]
     fn inferred_wine_prefix_enriches_existing_preset() {

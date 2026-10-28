@@ -6,7 +6,8 @@ use crate::game::launch_command::{
     EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, EmulatorPlatform, LaunchCommand,
     LaunchCommandKind,
 };
-use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 
 use super::LaunchCommandBuilderContext;
@@ -40,18 +41,37 @@ pub(crate) fn detected_launchers(platform: EmulatorPlatform) -> Result<Vec<Emula
 }
 
 #[derive(Clone)]
-struct LauncherItem(EmulatorLauncher);
+struct LauncherItem {
+    platform: EmulatorPlatform,
+    launcher: EmulatorLauncher,
+}
 
 impl FzfSelectable for LauncherItem {
     fn fzf_display_text(&self) -> String {
-        match &self.0 {
-            EmulatorLauncher::Native { command } => format!("Native: {command}"),
-            EmulatorLauncher::Flatpak { app_id } => format!("Flatpak: {app_id}"),
-            EmulatorLauncher::AppImage { path } => format!("AppImage: {}", path.display()),
-        }
+        let (icon, color, label) = match &self.launcher {
+            EmulatorLauncher::Native { command } => (
+                NerdFont::Terminal,
+                colors::BLUE,
+                format!("Native: {command}"),
+            ),
+            EmulatorLauncher::Flatpak { app_id } => (
+                NerdFont::Package,
+                colors::LAVENDER,
+                format!("Flatpak: {app_id}"),
+            ),
+            EmulatorLauncher::AppImage { path } => (
+                NerdFont::Code,
+                colors::PEACH,
+                format!("AppImage: {}", path.display()),
+            ),
+        };
+        format!("{} {label}", format_icon_colored(icon, color))
     }
     fn fzf_key(&self) -> String {
-        self.fzf_display_text()
+        crate::menu_utils::default_fzf_key(&self.fzf_display_text())
+    }
+    fn fzf_preview(&self) -> FzfPreview {
+        super::presentation::installation_preview(self.platform, &self.launcher)
     }
 }
 
@@ -101,10 +121,15 @@ fn select_launcher(
         _ => match FzfWrapper::builder()
             .prompt(platform.name())
             .header("Select emulator installation")
-            .items(launchers.into_iter().map(LauncherItem).collect::<Vec<_>>())
+            .items(
+                launchers
+                    .into_iter()
+                    .map(|launcher| LauncherItem { platform, launcher })
+                    .collect::<Vec<_>>(),
+            )
             .select_one()?
         {
-            DialogOutcome::Submitted(item) => Ok(Some(item.0)),
+            DialogOutcome::Submitted(item) => Ok(Some(item.launcher)),
             DialogOutcome::Cancelled => Ok(None),
         },
     }
@@ -178,5 +203,44 @@ pub(crate) fn launch_command(
             game: game.to_path_buf(),
             options,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installation_choices_keep_previews_with_their_full_identity() {
+        let platform = EmulatorPlatform::DuckStation;
+        for (launcher, identity) in [
+            (
+                EmulatorLauncher::AppImage {
+                    path: "/emulators/Player's DuckStation.AppImage".into(),
+                },
+                "/emulators/Player's DuckStation.AppImage",
+            ),
+            (
+                EmulatorLauncher::Native {
+                    command: "duckstation-qt",
+                },
+                "duckstation-qt",
+            ),
+            (
+                EmulatorLauncher::Flatpak {
+                    app_id: "org.duckstation.DuckStation",
+                },
+                "org.duckstation.DuckStation",
+            ),
+        ] {
+            let item = LauncherItem { platform, launcher };
+            let FzfPreview::Text(preview) = item.fzf_preview() else {
+                panic!("Every installation choice needs a preview");
+            };
+            assert!(preview.contains("DuckStation"));
+            assert!(preview.contains(identity));
+            assert!(item.fzf_display_text().contains(identity));
+            assert!(!item.fzf_key().contains('\x1b'));
+        }
     }
 }

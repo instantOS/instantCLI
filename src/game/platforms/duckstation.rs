@@ -7,7 +7,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
-const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";
+pub(super) const DEFAULT_DUCKSTATION_PATH: &str = "~/AppImages/DuckStation-x64.AppImage";
 const DUCKSTATION_DOWNLOAD_URL: &str =
     "https://github.com/stenzek/duckstation/releases/download/latest/DuckStation-x64.AppImage";
 pub(super) fn select_or_download() -> Result<Option<PathBuf>> {

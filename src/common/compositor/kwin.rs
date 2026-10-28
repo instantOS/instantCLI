@@ -1,8 +1,9 @@
 use super::ScratchpadProvider;
 use super::ScratchpadWindowInfo;
 use crate::scratchpad::config::ScratchpadConfig;
-use anyhow::{Context, Result};
-use std::io::{BufRead, BufReader, Write};
+use anyhow::{Context, Result, bail};
+use nix::fcntl::{FcntlArg, OFlag, fcntl};
+use std::io::{ErrorKind, Read, Write};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::Builder;
@@ -96,11 +97,11 @@ impl KWin {
         // We use a fake destination that the script will call
         let monitor_dest = "org.instantos.scratchpad.status";
         let mut monitor = Command::new("dbus-monitor")
-            .args([&format!("destination='{}'", monitor_dest)])
+            .args(["--session", &format!("destination='{}'", monitor_dest)])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .context("Failed to spawn dbus-monitor")?;
+            .context("Failed to start dbus-monitor; install the D-Bus tools required for KWin scratchpads")?;
 
         // Give dbus-monitor a moment to start
         std::thread::sleep(Duration::from_millis(10));
@@ -131,63 +132,21 @@ impl KWin {
             monitor_dest
         );
 
-        // Run the script
-        // We use a separate thread or just run it. dbus-monitor is running in background.
-        // We need to run the script loading logic here.
-        // We can reuse the logic from run_script but simpler since we don't need args.
+        let result = (|| {
+            self.execute_kwin_script(&script_content)?;
+            let mut stdout = monitor
+                .stdout
+                .take()
+                .context("Missing KWin monitor output")?;
+            let flags = OFlag::from_bits_truncate(fcntl(&stdout, FcntlArg::F_GETFL)?);
+            fcntl(&stdout, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
+            read_window_info(&mut stdout, Duration::from_millis(500))
+        })();
 
-        let run_result = self.execute_kwin_script(&script_content);
-
-        if run_result.is_err() {
-            let _ = monitor.kill();
-            return Err(run_result.err().unwrap());
-        }
-
-        // Read dbus-monitor output
-        // We expect a method call with the JSON string
-        let start = Instant::now();
-        let timeout = Duration::from_millis(500); // 500ms timeout
-        let mut json_str = String::new();
-        let mut found = false;
-
-        if let Some(stdout) = monitor.stdout.take() {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                if start.elapsed() > timeout {
-                    break;
-                }
-
-                if let Ok(l) = line
-                    && l.contains("string \"[{")
-                {
-                    // This looks like our JSON array
-                    // dbus-monitor output format for string is: string "..."
-                    // We need to extract the content inside quotes and unescape it
-                    if let Some(start_idx) = l.find("string \"") {
-                        let content = &l[start_idx + 8..];
-                        if let Some(content) = content.strip_suffix('"') {
-                            json_str = content.to_string();
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
+        // Reap the monitor on success and on every error path.
         let _ = monitor.kill();
-
-        if !found {
-            return Err(anyhow::anyhow!("Timeout waiting for KWin status"));
-        }
-
-        // dbus-monitor escapes quotes as \", we need to unescape
-        let json_str = json_str.replace("\\\"", "\"");
-
-        let windows: Vec<KWinWindowInfo> =
-            serde_json::from_str(&json_str).context("Failed to parse KWin window info JSON")?;
-
-        Ok(windows)
+        let _ = monitor.wait();
+        result
     }
 
     /// Helper to execute a raw KWin script string
@@ -205,16 +164,20 @@ impl KWin {
             .args([
                 "--session",
                 "--print-reply",
+                "--reply-timeout=500",
                 "--dest=org.kde.KWin",
                 "/Scripting",
                 "org.kde.kwin.Scripting.loadScript",
                 &format!("string:{}", path),
             ])
-            .output()?;
+            .output()
+            .context("Failed to execute dbus-send to load KWin script")?;
 
-        if !output.status.success() {
-            return Err(anyhow::anyhow!("Failed to load script"));
-        }
+        anyhow::ensure!(
+            output.status.success(),
+            "Failed to load KWin script: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let id_str = stdout.lines().last().unwrap_or("").trim();
@@ -226,15 +189,17 @@ impl KWin {
         };
 
         let script_obj_path = format!("/Scripting/Script{}", id);
-        Command::new("dbus-send")
+        let run_result = Command::new("dbus-send")
             .args([
                 "--session",
                 "--print-reply",
+                "--reply-timeout=500",
                 "--dest=org.kde.KWin",
                 &script_obj_path,
                 "org.kde.kwin.Script.run",
             ])
-            .output()?;
+            .output()
+            .context("Failed to run KWin script");
 
         // Stop it immediately
         let _ = Command::new("dbus-send")
@@ -246,6 +211,12 @@ impl KWin {
             ])
             .output();
 
+        let output = run_result?;
+        anyhow::ensure!(
+            output.status.success(),
+            "Failed to run KWin script: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         Ok(())
     }
 
@@ -316,75 +287,120 @@ impl KWin {
         "#
         );
 
-        // Create temp file
-        let mut temp_file = Builder::new()
-            .prefix("kwin-scratchpad-")
-            .suffix(".js")
-            .tempfile()?;
+        self.execute_kwin_script(&script_content)
+    }
+}
 
-        write!(temp_file, "{}", script_content)?;
-        temp_file.flush()?;
-        let path = temp_file.path().to_str().context("Invalid path")?;
-
-        // DBus call to load script
-        let output = Command::new("dbus-send")
-            .args([
-                "--session",
-                "--print-reply",
-                "--dest=org.kde.KWin",
-                "/Scripting",
-                "org.kde.kwin.Scripting.loadScript",
-                &format!("string:{}", path),
-            ])
-            .output()
-            .context("Failed to execute dbus-send to load script")?;
-
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Failed to load KWin script: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+/// Read a nonblocking monitor pipe so a quiet bus cannot bypass the deadline.
+fn read_window_info(reader: &mut impl Read, timeout: Duration) -> Result<Vec<KWinWindowInfo>> {
+    let deadline = Instant::now() + timeout;
+    let mut pending = Vec::new();
+    let mut buffer = [0; 4096];
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            bail!("Timeout waiting for KWin status");
         }
+        match reader.read(&mut buffer) {
+            Ok(0) => {
+                if let Some(windows) = parse_window_info(&pending)? {
+                    return Ok(windows);
+                }
+                bail!("KWin status monitor exited without a status response");
+            }
+            Ok(count) => {
+                pending.extend_from_slice(&buffer[..count]);
+                while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+                    if let Some(windows) = parse_window_info(&pending[..end])? {
+                        return Ok(windows);
+                    }
+                    pending.drain(..=end);
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep(remaining.min(Duration::from_millis(5)));
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => return Err(error).context("Failed to read KWin status"),
+        }
+    }
+}
 
-        // Parse ID from output. Output format:
-        // method return time=... sender=... -> destination=... serial=... reply_serial=...
-        //    int32 4
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let id_str = stdout.lines().last().unwrap_or("").trim();
-        // Extract number
-        let id_parts: Vec<&str> = id_str.split_whitespace().collect();
-        let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
-            id_parts[1]
-        } else {
-            return Err(anyhow::anyhow!(
-                "Unexpected response from loadScript: {}",
-                stdout
-            ));
-        };
+fn parse_window_info(line: &[u8]) -> Result<Option<Vec<KWinWindowInfo>>> {
+    let line = std::str::from_utf8(line)
+        .context("Invalid UTF-8 in KWin status")?
+        .trim();
+    let Some(quoted) = line.strip_prefix("string ") else {
+        return Ok(None);
+    };
+    let Some(contents) = quoted
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+    else {
+        return Ok(None);
+    };
+    if !contents.starts_with('[') {
+        return Ok(None);
+    }
+    // Accept verbatim JSON and escaped strings. Decode the complete string
+    // instead of replacing quotes, preserving escapes
+    // in window titles (backslashes, quotes, newlines and Unicode).
+    let windows = match serde_json::from_str(contents) {
+        Ok(windows) => windows,
+        Err(_) => {
+            let decoded: String =
+                serde_json::from_str(quoted).context("Failed to decode KWin status string")?;
+            serde_json::from_str(&decoded).context("Failed to parse KWin window info JSON")?
+        }
+    };
+    Ok(Some(windows))
+}
 
-        // Run script
-        let script_obj_path = format!("/Scripting/Script{}", id);
-        Command::new("dbus-send")
-            .args([
-                "--session",
-                "--print-reply",
-                "--dest=org.kde.KWin",
-                &script_obj_path,
-                "org.kde.kwin.Script.run",
-            ])
-            .output()
-            .context("Failed to run KWin script")?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use std::os::unix::net::UnixStream;
 
-        // Cleanup: Stop/Unload script?
-        let _ = Command::new("dbus-send")
-            .args([
-                "--session",
-                "--dest=org.kde.KWin",
-                &script_obj_path,
-                "org.kde.kwin.Script.stop",
-            ])
-            .output();
+    #[test]
+    fn empty_window_list_is_a_successful_status_response() -> Result<()> {
+        let mut output = Cursor::new(b"method call ...\n   string \"[]\"\n");
+        assert!(read_window_info(&mut output, Duration::from_secs(1))?.is_empty());
+        Ok(())
+    }
 
+    #[test]
+    fn status_preserves_titles_in_raw_and_escaped_monitor_output() -> Result<()> {
+        let title = "Notes \"quoted\" at C:\\saves\n日本語";
+        let payload = serde_json::to_string(&serde_json::json!([{
+            "name": "notes", "class": "scratchpad_notes", "title": title, "visible": true
+        }]))?;
+        for quoted in [format!("\"{payload}\""), serde_json::to_string(&payload)?] {
+            let mut output = Cursor::new(format!("method call ...\n   string {quoted}\n"));
+            let windows = read_window_info(&mut output, Duration::from_secs(1))?;
+            assert_eq!(windows.len(), 1);
+            assert_eq!(windows[0].title, title);
+            assert!(windows[0].visible);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn silent_or_partial_monitor_output_cannot_block_past_the_deadline() -> Result<()> {
+        for partial in [b"".as_slice(), b"   string \"[".as_slice()] {
+            let (mut reader, mut writer) = UnixStream::pair()?;
+            reader.set_nonblocking(true)?;
+            writer.write_all(partial)?;
+            let started = Instant::now();
+            let error = read_window_info(&mut reader, Duration::from_millis(20))
+                .expect_err("A response is required");
+            assert!(
+                error
+                    .to_string()
+                    .contains("Timeout waiting for KWin status")
+            );
+            assert!(started.elapsed() < Duration::from_secs(2));
+        }
         Ok(())
     }
 }

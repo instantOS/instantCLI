@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 
 use crate::game::launch_command::EmulatorPlatform;
 
-const SEARCH_DIRECTORIES: &[&str] = &[
+pub(super) const SEARCH_DIRECTORIES: &[&str] = &[
     "Applications",
     "AppImages",
     ".local/bin",
