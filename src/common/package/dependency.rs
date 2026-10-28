@@ -13,7 +13,7 @@ use crate::common::requirements::InstallTest;
 /// # Priority Selection
 ///
 /// When selecting which package to install:
-/// 1. Native package managers are tried first (Pacman, Apt, Dnf, Zypper)
+/// 1. Native package managers are tried first (Pacman, Apt, Dnf, Zypper, Apk, Pkg)
 /// 2. Then cross-platform managers in priority order (Flatpak → AUR → Cargo)
 /// 3. Within the native manager, distro-specific packages take precedence
 ///
@@ -64,13 +64,16 @@ impl Dependency {
     /// 1. Try to find a package for the native package manager
     /// 2. If not found, try universal package managers in priority order
     pub fn get_best_package(&self) -> Option<&PackageDefinition> {
-        let current_os = OperatingSystem::detect();
+        self.get_best_package_for(&OperatingSystem::detect())
+    }
+
+    fn get_best_package_for(&self, current_os: &OperatingSystem) -> Option<&PackageDefinition> {
         let native_manager = current_os.native_package_manager();
 
         // First pass: try native package manager
         if let Some(manager) = native_manager {
             for pkg in self.packages {
-                if pkg.manager == manager && pkg.applies_to(&current_os) {
+                if pkg.manager == manager && pkg.applies_to(current_os) {
                     return Some(pkg);
                 }
             }
@@ -300,6 +303,38 @@ impl InstallResult {
 mod tests {
     use super::*;
     use crate::common::package::PackageManager;
+
+    #[test]
+    fn alpine_and_postmarketos_select_native_tool_packages() {
+        use crate::{assist::deps, common::deps as common, video::deps as video};
+
+        // These names differ from the command, or have a universal fallback
+        // that must not take precedence over the native APK package.
+        let cases = [
+            (&deps::QRENCODE, "libqrencode-tools"),
+            (&deps::XRANDR, "xrandr"),
+            (&deps::TESSERACT, "tesseract-ocr-data-eng"),
+            (&deps::FLAMESHOT, "flameshot"),
+            (&deps::MPV, "mpv"),
+            (&common::CFDISK, "cfdisk"),
+            (&common::NTFSPROGS, "ntfs-3g-progs"),
+            (&common::DELTA, "delta"),
+            (&video::PANDOC, "pandoc-cli"),
+            (&video::YT_DLP, "yt-dlp"),
+        ];
+        for os in [OperatingSystem::Alpine, OperatingSystem::PostmarketOS] {
+            for (dependency, name) in cases {
+                let package = dependency.get_best_package_for(&os).unwrap();
+                assert_eq!(
+                    package.manager,
+                    PackageManager::Apk,
+                    "{} on {os}",
+                    dependency.name
+                );
+                assert_eq!(package.package_name, name);
+            }
+        }
+    }
 
     // Static test data - must be 'static for Dependency struct
     static TEST_PACKAGES: &[PackageDefinition] = &[

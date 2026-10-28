@@ -54,6 +54,7 @@ pub static GUM: Dependency = Dependency {
 pub static CFDISK: Dependency = Dependency {
     name: "cfdisk",
     packages: &[
+        PackageDefinition::new("cfdisk", PackageManager::Apk),
         PackageDefinition::new("util-linux", PackageManager::Pacman),
         PackageDefinition::new("fdisk", PackageManager::Apt),
     ],
@@ -64,6 +65,7 @@ pub static CFDISK: Dependency = Dependency {
 pub static BTRFS_PROGS: Dependency = Dependency {
     name: "btrfs-progs",
     packages: &[
+        PackageDefinition::new("btrfs-progs", PackageManager::Apk),
         PackageDefinition::new("btrfs-progs", PackageManager::Pacman),
         PackageDefinition::new("btrfs-progs", PackageManager::Apt),
     ],
@@ -78,6 +80,7 @@ pub static BTRFS_PROGS: Dependency = Dependency {
 pub static NTFSPROGS: Dependency = Dependency {
     name: "ntfsprogs",
     packages: &[
+        PackageDefinition::new("ntfs-3g-progs", PackageManager::Apk),
         PackageDefinition::new("ntfsprogs", PackageManager::Pacman),
         PackageDefinition::new("ntfsprogs", PackageManager::Apt),
     ],
@@ -89,6 +92,7 @@ pub static NTFSPROGS: Dependency = Dependency {
 pub static NTFS_3G: Dependency = Dependency {
     name: "ntfs-3g",
     packages: &[
+        PackageDefinition::new("ntfs-3g", PackageManager::Apk),
         PackageDefinition::new("ntfs-3g", PackageManager::Pacman),
         PackageDefinition::new("ntfs-3g", PackageManager::Apt),
     ],
@@ -106,6 +110,7 @@ pub static NTFS_3G: Dependency = Dependency {
 pub static ARCH_INSTALL_SCRIPTS: Dependency = Dependency {
     name: "arch-install-scripts",
     packages: &[
+        PackageDefinition::new("arch-install-scripts", PackageManager::Apk),
         PackageDefinition::new("arch-install-scripts", PackageManager::Pacman),
         PackageDefinition::new("arch-install-scripts", PackageManager::Apt),
     ],

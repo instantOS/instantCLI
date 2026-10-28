@@ -14,6 +14,7 @@ use crate::ui::nerd_font::NerdFont;
 static RCLONE: Dependency = Dependency {
     name: "rclone",
     packages: &[
+        PackageDefinition::new("rclone", PackageManager::Apk),
         PackageDefinition::new("rclone", PackageManager::Pacman),
         PackageDefinition::new("rclone", PackageManager::Apt),
         PackageDefinition::new("rclone", PackageManager::Dnf),

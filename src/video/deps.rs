@@ -11,6 +11,7 @@ use crate::common::requirements::InstallTest;
 pub static YT_DLP: Dependency = Dependency {
     name: "yt-dlp",
     packages: &[
+        PackageDefinition::new("yt-dlp", PackageManager::Apk),
         PackageDefinition::new("yt-dlp", PackageManager::Pacman),
         PackageDefinition::new("yt-dlp", PackageManager::Apt),
         PackageDefinition::new("yt-dlp", PackageManager::Dnf),
@@ -22,6 +23,7 @@ pub static YT_DLP: Dependency = Dependency {
 pub static CHROMIUM: Dependency = Dependency {
     name: "chromium",
     packages: &[
+        PackageDefinition::new("chromium", PackageManager::Apk),
         PackageDefinition::new("chromium", PackageManager::Pacman),
         PackageDefinition::new("chromium", PackageManager::Apt),
         PackageDefinition::new("chromium", PackageManager::Dnf),
@@ -33,6 +35,7 @@ pub static CHROMIUM: Dependency = Dependency {
 pub static PANDOC: Dependency = Dependency {
     name: "pandoc",
     packages: &[
+        PackageDefinition::new("pandoc-cli", PackageManager::Apk),
         PackageDefinition::new("pandoc", PackageManager::Pacman),
         PackageDefinition::new("pandoc", PackageManager::Apt),
         PackageDefinition::new("pandoc", PackageManager::Dnf),
@@ -44,6 +47,7 @@ pub static PANDOC: Dependency = Dependency {
 pub static MPV: Dependency = Dependency {
     name: "mpv",
     packages: &[
+        PackageDefinition::new("mpv", PackageManager::Apk),
         PackageDefinition::new("mpv", PackageManager::Pacman),
         PackageDefinition::new("mpv", PackageManager::Apt),
         PackageDefinition::new("mpv", PackageManager::Dnf),

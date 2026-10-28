@@ -25,6 +25,7 @@ use super::utils::{editor_command, plain_editor_command};
 static FCLONES_DEP: Dependency = Dependency {
     name: "fclones",
     packages: &[
+        PackageDefinition::new("fclones", PackageManager::Apk),
         PackageDefinition::new("fclones", PackageManager::Pacman),
         PackageDefinition::new("fclones", PackageManager::Cargo),
     ],

@@ -21,6 +21,7 @@ use crate::ui::preview::PreviewBuilder;
 pub(super) static PASS_OTP_DEP: Dependency = Dependency {
     name: "pass-otp",
     packages: &[
+        PackageDefinition::new("pass-otp", PackageManager::Apk),
         PackageDefinition::new("pass-otp", PackageManager::Pacman),
         PackageDefinition::new("pass-extension-otp", PackageManager::Apt),
         PackageDefinition::new("pass-otp", PackageManager::Dnf),

@@ -231,6 +231,28 @@ static SQLite library is required in addition to the development headers:
 sudo apk add git fzf restic sqlite sqlite-dev sqlite-static pkgconfig openssl-dev libgit2-dev
 ```
 
+Missing optional tools can be installed through the usual dependency confirmation
+prompt on Alpine and postmarketOS. APK uses `sudo`, or `doas` when `sudo` is
+unavailable; root runs `apk` directly. Package mappings cover Assist tools, the
+video pipeline, password-store/OTP, backups, and supported settings applications.
+Availability depends on the Alpine branch, architecture, and enabled repositories;
+many desktop tools require `community`. Packages without a verified APK mapping
+retain their existing fallback or are reported as unavailable.
+
+To recheck all explicit APK package names against Alpine's published `main` and
+`community` indexes without installing anything:
+
+```sh
+python3 scripts/verify-apk-dependencies.py
+# Check another release or architecture:
+python3 scripts/verify-apk-dependencies.py --branch edge --arch aarch64
+```
+
+The default check targets Alpine v3.24 on both aarch64 and x86_64. Non-obvious
+mappings include `libqrencode-tools` for `qrencode`, `pandoc-cli` for `pandoc`,
+`ntfs-3g-progs` for `ntfsresize`, and `tesseract-ocr-data-eng` for OCR with English
+language data (which also installs the Tesseract engine).
+
 ## Development
 
 ### Building

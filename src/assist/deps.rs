@@ -17,6 +17,7 @@ pub use crate::settings::deps::YAZI;
 pub static PLAYERCTL: Dependency = Dependency {
     name: "playerctl",
     packages: &[
+        PackageDefinition::new("playerctl", PackageManager::Apk),
         PackageDefinition::new("playerctl", PackageManager::Pacman),
         PackageDefinition::new("playerctl", PackageManager::Apt),
         PackageDefinition::new("playerctl", PackageManager::Dnf),
@@ -28,6 +29,7 @@ pub static PLAYERCTL: Dependency = Dependency {
 pub static QRENCODE: Dependency = Dependency {
     name: "qrencode",
     packages: &[
+        PackageDefinition::new("libqrencode-tools", PackageManager::Apk),
         PackageDefinition::new("qrencode", PackageManager::Pacman),
         PackageDefinition::new("qrencode", PackageManager::Apt),
         PackageDefinition::new("qrencode", PackageManager::Dnf),
@@ -39,6 +41,7 @@ pub static QRENCODE: Dependency = Dependency {
 pub static ZBAR: Dependency = Dependency {
     name: "zbar",
     packages: &[
+        PackageDefinition::new("zbar", PackageManager::Apk),
         PackageDefinition::new("zbar", PackageManager::Pacman),
         PackageDefinition::new("zbar-tools", PackageManager::Apt),
         PackageDefinition::new("zbar", PackageManager::Dnf),
@@ -50,6 +53,7 @@ pub static ZBAR: Dependency = Dependency {
 pub static FLAMESHOT: Dependency = Dependency {
     name: "flameshot",
     packages: &[
+        PackageDefinition::new("flameshot", PackageManager::Apk),
         PackageDefinition::new("flameshot", PackageManager::Pacman),
         PackageDefinition::new("flameshot", PackageManager::Apt),
         PackageDefinition::new("flameshot", PackageManager::Dnf),
@@ -62,6 +66,7 @@ pub static FLAMESHOT: Dependency = Dependency {
 pub static PASS: Dependency = Dependency {
     name: "pass",
     packages: &[
+        PackageDefinition::new("pass", PackageManager::Apk),
         PackageDefinition::new("pass", PackageManager::Pacman),
         PackageDefinition::new("pass", PackageManager::Apt),
         PackageDefinition::new("pass", PackageManager::Dnf),
@@ -73,6 +78,7 @@ pub static PASS: Dependency = Dependency {
 pub static GPG: Dependency = Dependency {
     name: "gpg",
     packages: &[
+        PackageDefinition::new("gnupg", PackageManager::Apk),
         PackageDefinition::new("gnupg", PackageManager::Pacman),
         PackageDefinition::new("gnupg", PackageManager::Apt),
         PackageDefinition::new("gnupg2", PackageManager::Dnf),
@@ -84,6 +90,7 @@ pub static GPG: Dependency = Dependency {
 pub static MPV: Dependency = Dependency {
     name: "mpv",
     packages: &[
+        PackageDefinition::new("mpv", PackageManager::Apk),
         PackageDefinition::new("mpv", PackageManager::Pacman),
         PackageDefinition::new("mpv", PackageManager::Apt),
         PackageDefinition::new("mpv", PackageManager::Dnf),
@@ -96,6 +103,7 @@ pub static MPV: Dependency = Dependency {
 pub static TESSERACT: Dependency = Dependency {
     name: "tesseract",
     packages: &[
+        PackageDefinition::new("tesseract-ocr-data-eng", PackageManager::Apk),
         PackageDefinition::new("tesseract", PackageManager::Pacman),
         PackageDefinition::new("tesseract-ocr", PackageManager::Apt),
         PackageDefinition::new("tesseract", PackageManager::Dnf),
@@ -107,6 +115,7 @@ pub static TESSERACT: Dependency = Dependency {
 pub static BRIGHTNESSCTL: Dependency = Dependency {
     name: "brightnessctl",
     packages: &[
+        PackageDefinition::new("brightnessctl", PackageManager::Apk),
         PackageDefinition::new("brightnessctl", PackageManager::Pacman),
         PackageDefinition::new("brightnessctl", PackageManager::Apt),
         PackageDefinition::new("brightnessctl", PackageManager::Dnf),
@@ -118,6 +127,7 @@ pub static BRIGHTNESSCTL: Dependency = Dependency {
 pub static ASCIIQUARIUM: Dependency = Dependency {
     name: "asciiquarium",
     packages: &[
+        PackageDefinition::new("asciiquarium", PackageManager::Apk),
         PackageDefinition::new("asciiquarium", PackageManager::Pacman),
         PackageDefinition::new("asciiquarium", PackageManager::Apt),
     ],
@@ -128,6 +138,7 @@ pub static ASCIIQUARIUM: Dependency = Dependency {
 pub static CMATRIX: Dependency = Dependency {
     name: "cmatrix",
     packages: &[
+        PackageDefinition::new("cmatrix", PackageManager::Apk),
         PackageDefinition::new("cmatrix", PackageManager::Pacman),
         PackageDefinition::new("cmatrix", PackageManager::Apt),
         PackageDefinition::new("cmatrix", PackageManager::Dnf),
@@ -139,6 +150,7 @@ pub static CMATRIX: Dependency = Dependency {
 pub static SLURP: Dependency = Dependency {
     name: "slurp",
     packages: &[
+        PackageDefinition::new("slurp", PackageManager::Apk),
         PackageDefinition::new("slurp", PackageManager::Pacman),
         PackageDefinition::new("slurp", PackageManager::Apt),
         PackageDefinition::new("slurp", PackageManager::Dnf),
@@ -150,6 +162,7 @@ pub static SLURP: Dependency = Dependency {
 pub static SLOP: Dependency = Dependency {
     name: "slop",
     packages: &[
+        PackageDefinition::new("slop", PackageManager::Apk),
         PackageDefinition::new("slop", PackageManager::Pacman),
         PackageDefinition::new("slop", PackageManager::Apt),
     ],
@@ -160,6 +173,7 @@ pub static SLOP: Dependency = Dependency {
 pub static GRIM: Dependency = Dependency {
     name: "grim",
     packages: &[
+        PackageDefinition::new("grim", PackageManager::Apk),
         PackageDefinition::new("grim", PackageManager::Pacman),
         PackageDefinition::new("grim", PackageManager::Apt),
         PackageDefinition::new("grim", PackageManager::Dnf),
@@ -171,6 +185,7 @@ pub static GRIM: Dependency = Dependency {
 pub static WL_MIRROR: Dependency = Dependency {
     name: "wl-mirror",
     packages: &[
+        PackageDefinition::new("wl-mirror", PackageManager::Apk),
         PackageDefinition::new("wl-mirror", PackageManager::Pacman),
         PackageDefinition::new("wl-mirror", PackageManager::Apt),
         PackageDefinition::new("wl-mirror", PackageManager::Dnf),
@@ -182,6 +197,7 @@ pub static WL_MIRROR: Dependency = Dependency {
 pub static XRANDR: Dependency = Dependency {
     name: "xrandr",
     packages: &[
+        PackageDefinition::new("xrandr", PackageManager::Apk),
         PackageDefinition::new("xorg-xrandr", PackageManager::Pacman),
         PackageDefinition::new("x11-xserver-utils", PackageManager::Apt),
         PackageDefinition::new("xrandr", PackageManager::Dnf),
@@ -193,6 +209,7 @@ pub static XRANDR: Dependency = Dependency {
 pub static AUTORANDR: Dependency = Dependency {
     name: "autorandr",
     packages: &[
+        PackageDefinition::new("autorandr", PackageManager::Apk),
         PackageDefinition::new("autorandr", PackageManager::Pacman),
         PackageDefinition::new("autorandr", PackageManager::Apt),
         PackageDefinition::new("autorandr", PackageManager::Dnf),
@@ -204,6 +221,7 @@ pub static AUTORANDR: Dependency = Dependency {
 pub static IMAGEMAGICK: Dependency = Dependency {
     name: "imagemagick",
     packages: &[
+        PackageDefinition::new("imagemagick", PackageManager::Apk),
         PackageDefinition::new("imagemagick", PackageManager::Pacman),
         PackageDefinition::new("imagemagick", PackageManager::Apt),
         PackageDefinition::new("ImageMagick", PackageManager::Dnf),
@@ -215,6 +233,7 @@ pub static IMAGEMAGICK: Dependency = Dependency {
 pub static WL_CLIPBOARD: Dependency = Dependency {
     name: "wl-clipboard",
     packages: &[
+        PackageDefinition::new("wl-clipboard", PackageManager::Apk),
         PackageDefinition::new("wl-clipboard", PackageManager::Pacman),
         PackageDefinition::new("wl-clipboard", PackageManager::Apt),
         PackageDefinition::new("wl-clipboard", PackageManager::Dnf),
@@ -226,6 +245,7 @@ pub static WL_CLIPBOARD: Dependency = Dependency {
 pub static XCLIP: Dependency = Dependency {
     name: "xclip",
     packages: &[
+        PackageDefinition::new("xclip", PackageManager::Apk),
         PackageDefinition::new("xclip", PackageManager::Pacman),
         PackageDefinition::new("xclip", PackageManager::Apt),
         PackageDefinition::new("xclip", PackageManager::Dnf),
@@ -237,6 +257,7 @@ pub static XCLIP: Dependency = Dependency {
 pub static LIBNOTIFY: Dependency = Dependency {
     name: "libnotify",
     packages: &[
+        PackageDefinition::new("libnotify", PackageManager::Apk),
         PackageDefinition::new("libnotify", PackageManager::Pacman),
         PackageDefinition::new("libnotify-bin", PackageManager::Apt),
         PackageDefinition::new("libnotify", PackageManager::Dnf),
@@ -268,6 +289,7 @@ pub static XCOLOR: Dependency = Dependency {
 pub static KDIALOG: Dependency = Dependency {
     name: "kdialog",
     packages: &[
+        PackageDefinition::new("kdialog", PackageManager::Apk),
         PackageDefinition::new("kdialog", PackageManager::Pacman),
         PackageDefinition::new("kdialog", PackageManager::Dnf),
         PackageDefinition::new("kdialog", PackageManager::Apt),
@@ -302,6 +324,7 @@ pub static KOOHA: Dependency = Dependency {
 pub static WF_RECORDER: Dependency = Dependency {
     name: "wf-recorder",
     packages: &[
+        PackageDefinition::new("wf-recorder", PackageManager::Apk),
         PackageDefinition::new("wf-recorder", PackageManager::Pacman),
         PackageDefinition::new("wf-recorder", PackageManager::Apt),
         PackageDefinition::new("wf-recorder", PackageManager::Dnf),
@@ -313,6 +336,7 @@ pub static WF_RECORDER: Dependency = Dependency {
 pub static FFMPEG: Dependency = Dependency {
     name: "ffmpeg",
     packages: &[
+        PackageDefinition::new("ffmpeg", PackageManager::Apk),
         PackageDefinition::new("ffmpeg", PackageManager::Pacman),
         PackageDefinition::new("ffmpeg", PackageManager::Apt),
         PackageDefinition::new("ffmpeg", PackageManager::Dnf),
@@ -324,6 +348,7 @@ pub static FFMPEG: Dependency = Dependency {
 pub static FEH: Dependency = Dependency {
     name: "feh",
     packages: &[
+        PackageDefinition::new("feh", PackageManager::Apk),
         PackageDefinition::new("feh", PackageManager::Pacman),
         PackageDefinition::new("feh", PackageManager::Apt),
         PackageDefinition::new("feh", PackageManager::Dnf),
@@ -335,6 +360,7 @@ pub static FEH: Dependency = Dependency {
 pub static FIGLET: Dependency = Dependency {
     name: "figlet",
     packages: &[
+        PackageDefinition::new("figlet", PackageManager::Apk),
         PackageDefinition::new("figlet", PackageManager::Pacman),
         PackageDefinition::new("figlet", PackageManager::Apt),
         PackageDefinition::new("figlet", PackageManager::Dnf),

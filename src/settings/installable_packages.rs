@@ -219,6 +219,7 @@ pub static ADWAITA_DARK: Dependency = Dependency {
 pub static ADW_GTK_THEME: Dependency = Dependency {
     name: "Adwaita-like GTK Theme",
     packages: &[
+        PackageDefinition::new("adw-gtk3", PackageManager::Apk),
         PackageDefinition::new("adw-gtk-theme", PackageManager::Pacman),
         PackageDefinition::new("adw-gtk-theme", PackageManager::Apt),
     ],
@@ -368,10 +369,14 @@ pub static OBSIDIAN_ICON_THEME: Dependency = Dependency {
 pub static COSMIC_ICON_THEME: Dependency = Dependency {
     name: "COSMIC Icons",
     packages: &[
+        PackageDefinition::new("cosmic-icons", PackageManager::Apk),
         PackageDefinition::new("cosmic-icon-theme", PackageManager::Pacman),
         PackageDefinition::new("cosmic-icon-theme", PackageManager::Apt),
     ],
-    tests: &[InstallTest::FileExists("/usr/share/icons/COSMIC")],
+    tests: &[
+        InstallTest::FileExists("/usr/share/icons/COSMIC"),
+        InstallTest::FileExists("/usr/share/icons/Cosmic"),
+    ],
 };
 
 pub static GTK_ICON_THEMES: &[InstallableApp] = &[
