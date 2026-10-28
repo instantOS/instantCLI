@@ -17,6 +17,10 @@ for arg in "$@"; do
         snapshots|backup|restore|ls) printf '%s\n' "$arg" >> "$SYNC_CALLS"; break ;;
     esac
 done
+if [[ "${SYNC_FAIL_BACKUP:-0}" == 1 && " $* " == *" backup "* ]]; then
+    echo "Simulated backup failure" >&2
+    exit 1
+fi
 exec "$TEST_REAL_RESTIC" "$@"
 EOF
 	chmod +x "${TEST_ROOT}/bin/restic"
@@ -49,7 +53,12 @@ EOF
 	: >"${SYNC_CALLS}"
 	output="$(ins game update)"
 	assert_output_contains "${output}" "Legacy: Already in sync"
-	assert_output_contains "${output}" "0 backed up, 0 restored, 1 skipped, 0 failed"
+	assert_output_contains "${output}" "Sync Summary"
+	assert_output_contains "${output}" "Backed up: 0"
+	assert_output_contains "${output}" "Restored:  0"
+	assert_output_contains "${output}" "Skipped:   1"
+	assert_output_contains "${output}" "Errors:    0"
+	[[ "${output}" != *$'\e['* ]]
 	after="$(stat -c '%Y:%i' "${TEST_ROOT}/local/save")"
 	[[ "${before}" == "${after}" ]]
 	assert_calls snapshots=1 restore=1
@@ -79,8 +88,28 @@ assert events[-1]["data"]["backed_up"] == 1, events
 	assert_calls snapshots=2 backup=1
 	assert_file_equals "${TEST_ROOT}/local/save" updated
 	: >"${SYNC_CALLS}"
-	ins game update >/dev/null
+	# Unchanged games should be visually quiet even when color is enabled.
+	output="$("${INS_BIN}" game update)"
+	printf '%s\n' "${output}" | python3 -c '
+import re,sys
+output = sys.stdin.read()
+line = next(line for line in output.splitlines() if "Already in sync" in line)
+assert re.search(r"\x1b\[[0-9;]*2[;m]", line), repr(line)
+assert not re.search(r"\x1b\[[0-9;]*32[;m]", line), repr(line)
+'
 	assert_calls snapshots=1
+	# Failed uploads must remain visible in both the per-game error and summary.
+	printf unsynced >"${TEST_ROOT}/local/save"
+	: >"${SYNC_CALLS}"
+	if output="$(SYNC_FAIL_BACKUP=1 ins game update Legacy 2>&1)"; then
+		echo "Expected the simulated upload failure to fail the command" >&2
+		return 1
+	fi
+	assert_output_contains "${output}" "Legacy:"
+	assert_output_contains "${output}" "Failed to back up saves"
+	assert_output_contains "${output}" "Backed up: 0"
+	assert_output_contains "${output}" "Errors:    1"
+	assert_calls snapshots=1 backup=1
 	# Single-file legacy saves can live at a different filename on this device.
 	printf file-progress >"${TEST_ROOT}/original.dat"
 	RESTIC_PASSWORD=testpass restic -r "${repo}" backup --tag instantgame --tag TGVnYWN5IEZpbGU= "${TEST_ROOT}/original.dat" >/dev/null

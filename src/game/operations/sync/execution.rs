@@ -8,6 +8,7 @@ use crate::game::restic::backup::{GameBackup, RestoreRequest};
 use crate::game::restic::cache::SnapshotView;
 use crate::game::save_runtime;
 use crate::ui::Level;
+use crate::ui::nerd_font::NerdFont;
 
 pub fn perform_backup(
     owner: &SaveOwner,
@@ -104,9 +105,10 @@ fn backup_with_intent(
     } else {
         format!("{}: Backed up saves; snapshot: {completed_id}", owner.name)
     };
-    ui::report(
+    ui::report_with_icon(
         Level::Success,
         "game.sync.backup.completed",
+        NerdFont::Upload,
         &message,
         json!({"game": owner.name, "snapshot_id": completed_id, "action": "backup_completed"}),
     );
@@ -186,9 +188,10 @@ fn restore_selected(
                 },
             )?;
             snapshots = view.for_owner(config, &owner.id)?;
-            ui::report(
+            ui::report_with_icon(
                 Level::Info,
                 "game.sync.local_preserved",
+                NerdFont::Upload,
                 &format!(
                     "{}: Backed up local saves before replacing them",
                     owner.name
@@ -235,9 +238,10 @@ fn restore_selected(
         publish_local_choice_with_view(owner, config, view)?;
     }
     if report_completion {
-        ui::report(
+        ui::report_with_icon(
             Level::Success,
             "game.sync.restore.completed",
+            NerdFont::Download,
             &format!("{}: Restored saves from {}", owner.name, snapshot.hostname),
             json!({"game": owner.name, "snapshot_id": snapshot.id, "hostname": snapshot.hostname, "action": "restore_completed"}),
         );

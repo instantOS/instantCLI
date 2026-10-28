@@ -152,10 +152,10 @@ PY
 	local output
 	output="$(ins game sync History)"
 	assert_output_contains "${output}" "Backed up saves"
-	assert_output_contains "${output}" "1 backed up, 0 restored"
+	assert_output_contains "${output}" "Backed up: 1"
 	assert_file_equals "${file}" offline-edit
 	output="$(ins game sync History)"
-	assert_output_contains "${output}" "0 backed up, 0 restored, 1 skipped"
+	assert_output_contains "${output}" "Skipped:   1"
 }
 
 main "$@"

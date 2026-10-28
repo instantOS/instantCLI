@@ -54,7 +54,11 @@ EOF
 	# its directory timestamp is newer than the remote save files.
 	printf initial >"${a}/cards/card.ps2"
 	stamp "${a}/cards" 600
-	TEST_RESTIC_CALLS="${TEST_ROOT}/upload-calls" device_ins "${a}" game sync A
+	local uploaded
+	uploaded="$(INS_ICON_MODE=nerd TEST_RESTIC_CALLS="${TEST_ROOT}/upload-calls" device_ins "${a}" game sync A)"
+	assert_output_contains "${uploaded}" " Shared PS2 cards: Backed up saves"
+	assert_output_contains "${uploaded}" "Backed up: 1"
+	assert_output_contains "${uploaded}" "Restored:  0"
 	assert_restic_calls "${TEST_ROOT}/upload-calls" snapshots=2 backup=1
 	local restored_json
 	restored_json="$(TEST_RESTIC_CALLS="${TEST_ROOT}/restore-calls" device_ins "${b}" --output json game sync B)"
@@ -75,9 +79,10 @@ assert events[-1]["data"]["restored"] == 1, events
 	stamp "${b}/cards" 200
 	device_ins "${b}" game sync B
 	local resolved
-	resolved="$(TEST_RESTIC_CALLS="${TEST_ROOT}/conflict-calls" device_ins "${a}" game sync A)"
+	resolved="$(INS_ICON_MODE=nerd TEST_RESTIC_CALLS="${TEST_ROOT}/conflict-calls" device_ins "${a}" game sync A)"
 	assert_restic_calls "${TEST_ROOT}/conflict-calls" snapshots=3 backup=2 restore=1
-	assert_output_contains "${resolved}" "newest saves"
+	assert_output_contains "${resolved}" " Shared PS2 cards: Restored newest saves"
+	assert_output_contains "${resolved}" "Restored:  1"
 	assert_file_equals "${a}/cards/card.ps2" pc-progress
 	device_ins "${b}" game sync B
 	assert_file_equals "${b}/cards/card.ps2" pc-progress

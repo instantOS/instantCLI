@@ -6,6 +6,7 @@ mod ui;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::utils::validation;
 use crate::ui::Level;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use serde_json::json;
 use types::{GameSyncOutcome, GameSyncStatus, SyncAction};
@@ -193,12 +194,7 @@ fn sync_configured(
     };
 
     if owners_to_sync.is_empty() {
-        ui::report(
-            Level::Info,
-            "game.sync.none",
-            "No save owners configured for syncing.",
-            json!({"action": "no_games"}),
-        );
+        ui::no_games_configured();
         return Ok(SyncReport::default());
     }
 
@@ -271,18 +267,7 @@ fn sync_configured(
         }
     }
 
-    // Print summary
-    ui::report(
-        Level::Info,
-        "game.sync.summary",
-        &report.completion_message(),
-        json!({
-            "backed_up": report.summary.backed_up,
-            "restored": report.summary.restored,
-            "skipped": report.summary.skipped,
-            "errors": report.summary.errors,
-        }),
-    );
+    ui::summary(&report);
 
     Ok(report)
 }
@@ -358,9 +343,14 @@ fn execute_once(
         }
         SyncAction::ResolveNewest => {
             let (restored, message) = execution::resolve_newest(owner, config, view)?;
-            ui::report(
+            ui::report_with_icon(
                 Level::Success,
                 "game.sync.reconciled",
+                if restored {
+                    NerdFont::Download
+                } else {
+                    NerdFont::Upload
+                },
                 &message,
                 json!({"game": owner.name, "action": if restored { "restored_newest" } else { "backed_up_newest" }}),
             );
