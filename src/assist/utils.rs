@@ -78,10 +78,12 @@ pub fn launch_self_gui(args: &[&str]) -> Result<()> {
 ///
 /// Auto-detects the user's preferred terminal emulator.
 pub fn launch_in_terminal(command: &str) -> Result<()> {
-    crate::common::terminal::TerminalLauncher::new("bash")
+    instantos_terminal::Launcher::new("bash")
         .title("InstantCLI Assist")
         .args(&["-c".to_string(), command.to_string()])
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 /// Launch a script in a detached terminal window with title
@@ -108,10 +110,10 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    crate::common::terminal::TerminalLauncher::new("bash")
+    instantos_terminal::Launcher::new("bash")
         .title(title)
-        .arg(script_path.to_string_lossy())
-        .launch()?;
+        .arg(script_path.as_os_str())
+        .spawn_detached()?;
 
     // Keep temp file alive by forgetting it (will be cleaned up by OS)
     std::mem::forget(temp_file);
@@ -201,23 +203,9 @@ fi
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    let terminal = crate::common::terminal::detect_terminal();
-    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
-
-    let mut cmd = Command::new(&terminal);
-
-    // Add terminal-specific flags for title
-    match terminal.as_str() {
-        "kitty" | "alacritty" | "wezterm" => {
-            cmd.arg("--title").arg(title);
-        }
-        _ => {}
-    }
-
-    let status = cmd
-        .arg(exec_flag)
-        .arg("bash")
-        .arg(&script_path)
+    let status = instantos_terminal::Launcher::new("bash")
+        .arg(script_path.as_os_str())
+        .title(title)
         .status()
         .context("Failed to run terminal command")?;
 
@@ -248,23 +236,9 @@ pub fn run_command_in_terminal(command: &str, title: &str) -> Result<ExitStatus>
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    let terminal = crate::common::terminal::detect_terminal();
-    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
-
-    let mut cmd = Command::new(&terminal);
-
-    // Add terminal-specific flags for title
-    match terminal.as_str() {
-        "kitty" | "alacritty" | "wezterm" => {
-            cmd.arg("--title").arg(title);
-        }
-        _ => {}
-    }
-
-    let status = cmd
-        .arg(exec_flag)
-        .arg("bash")
-        .arg(&script_path)
+    let status = instantos_terminal::Launcher::new("bash")
+        .arg(script_path.as_os_str())
+        .title(title)
         .status()
         .context("Failed to run terminal command")?;
 

@@ -136,11 +136,13 @@ fn launch_notify_in_terminal(debug: bool) -> Result<()> {
     args.push("notify".to_string());
 
     let current_exe = std::env::current_exe()?;
-    crate::common::terminal::TerminalLauncher::new(current_exe.to_string_lossy().as_ref())
-        .class("ins-notify")
+    instantos_terminal::Launcher::new(current_exe.as_os_str())
+        .app_id("ins-notify")
         .title("Notifications")
         .args(&args)
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn list_notifications(unread_only: bool) -> Result<()> {

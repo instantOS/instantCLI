@@ -43,7 +43,12 @@ fn backup_with_intent(
         .baseline
         .as_ref()
         .and_then(|baseline| baseline.remote_head.as_deref());
-    if !chosen && (parents.len() > 1 || parents.first().map(|head| head.id.as_str()) != expected) {
+    let same_remote_contents =
+        parents.len() == 1 && save_runtime::snapshot_matches_baseline(owner, &parents[0]);
+    if !chosen
+        && (parents.len() > 1
+            || (parents.first().map(|head| head.id.as_str()) != expected && !same_remote_contents))
+    {
         // The observed head must match our baseline. An upload racing this
         // observation creates a branch, detected by the post-upload refresh.
         return Err(save_runtime::ConcurrentSaveVersions.into());
@@ -51,13 +56,14 @@ fn backup_with_intent(
     let mut tags = save_runtime::parent_tags(&parents);
     let alternatives = &parents;
     if alternatives.len() > 1
-        || alternatives.first().is_some_and(|head| {
-            owner
-                .baseline
-                .as_ref()
-                .and_then(|baseline| baseline.remote_head.as_deref())
-                != Some(head.id.as_str())
-        })
+        || (!same_remote_contents
+            && alternatives.first().is_some_and(|head| {
+                owner
+                    .baseline
+                    .as_ref()
+                    .and_then(|baseline| baseline.remote_head.as_deref())
+                    != Some(head.id.as_str())
+            }))
     {
         tags.extend(
             alternatives

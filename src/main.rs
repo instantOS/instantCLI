@@ -76,7 +76,7 @@ struct Cli {
     #[arg(long = "no-color", global = true)]
     no_color: bool,
 
-    /// Force menu fallback mode using transient kitty terminals
+    /// Force menu fallback mode using transient terminal windows
     #[arg(long = "menu-fallback", global = true)]
     menu_fallback: bool,
 
@@ -94,6 +94,12 @@ pub(crate) fn cli_command() -> clap::Command {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Launch the configured terminal (also available before normal CLI initialization)
+    Terminal {
+        /// Launcher options followed by -- COMMAND ARG...
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     /// Choose a display layout using instantmenu
     Display,
     /// Arch Linux installation commands
@@ -113,7 +119,7 @@ enum Commands {
     },
     /// Explore and memorize instantWM keybinds
     Keyhelp {
-        /// Open keyhelp in a GUI terminal window (uses kitty)
+        /// Open keyhelp in a GUI terminal window (uses the default terminal)
         #[arg(long = "gui")]
         gui: bool,
     },
@@ -220,7 +226,7 @@ enum Commands {
         /// Start in search mode to browse all settings
         #[arg(long = "search", conflicts_with_all = ["setting", "category"])]
         search: bool,
-        /// Open settings in a GUI terminal window (uses kitty)
+        /// Open settings in a GUI terminal window (uses the default terminal)
         #[arg(long = "gui")]
         gui: bool,
     },
@@ -254,7 +260,7 @@ enum Commands {
     Welcome {
         #[command(subcommand)]
         command: Option<WelcomeCommands>,
-        /// Open welcome app in a GUI terminal window (uses kitty)
+        /// Open welcome app in a GUI terminal window (uses the default terminal)
         #[arg(long = "gui")]
         gui: bool,
         /// Force live session mode (shows instantOS installation option)
@@ -293,6 +299,9 @@ where
 
 fn dispatch_command(cli: &Cli) -> Result<()> {
     match &cli.command {
+        Some(Commands::Terminal { args }) => {
+            std::process::exit(instantos_terminal::run_cli(args.clone()));
+        }
         Some(Commands::Arch { command }) => {
             run_async(async {
                 execute_with_error_handling(
@@ -499,6 +508,45 @@ mod launch_cli_tests {
     use super::*;
 
     #[test]
+    fn scratchpad_accepts_argv_without_shell_interpretation() {
+        let cli = Cli::try_parse_from([
+            "ins",
+            "scratchpad",
+            "show",
+            "--terminal",
+            "foot",
+            "--",
+            "printf",
+            "hello world",
+            "; touch ignored",
+        ])
+        .unwrap();
+        let Some(Commands::Scratchpad {
+            command: ScratchpadCommand::Show(args),
+        }) = cli.command
+        else {
+            panic!("expected scratchpad show");
+        };
+        assert_eq!(
+            args.command,
+            ["printf", "hello world", "; touch ignored"].map(std::ffi::OsString::from)
+        );
+        assert!(args.shell_command.is_none());
+        assert!(
+            Cli::try_parse_from([
+                "ins",
+                "scratchpad",
+                "show",
+                "--shell-command",
+                "echo hi",
+                "--",
+                "printf"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
     fn launch_accepts_menu_backend() {
         let cli = Cli::try_parse_from(["ins", "launch", "--backend", "instantmenu"]).unwrap();
         assert!(matches!(
@@ -538,6 +586,10 @@ mod launch_cli_tests {
 }
 
 fn main() -> Result<()> {
+    let mut early_args = std::env::args_os().skip(1);
+    if early_args.next().as_deref() == Some(std::ffi::OsStr::new("terminal")) {
+        std::process::exit(instantos_terminal::run_cli(early_args));
+    }
     clap_complete::CompleteEnv::with_factory(cli_command).complete();
     let cli = Cli::parse();
     initialize_cli(&cli);

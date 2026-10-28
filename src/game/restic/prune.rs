@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Datelike, Utc};
 
+use crate::common::progress::create_spinner;
 use crate::game::config::{InstallationsConfig, InstantGameConfig, RetentionPolicyValues};
 use crate::game::ownership::OwnerId;
 use crate::game::save_runtime::{self, SaveLock};
@@ -61,14 +62,17 @@ pub fn prune_snapshots(game_name: Option<String>, zero_changes: bool) -> Result<
             if shared {
                 let digest = save_runtime::content_digest(saves.save_path.as_path())?;
                 ensure!(
-                    !matches!(
-                        save_runtime::baseline_action(
-                            saves,
-                            &digest,
-                            heads.first().map(|head| head.id.as_str())
+                    heads
+                        .first()
+                        .is_some_and(|head| save_runtime::snapshot_matches_baseline(saves, head))
+                        || !matches!(
+                            save_runtime::baseline_action(
+                                saves,
+                                &digest,
+                                heads.first().map(|head| head.id.as_str())
+                            ),
+                            save_runtime::BaselineAction::Reconcile
                         ),
-                        save_runtime::BaselineAction::Reconcile
-                    ),
                     "{} needs reconciliation; pruning is blocked",
                     id.label()
                 );
@@ -123,27 +127,52 @@ pub fn prune_snapshots(game_name: Option<String>, zero_changes: bool) -> Result<
                 config.retention_policy.effective(),
             )?);
         }
-        // Retain the latest legacy anchor until all old private snapshots are
-        // explicitly removed, so its implicit linear history stays unambiguous.
-        if let Some(legacy) = snapshots.iter().find(|snapshot| {
-            !snapshot
-                .tags
-                .iter()
-                .any(|tag| tag.starts_with("instantgame-parent:"))
-        }) {
-            keep.insert(legacy.id.clone());
-        }
-        retain_descendants(&snapshots, &mut keep);
         let targets: Vec<_> = snapshots
             .iter()
             .filter(|snapshot| !keep.contains(&snapshot.id))
             .map(|snapshot| snapshot.id.clone())
             .collect();
-        if !targets.is_empty() {
-            restic
-                .forget_snapshots(&targets, true)
-                .context("Pruning save history")?;
+        if !targets.is_empty() && requires_compaction(&snapshots, &keep, &heads)? {
+            let head = heads
+                .first()
+                .context("Save history has no current head; history was not pruned")?;
+            // Publish the shorter lineage before deleting anything. This is a
+            // regular save snapshot understood by existing readers. A crash
+            // leaves either the old complete history or the compacted history;
+            // no retained ancestor can become a spurious competing head.
+            let spinner = create_spinner(format!("{}: Compacting save history...", id.label()));
+            let mut tags: Vec<_> = head
+                .tags
+                .iter()
+                .filter(|tag| {
+                    !tag.starts_with("instantgame-parent:")
+                        && !tag.starts_with("instantgame-preserve:")
+                        && !tag.starts_with("instantgame-save-time:")
+                        && *tag != "rewrite"
+                })
+                .cloned()
+                .collect();
+            tags.extend(compaction_tags(&snapshots, &keep));
+            tags.push(format!(
+                "instantgame-save-time:{}",
+                save_runtime::snapshot_save_time(head)?.to_rfc3339()
+            ));
+            tags.sort_unstable();
+            tags.dedup();
+            let result = restic.copy_snapshot_with_tags(head, &tags);
+            spinner.finish_and_clear();
+            let compacted_id =
+                result.context("Compacting save history; original snapshots were not removed")?;
+            let observed = save_runtime::fresh_snapshots(&config, &id)?;
+            let observed_heads = save_runtime::history_heads(&observed)?;
+            ensure!(
+                observed_heads.len() == 1 && observed_heads[0].id == compacted_id,
+                "Save history changed during compaction; original snapshots were not removed. Sync saves before retrying pruning"
+            );
         }
+        restic
+            .forget_snapshots(&targets, true)
+            .context("Pruning save history")?;
         println!(
             "{}: removed {} snapshots; active heads and recovery checkpoints retained",
             id.label(),
@@ -192,30 +221,59 @@ fn retained_ids(snapshots: &[Snapshot], policy: RetentionPolicyValues) -> Result
     Ok(keep)
 }
 
-/// Keeping an old checkpoint also keeps the path from it to the current head.
-/// Otherwise removing an intermediate node would make a retained ancestor look
-/// like an independent branch. Missing ancestors below the retained suffix are safe.
-fn retain_descendants(snapshots: &[Snapshot], keep: &mut HashSet<String>) {
-    let mut children: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
-    for snapshot in snapshots {
-        for parent in snapshot
-            .tags
+/// A compacted head directly supersedes every retained snapshot. Carry recovery
+/// pins forward even when the snapshot that originally recorded them expires.
+fn compaction_tags(snapshots: &[Snapshot], keep: &HashSet<String>) -> Vec<String> {
+    let retained: Vec<_> = snapshots
+        .iter()
+        .filter(|snapshot| keep.contains(&snapshot.id))
+        .cloned()
+        .collect();
+    let mut tags = save_runtime::parent_tags(&retained);
+    tags.push("instantgame-compaction".into());
+    let preserved: HashSet<_> = snapshots
+        .iter()
+        .flat_map(|snapshot| &snapshot.tags)
+        .filter_map(|tag| tag.strip_prefix("instantgame-preserve:"))
+        .filter(|id| keep.contains(*id))
+        .collect();
+    let mut preserved: Vec<_> = preserved.into_iter().collect();
+    preserved.sort_unstable();
+    tags.extend(
+        preserved
+            .into_iter()
+            .map(|id| format!("instantgame-preserve:{id}")),
+    );
+    tags
+}
+
+fn requires_compaction(
+    snapshots: &[Snapshot],
+    keep: &HashSet<String>,
+    heads: &[Snapshot],
+) -> Result<bool> {
+    let retained: Vec<_> = snapshots
+        .iter()
+        .filter(|snapshot| keep.contains(&snapshot.id))
+        .cloned()
+        .collect();
+    let retained_heads = save_runtime::history_heads(&retained)?;
+    if retained_heads.len() != heads.len()
+        || retained_heads
             .iter()
-            .filter_map(|tag| tag.strip_prefix("instantgame-parent:"))
-        {
-            children.entry(parent).or_default().push(&snapshot.id);
-        }
+            .any(|candidate| !heads.iter().any(|head| head.id == candidate.id))
+    {
+        return Ok(true);
     }
-    let mut pending: Vec<_> = keep.iter().cloned().collect();
-    while let Some(parent) = pending.pop() {
-        if let Some(descendants) = children.get(parent.as_str()) {
-            for child in descendants {
-                if keep.insert((*child).into()) {
-                    pending.push((*child).into());
-                }
-            }
-        }
-    }
+    // A recovery pin must outlive the snapshot that originally recorded it.
+    let retained_tags: HashSet<_> = retained
+        .iter()
+        .flat_map(|snapshot| &snapshot.tags)
+        .collect();
+    Ok(compaction_tags(snapshots, keep)
+        .iter()
+        .filter(|tag| tag.starts_with("instantgame-preserve:"))
+        .any(|tag| !retained_tags.contains(tag)))
 }
 
 #[cfg(test)]
@@ -229,27 +287,47 @@ mod tests {
     }
 
     #[test]
-    fn pruning_preserves_the_path_between_a_pinned_checkpoint_and_head() -> Result<()> {
+    fn pruning_removes_intermediates_without_turning_pinned_checkpoints_into_branches() -> Result<()>
+    {
         let history = vec![
             snapshot("a", "root"),
             snapshot("b", "a"),
             snapshot("c", "b"),
             snapshot("d", "c"),
         ];
-        let mut keep = HashSet::from(["b".into(), "d".into()]);
-        retain_descendants(&history, &mut keep);
-        assert_eq!(keep, HashSet::from(["b".into(), "c".into(), "d".into()]));
-        let retained: Vec<_> = history
+        let keep = HashSet::from(["b".into(), "d".into()]);
+        let mut compacted = snapshot("compacted", "root");
+        compacted.tags = compaction_tags(&history, &keep);
+        let mut retained: Vec<_> = history
             .into_iter()
             .filter(|snapshot| keep.contains(&snapshot.id))
             .collect();
+        retained.push(compacted);
         assert_eq!(
             save_runtime::history_heads(&retained)?
                 .iter()
                 .map(|snapshot| snapshot.id.as_str())
                 .collect::<Vec<_>>(),
-            ["d"]
+            ["compacted"]
         );
+        // A concurrent upload remains visible as a real independent branch.
+        retained.push(snapshot("concurrent", "d"));
+        assert_eq!(save_runtime::history_heads(&retained)?.len(), 2);
         Ok(())
+    }
+
+    #[test]
+    fn compaction_keeps_recovery_pins_when_their_original_reference_expires() {
+        let mut merged = snapshot("merged", "recovery");
+        merged.tags.push("instantgame-preserve:recovery".into());
+        let history = vec![
+            snapshot("recovery", "root"),
+            merged,
+            snapshot("head", "merged"),
+        ];
+        let keep = HashSet::from(["recovery".into(), "head".into()]);
+        let tags = compaction_tags(&history, &keep);
+        assert!(tags.contains(&"instantgame-preserve:recovery".into()));
+        assert!(!tags.contains(&"instantgame-parent:merged".into()));
     }
 }

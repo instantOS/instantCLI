@@ -72,20 +72,12 @@ impl ScratchpadProvider for Hyprland {
 impl Hyprland {
     fn spawn_scratchpad(&self, config: &ScratchpadConfig) -> Result<()> {
         let window_class = config.window_class();
-        let workspace_name = config.workspace_name();
-
         ensure_scratchpad_rules()?;
 
         // Spawn terminal directly on the special workspace via Hyprland's exec dispatcher.
         // This is cleaner than spawning via nohup + polling + move: Hyprland itself
         // places the window on `special:<workspace>` with the generic floating/size/center rules.
-        let term_cmd = config.terminal_command();
-        // Escape single quotes for lua string literal
-        let escaped = term_cmd.replace('\'', "\\'");
-        let exec_lua = format!(
-            "hl.dsp.exec_cmd('{}', {{workspace='special:{}'}})",
-            escaped, workspace_name
-        );
+        let exec_lua = scratchpad_exec_dispatch(config, &std::env::current_exe()?)?;
 
         let output = Command::new("hyprctl")
             .args(["dispatch", &exec_lua])
@@ -123,6 +115,27 @@ impl Hyprland {
 
         Err(anyhow::anyhow!("Terminal window did not appear"))
     }
+}
+
+/// Encode a typed launch request for Hyprland's shell command and Lua transport.
+fn scratchpad_exec_dispatch(
+    config: &ScratchpadConfig,
+    executable: &std::path::Path,
+) -> Result<String> {
+    let argv = std::iter::once(executable.as_os_str().to_owned())
+        .chain(std::iter::once("terminal".into()))
+        .chain(config.launcher().cli_args())
+        .map(|arg| {
+            arg.into_string()
+                .map_err(|_| anyhow::anyhow!("Hyprland command transport requires UTF-8 arguments"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let term_cmd = shell_words::join(argv);
+    Ok(format!(
+        "hl.dsp.exec_cmd({}, {{workspace={}}})",
+        serde_json::to_string(&term_cmd)?,
+        serde_json::to_string(&format!("special:{}", config.workspace_name()))?,
+    ))
 }
 
 /// This replaces the previous per-scratchpad batch of 4 window_rules. Workspace
@@ -348,10 +361,32 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_command_construction() {
-        let command = "focusworkspace special:term";
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        assert_eq!(parts, vec!["focusworkspace", "special:term"]);
+    fn delegated_launch_preserves_quotes_newlines_and_backslashes() {
+        let config = ScratchpadConfig::with_launcher(
+            "notes".into(),
+            instantos_terminal::Launcher::new("printf")
+                .arg("hello 'world'\n\\path")
+                .working_directory("/directory with spaces"),
+            50,
+            60,
+        );
+        let executable = std::path::Path::new("/path with 'quotes'/ins");
+        let dispatch = scratchpad_exec_dispatch(&config, executable).unwrap();
+        let encoded = dispatch.strip_prefix("hl.dsp.exec_cmd(").unwrap();
+        let command = serde_json::Deserializer::from_str(encoded)
+            .into_iter::<String>()
+            .next()
+            .unwrap()
+            .unwrap();
+        let delegated = shell_words::split(&command).unwrap();
+        let expected: Vec<_> = [executable.as_os_str().to_owned(), "terminal".into()]
+            .into_iter()
+            .chain(config.launcher().cli_args())
+            .map(|arg| arg.into_string().unwrap())
+            .collect();
+        assert_eq!(delegated, expected);
     }
 }

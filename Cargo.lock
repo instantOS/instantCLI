@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "ins"
-version = "0.14.23"
+version = "0.14.24"
 dependencies = [
  "age",
  "anyhow",
@@ -2059,6 +2059,7 @@ dependencies = [
  "hmac",
  "ignore",
  "indicatif",
+ "instantos-terminal",
  "ksni",
  "nix 0.31.3",
  "pathdiff",
@@ -2102,6 +2103,11 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "instantos-terminal"
+version = "0.1.0"
+source = "git+https://github.com/instantOS/instantOS-libs#d701fda6b6ef65b124b5e5cd7bba8fe8ce0ff75b"
 
 [[package]]
 name = "intl-memoizer"

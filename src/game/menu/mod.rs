@@ -7,8 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::common::TildePath;
-use crate::common::shell::shell_quote;
-use crate::common::terminal::TerminalLauncher;
 use crate::game::GameCommands;
 use crate::game::config::{Game, GameInstallation, PathContentKind};
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
@@ -31,6 +29,7 @@ use crate::menu_utils::{
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
+use instantos_terminal::Launcher;
 
 use state::EditState;
 
@@ -831,24 +830,21 @@ fn save_directory_target(saves: &crate::game::config::OwnedSaves) -> PathBuf {
 }
 
 fn open_directory_in_yazi(path: &Path) -> Result<()> {
-    TerminalLauncher::new("yazi")
-        .arg(path.to_string_lossy().to_string())
+    Launcher::new("yazi")
+        .arg(path.as_os_str())
         .title("Save Directory")
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn open_directory_in_terminal(path: &Path) -> Result<()> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
-    let command = format!(
-        "cd {} && exec {}",
-        shell_quote(&path.to_string_lossy()),
-        shell_quote(&shell)
-    );
-
-    TerminalLauncher::new(&shell)
-        .args(["-lc".to_string(), command])
+    Launcher::default()
+        .working_directory(path)
         .title("Save Directory")
-        .launch()
+        .spawn_detached()
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn open_directory_with_xdg_open(path: &Path) -> Result<()> {

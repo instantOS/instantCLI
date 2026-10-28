@@ -184,6 +184,15 @@ pub fn snapshot_digest(snapshot: &Snapshot) -> Option<&str> {
         .find_map(|tag| tag.strip_prefix("instantgame-content:"))
 }
 
+/// A metadata-only history transition is not a remote save edit. In particular,
+/// compaction must not turn an offline local edit into a content conflict.
+pub fn snapshot_matches_baseline(saves: &OwnedSaves, snapshot: &Snapshot) -> bool {
+    saves
+        .baseline
+        .as_ref()
+        .is_some_and(|baseline| snapshot_digest(snapshot) == Some(baseline.content.as_str()))
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum BaselineAction {
     Skip,
@@ -222,7 +231,7 @@ pub fn parent_tags(parents: &[Snapshot]) -> Vec<String> {
 }
 
 /// Every shared snapshot declares all heads it supersedes. Concurrent uploads
-/// create separate tips; neither can be restored automatically or pruned away.
+/// create separate tips, which must be reconciled before pruning.
 pub fn history_heads(snapshots: &[Snapshot]) -> Result<Vec<Snapshot>> {
     let legacy: Vec<_> = snapshots
         .iter()

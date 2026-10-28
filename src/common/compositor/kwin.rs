@@ -27,7 +27,7 @@ impl ScratchpadProvider for KWin {
         // Check if window exists - if not, create it
         // We do this check AFTER trying to show to optimize for the common case
         if !self.is_window_running(config)? {
-            super::create_terminal_process(config)?;
+            config.launcher().spawn_detached()?;
             std::thread::sleep(std::time::Duration::from_millis(700));
             self.run_script(config, "show")?;
         }
@@ -46,7 +46,7 @@ impl ScratchpadProvider for KWin {
         // Check if window exists - if not, create it
         // We do this check AFTER trying to toggle to optimize for the common case
         if !self.is_window_running(config)? {
-            super::create_terminal_process(config)?;
+            config.launcher().spawn_detached()?;
             std::thread::sleep(std::time::Duration::from_millis(700));
             self.run_script(config, "show")?;
         }
@@ -54,110 +54,32 @@ impl ScratchpadProvider for KWin {
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
-        // Try to get windows via KWin script (accurate visibility)
-        if let Ok(kwin_windows) = self.get_kwin_window_info() {
-            return Ok(kwin_windows
-                .into_iter()
-                .map(|w| ScratchpadWindowInfo {
-                    name: w.name,
-                    window_class: w.class,
-                    title: w.title,
-                    visible: w.visible,
-                })
-                .collect());
-        }
-
-        // Fallback to pgrep (inaccurate visibility) if KWin scripting fails
-        // This ensures the command doesn't fail completely if dbus-monitor is missing
-        let mut windows = Vec::new();
-
-        // Get list of running processes that could be scratchpad terminals
-        let common_terminals = [
-            "kitty",
-            "alacritty",
-            "wezterm",
-            "foot",
-            "gnome-terminal",
-            "konsole",
-        ];
-
-        for terminal in &common_terminals {
-            if let Ok(output) = Command::new("pgrep")
-                .args(["-f", &format!("{}.*scratchpad_", terminal)])
-                .output()
-                && output.status.success()
-            {
-                let pids = String::from_utf8_lossy(&output.stdout);
-                for pid_line in pids.lines() {
-                    if let Ok(pid) = pid_line.trim().parse::<u32>() {
-                        // Get command line for this process to extract the class
-                        if let Ok(cmd_output) = Command::new("ps")
-                            .args(["-p", &pid.to_string(), "-o", "command="])
-                            .output()
-                        {
-                            let cmd_line = String::from_utf8_lossy(&cmd_output.stdout);
-                            // Extract scratchpad name from class flag
-                            if let Some(name) = self.extract_scratchpad_name(&cmd_line) {
-                                windows.push(ScratchpadWindowInfo {
-                                    name: name.clone(),
-                                    window_class: format!("scratchpad_{}", name),
-                                    title: format!("Scratchpad: {}", name),
-                                    // Mark as visible if running, but note this is a fallback
-                                    visible: true,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(windows)
+        Ok(self
+            .get_kwin_window_info()?
+            .into_iter()
+            .map(|window| ScratchpadWindowInfo {
+                name: window.name,
+                window_class: window.class,
+                title: window.title,
+                visible: window.visible,
+            })
+            .collect())
     }
 
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
         let class = config.window_class();
-
-        // Use terminal process check - faster than KWin scripting
-        // Look for the terminal process with our specific class
-        let terminal_cmd = config.terminal.command();
-        let output = Command::new("pgrep")
-            .arg("-f")
-            .arg(format!("{}.*{}", terminal_cmd, class))
-            .output()?;
-
-        Ok(output.status.success())
+        Ok(self
+            .get_kwin_window_info()?
+            .iter()
+            .any(|window| window.class == class))
     }
 
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
-        // Optimization: if process is not running, it cannot be visible
-        // This avoids DBus monitor latency when scratchpad is closed
-        if !self.is_window_running(config)? {
-            return Ok(false);
-        }
-
         let class = config.window_class();
-
-        // Use KWin scripting to check visibility via DBus
-        if let Ok(windows) = self.get_kwin_window_info() {
-            for w in windows {
-                if w.class == class {
-                    return Ok(w.visible);
-                }
-            }
-            // If not found in KWin windows list but process is running,
-            // it's likely hidden or not yet mapped.
-            return Ok(false);
-        }
-
-        // Fallback to old behavior if script fails
-        // We return true if running to avoid MenuServer killing the process
-        // This is safer than returning false (which kills it)
-        if self.is_window_running(config)? {
-            return Ok(true);
-        }
-
-        Ok(false)
+        Ok(self
+            .get_kwin_window_info()?
+            .iter()
+            .any(|window| window.class == class && window.visible))
     }
 
     fn supports_scratchpad(&self) -> bool {
@@ -325,39 +247,6 @@ impl KWin {
             .output();
 
         Ok(())
-    }
-
-    /// Extract scratchpad name from command line by looking for class flags
-    fn extract_scratchpad_name(&self, cmd_line: &str) -> Option<String> {
-        // Look for patterns like "--class scratchpad_name" or "--class instantscratchpad"
-        let patterns = [
-            "--class scratchpad_".to_string(),
-            "--class ".to_string(),
-            "-c ".to_string(),
-        ];
-
-        for pattern in patterns {
-            if let Some(idx) = cmd_line.find(&pattern) {
-                let after_class = &cmd_line[idx + pattern.len()..];
-                // Extract the next word/argument
-                let name_end = after_class
-                    .find(&[' ', '\n', '\t'][..])
-                    .unwrap_or(after_class.len());
-                let potential_name = &after_class[..name_end];
-
-                // Only return if it looks like a scratchpad name
-                if potential_name.starts_with("scratchpad_")
-                    || potential_name.contains("scratchpad")
-                {
-                    let name = potential_name.replace("scratchpad_", "");
-                    if !name.is_empty() {
-                        return Some(name);
-                    }
-                }
-            }
-        }
-
-        None
     }
 
     fn run_script(&self, config: &ScratchpadConfig, action: &str) -> Result<()> {

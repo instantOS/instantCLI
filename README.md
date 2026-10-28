@@ -322,3 +322,30 @@ package; older answers without a font choice use the default 8x16 font.
 
 Compressed font discovery uses the system's `gzip` command. No additional Rust
 dependencies are required.
+
+## Default terminal
+
+Terminal launches use [instantos-terminal](https://github.com/instantOS/instantOS-libs).
+Choose a default in `ins settings`, or override it with `TERMINAL=foot` or
+`TERMINAL=alacritty`. Scratchpads follow this setting unless `--terminal` is
+explicitly supplied. The old hardcoded kitty default has been removed.
+
+```sh
+ins terminal
+ins terminal --title Notes -- nvim notes.md
+ins terminal --terminal foot -- sh -c 'printf "hello\n"; read answer'
+ins terminal --ensure-default
+```
+
+An explicit terminal override is strict. Ordinary launches try the configured
+alias directly and fall back only if execution reports a missing executable.
+Fallback does not overwrite the saved preference. Terminal options and command
+arguments are kept separate; use `--` before the command.
+
+Scratchpad commands take program arguments after `--`. Shell interpretation is
+explicit; the old `--command` shell-string option has been removed:
+
+```sh
+ins scratchpad show --terminal foot -- nvim 'notes with spaces.md'
+ins scratchpad show --shell-command 'printf "hello\n"; read answer'
+```

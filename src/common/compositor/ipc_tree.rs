@@ -215,7 +215,7 @@ pub(crate) fn get_all_scratchpad_windows(config: &IpcConfig) -> Result<Vec<Scrat
 /// then configure it for scratchpad use.
 pub(crate) fn create_and_wait(config: &IpcConfig, scratchpad: &ScratchpadConfig) -> Result<()> {
     let window_id = scratchpad.window_class();
-    super::create_terminal_process(scratchpad)?;
+    scratchpad.launcher().spawn_detached()?;
 
     // Wait for window
     let mut attempts = 0;

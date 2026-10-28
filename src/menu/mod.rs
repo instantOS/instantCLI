@@ -712,7 +712,7 @@ fn handle_status() -> Result<i32> {
             Ok(status_info) => {
                 client::print_status_info(&status_info);
                 println!();
-                println!("Fallback mode: interactive dialogs run in transient kitty terminals.");
+                println!("Fallback mode: interactive dialogs run in transient terminal windows.");
                 Ok(0)
             }
             Err(e) => {
