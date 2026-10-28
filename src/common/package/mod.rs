@@ -19,9 +19,11 @@ mod install;
 mod macros;
 mod manager;
 mod removal;
+mod transaction;
 
 pub use definition::PackageDefinition;
 pub use dependency::{Dependency, InstallResult, ensure_all, ensure_all_auto};
-pub use install::{PackageDatabaseLocked, install_package_names, uninstall_packages};
+pub use install::{install_package_names, uninstall_packages};
 pub use manager::{PackageManager, detect_aur_helper};
 pub use removal::removal_cascade;
+pub use transaction::PackageDatabaseLocked;

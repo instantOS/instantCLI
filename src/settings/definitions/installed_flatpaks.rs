@@ -167,7 +167,12 @@ pub fn uninstall_flatpak(app_id: &str) -> Result<bool> {
     }
 
     println!("Uninstalling Flatpak app: {}", app_id);
-    uninstall_packages(PackageManager::Flatpak, &[app_id])?;
+    if !crate::settings::installed_packages_manager::retry_package_operation(
+        PackageManager::Flatpak,
+        || uninstall_packages(PackageManager::Flatpak, &[app_id]),
+    )? {
+        return Ok(false);
+    }
     println!(
         "{} Flatpak app uninstallation completed successfully!",
         NerdFont::Check

@@ -130,7 +130,7 @@ fn handle_uninstall_result(
 }
 
 /// Keep the confirmed selection alive while the user resolves a failure.
-fn retry_package_operation(
+pub(super) fn retry_package_operation(
     manager: PackageManager,
     mut operation: impl FnMut() -> Result<()>,
 ) -> Result<bool> {
@@ -139,7 +139,7 @@ fn retry_package_operation(
             Ok(()) => return Ok(true),
             Err(error) => {
                 let guidance = if error.downcast_ref::<PackageDatabaseLocked>().is_some() {
-                    "Is another package manager running? Let it finish, then retry. If the lock persists, investigate whether it is stale."
+                    "Another package manager may be running. Let it finish, then retry."
                 } else {
                     "Resolve the error below, then retry. If another package manager is running, let it finish first. Some packages may already have been removed."
                 };
@@ -284,7 +284,11 @@ mod tests {
         let mut attempts = 0;
         assert!(!retry_package_operation(PackageManager::Pacman, || {
             attempts += 1;
-            Err(PackageDatabaseLocked.into())
+            Err(PackageDatabaseLocked {
+                manager: PackageManager::Pacman,
+                detail: "database locked".to_string(),
+            }
+            .into())
         })?);
         assert_eq!(attempts, 1);
         Ok(())

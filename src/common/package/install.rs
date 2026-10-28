@@ -6,6 +6,7 @@ use duct::cmd;
 use super::PackageManager;
 use super::batch::PackageToInstall;
 use super::manager::detect_aur_helper;
+use super::transaction::run_package_command;
 
 /// Install packages using the specified package manager.
 pub fn install_packages(manager: PackageManager, packages: &[PackageToInstall]) -> Result<()> {
@@ -124,25 +125,10 @@ fn setup_flathub() -> Result<()> {
     Ok(())
 }
 
-/// The package database cannot currently accept a transaction.
-#[derive(Debug, thiserror::Error)]
-#[error(
-    "Pacman's package database is locked (/var/lib/pacman/db.lck). Another package manager may be running, or a previous operation may have left a stale lock."
-)]
-pub struct PackageDatabaseLocked;
-
 /// Uninstall packages using the specified package manager.
 pub fn uninstall_packages(manager: PackageManager, packages: &[&str]) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
-    }
-
-    // Pacman uses file existence as its lock protocol. Do not apply this check
-    // to APT/dpkg: their lock files persist even when no process holds a lock.
-    if matches!(manager, PackageManager::Pacman | PackageManager::Aur)
-        && std::path::Path::new("/var/lib/pacman/db.lck").try_exists()?
-    {
-        return Err(PackageDatabaseLocked.into());
     }
 
     match manager {
@@ -167,7 +153,7 @@ fn uninstall_generic(manager: PackageManager, packages: &[&str]) -> Result<()> {
     let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd(program, &args).run().with_context(|| {
+    run_package_command(manager, program, &args).with_context(|| {
         format!(
             "Failed to uninstall packages with {}",
             manager.display_name()
@@ -183,8 +169,7 @@ fn uninstall_aur_with_helper(helper: &str, packages: &[&str]) -> Result<()> {
     let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd(helper, &args)
-        .run()
+    run_package_command(PackageManager::Aur, helper, &args)
         .with_context(|| format!("Failed to uninstall packages with {}", helper))?;
 
     Ok(())
