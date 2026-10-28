@@ -7,7 +7,9 @@ use std::collections::BTreeSet;
 use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{PackageManager, removal_cascade, uninstall_packages};
+use crate::common::package::{
+    PackageDatabaseLocked, PackageManager, removal_cascade, uninstall_packages,
+};
 use crate::menu_utils::{
     ConfirmResult, DecodedStreamingMenuItem, FzfWrapper, HeaderBuilder, MenuSelection,
 };
@@ -112,7 +114,9 @@ fn handle_uninstall_result(
             }
 
             let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-            uninstall_packages(manager, &refs)?;
+            if !retry_package_operation(manager, || uninstall_packages(manager, &refs))? {
+                return Ok(UninstallResult::Cancelled);
+            }
 
             println!(
                 "{} Package uninstallation completed successfully!",
@@ -122,6 +126,38 @@ fn handle_uninstall_result(
         }
         crate::menu_utils::DialogOutcome::Submitted(_)
         | crate::menu_utils::DialogOutcome::Cancelled => Ok(UninstallResult::Cancelled),
+    }
+}
+
+/// Keep the confirmed selection alive while the user resolves a failure.
+fn retry_package_operation(
+    manager: PackageManager,
+    mut operation: impl FnMut() -> Result<()>,
+) -> Result<bool> {
+    loop {
+        match operation() {
+            Ok(()) => return Ok(true),
+            Err(error) => {
+                let guidance = if error.downcast_ref::<PackageDatabaseLocked>().is_some() {
+                    "Is another package manager running? Let it finish, then retry. If the lock persists, investigate whether it is stale."
+                } else {
+                    "Resolve the error below, then retry. If another package manager is running, let it finish first. Some packages may already have been removed."
+                };
+                let message = format!(
+                    "{manager} could not complete the operation.\n\n{guidance}\n\nYour package selection is kept for retry.\n\n{error:#}"
+                );
+                if !matches!(
+                    FzfWrapper::builder()
+                        .confirm(message)
+                        .yes_text("Retry")
+                        .no_text("Quit")
+                        .confirm_dialog()?,
+                    ConfirmResult::Yes
+                ) {
+                    return Ok(false);
+                }
+            }
+        }
     }
 }
 
@@ -215,6 +251,44 @@ fn uninstall_confirmation_message(manager: PackageManager, packages: &[String]) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retries_failed_operation_without_reselecting_packages() -> Result<()> {
+        let _guard = crate::menu_utils::MockQueue::new().confirm_yes().guard();
+        let mut attempts = 0;
+        assert!(retry_package_operation(PackageManager::Apt, || {
+            attempts += 1;
+            if attempts == 1 {
+                anyhow::bail!("database busy");
+            }
+            Ok(())
+        })?);
+        assert_eq!(attempts, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn dismissing_recovery_does_not_retry() -> Result<()> {
+        let _guard = crate::menu_utils::MockQueue::new()
+            .confirm_cancelled()
+            .guard();
+        assert!(!retry_package_operation(PackageManager::Apt, || {
+            anyhow::bail!("database busy")
+        })?);
+        Ok(())
+    }
+
+    #[test]
+    fn quitting_after_lock_does_not_retry() -> Result<()> {
+        let _guard = crate::menu_utils::MockQueue::new().confirm_no().guard();
+        let mut attempts = 0;
+        assert!(!retry_package_operation(PackageManager::Pacman, || {
+            attempts += 1;
+            Err(PackageDatabaseLocked.into())
+        })?);
+        assert_eq!(attempts, 1);
+        Ok(())
+    }
 
     #[test]
     fn deduplicates_packages_without_reordering_first_occurrences() {

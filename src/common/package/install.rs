@@ -124,10 +124,25 @@ fn setup_flathub() -> Result<()> {
     Ok(())
 }
 
+/// The package database cannot currently accept a transaction.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Pacman's package database is locked (/var/lib/pacman/db.lck). Another package manager may be running, or a previous operation may have left a stale lock."
+)]
+pub struct PackageDatabaseLocked;
+
 /// Uninstall packages using the specified package manager.
 pub fn uninstall_packages(manager: PackageManager, packages: &[&str]) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
+    }
+
+    // Pacman uses file existence as its lock protocol. Do not apply this check
+    // to APT/dpkg: their lock files persist even when no process holds a lock.
+    if matches!(manager, PackageManager::Pacman | PackageManager::Aur)
+        && std::path::Path::new("/var/lib/pacman/db.lck").try_exists()?
+    {
+        return Err(PackageDatabaseLocked.into());
     }
 
     match manager {
