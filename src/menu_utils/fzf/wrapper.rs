@@ -318,6 +318,9 @@ fn configure_menu_args<A>(
 ) {
     cmd.arg("--ansi"); // Enable ANSI color interpretation in display text
     cmd.arg("--tiebreak=index");
+    if let Some(query) = &shared.initial_query {
+        cmd.arg("--query").arg(query);
+    }
 
     if allow_multiple {
         cmd.arg("--multi");

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use clap::Subcommand;
 use std::path::PathBuf;
 
 pub mod desktop;
@@ -34,28 +33,60 @@ pub(crate) fn get_xdg_data_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Launch command for application discovery and execution
-#[derive(Subcommand, Debug, Clone)]
-pub enum LaunchCommands {
-    /// Launch application launcher
-    #[command(name = "")]
-    Launch,
+/// Application discovery and launch options.
+#[derive(clap::Args, Debug, Clone)]
+pub struct LaunchArgs {
+    /// List available applications instead of launching
+    #[arg(long)]
+    pub list: bool,
+    /// Also include executables found in PATH
+    #[arg(long, conflicts_with = "terminal")]
+    pub include_path: bool,
+    /// List only PATH executables and run the selection in the configured terminal
+    #[arg(long)]
+    pub terminal: bool,
+    /// Start the menu with this search query
+    #[arg(short = 'q', long)]
+    pub query: Option<String>,
+    /// Menu backend used by the interactive launcher
+    #[arg(short = 'b', long, value_enum, default_value_t = MenuBackend::Auto)]
+    pub backend: MenuBackend,
 }
 
-/// Handle launch command
-pub async fn handle_launch_command(
-    list_only: bool,
-    include_path: bool,
-    backend: MenuBackend,
-) -> Result<i32> {
-    if list_only {
-        let launch_items =
-            tokio::task::spawn_blocking(move || discovery::discover_launch_items(include_path))
-                .await
-                .context("application discovery task failed")?;
+impl LaunchArgs {
+    fn discover(&self) -> Vec<LaunchItem> {
+        if self.terminal {
+            discovery::discover_terminal_items()
+        } else {
+            discovery::discover_launch_items(self.include_path)
+        }
+    }
+    fn choice_options(&self) -> ChoiceOptions {
+        ChoiceOptions::new(if self.terminal {
+            "Run in terminal:"
+        } else {
+            "Launch application:"
+        })
+        .with_frecency_cache(Some(
+            if self.terminal {
+                "launch-terminal"
+            } else {
+                "launch"
+            }
+            .into(),
+        ))
+        .with_initial_text(self.query.clone())
+    }
+}
+
+pub async fn handle_launch_command(args: LaunchArgs) -> Result<i32> {
+    if args.list {
+        let launch_items = tokio::task::spawn_blocking(move || args.discover())
+            .await
+            .context("application discovery task failed")?;
         handle_list_mode(&launch_items)
     } else {
-        handle_interactive_mode(backend, include_path).await
+        handle_interactive_mode(args).await
     }
 }
 
@@ -67,35 +98,36 @@ fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
     Ok(0)
 }
 
-async fn handle_interactive_mode(backend: MenuBackend, include_path: bool) -> Result<i32> {
+async fn handle_interactive_mode(args: LaunchArgs) -> Result<i32> {
     let (sender, receiver) =
         crossbeam_channel::bounded(crate::menu::protocol::STREAM_ITEM_BUFFER_CAPACITY);
+    let discovery_args = args.clone();
     tokio::task::spawn_blocking(move || {
-        for item in discovery::discover_launch_items(include_path) {
+        for item in discovery_args.discover() {
             if sender.send(prepare_menu_item(&item)).is_err() {
                 break;
             }
         }
     });
 
-    let outcome = match backend.resolve(true) {
+    let options = args.choice_options();
+    let outcome = match args.backend.resolve(true) {
         ResolvedBackend::Instantmenu => {
-            let options = ChoiceOptions::new("Launch application:")
-                .with_frecency_cache(Some("launch".to_string()));
             instantmenu::InstantmenuBackend::choice_streaming(&options, receiver)
         }
         ResolvedBackend::Scratchpad => client::HostedMenuClient::new()
-            .choice_streaming(
-                ChoiceOptions::new("Launch application:")
-                    .with_frecency_cache(Some("launch".to_string())),
-                receiver,
-            )
+            .choice_streaming(options, receiver)
             .map(|outcome| outcome.map(MenuSelection::into_items)),
         ResolvedBackend::Tui => {
-            let mut frecency = crate::menu::frecency::MenuFrecency::open("launch")?;
+            let mut frecency = crate::menu::frecency::MenuFrecency::open(
+                options.frecency_cache.as_deref().unwrap_or("launch"),
+            )?;
             let ranked = frecency.prepare(receiver.iter().collect());
-            let outcome = FzfWrapper::builder()
-                .prompt("Launch application:")
+            let mut builder = FzfWrapper::builder().prompt(&options.prompt);
+            if let Some(query) = &options.initial_text {
+                builder = builder.query(query);
+            }
+            let outcome = builder
                 .items(ranked)
                 .select()
                 .map(|outcome| outcome.map(MenuSelection::into_items));
@@ -115,7 +147,7 @@ async fn handle_interactive_mode(backend: MenuBackend, include_path: bool) -> Re
                     .first()
                     .context("Menu submitted an empty selection")?,
             )?;
-            execute::execute_launch_item(&launch_item)?;
+            execute::execute_launch_item(&launch_item, args.terminal)?;
 
             Ok(0) // Success
         }

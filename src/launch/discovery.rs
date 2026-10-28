@@ -59,6 +59,21 @@ pub fn discover_launch_items(include_path: bool) -> Vec<LaunchItem> {
     items
 }
 
+/// Terminal mode lists commands without scanning desktop entries.
+pub fn discover_terminal_items() -> Vec<LaunchItem> {
+    let paths = env::split_paths(&env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
+    let (names, _) = discover_path_executables(&paths);
+    let mut items = names
+        .into_iter()
+        .map(|name| LaunchItem::PathExecutable {
+            display_name: name.clone(),
+            name,
+        })
+        .collect::<Vec<_>>();
+    items.sort_by_cached_key(LaunchItem::sort_key);
+    items
+}
+
 fn discover_path_executables(path_dirs: &[PathBuf]) -> (Vec<String>, HashSet<String>) {
     let mut names = Vec::new();
     let mut seen = HashSet::new();

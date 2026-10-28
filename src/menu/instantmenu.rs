@@ -140,6 +140,9 @@ pub(crate) fn choice_flags(options: &ChoiceOptions) -> Vec<String> {
             } else {
                 options.prompt.clone()
             });
+    if let Some(query) = &options.initial_text {
+        cmd = cmd.pair("--initial-text", query);
+    }
     for binding in &options.bindings {
         cmd = cmd.bind(&binding.key, &binding.label);
     }
@@ -592,7 +595,8 @@ mod tests {
     fn choice_flags_matches_the_keybind_path_shape() {
         let options = ChoiceOptions::new("Pick:")
             .multi_select(true)
-            .with_frecency_cache(Some("ns".to_string()));
+            .with_frecency_cache(Some("ns".to_string()))
+            .with_initial_text(Some("a query with spaces".into()));
         let flags = choice_flags(&options);
 
         for (key, value) in [
@@ -601,6 +605,7 @@ mod tests {
             ("--width", "auto"),
             ("--lines", "20"),
             ("--frecency-cache", "ns"),
+            ("--initial-text", "a query with spaces"),
             ("--prompt", "Pick: (ctrl+return adds more)"),
         ] {
             assert!(

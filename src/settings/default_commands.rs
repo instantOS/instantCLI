@@ -50,7 +50,7 @@ const DESKTOP_DEFAULTS: &[(&str, &[&str])] = &[
         &["firefox", "chromium", "google-chrome", "brave"],
     ),
     ("editor", &["nvim-qt", "neovide", "code", "gedit", "kate"]),
-    ("appmenu", &["appmenu", "instantmenu_smartrun"]),
+    ("appmenu", &["appmenu"]),
     (
         "lockscreen",
         &["ilock", "swaylock", "gtklock", "slock", "i3lock"],

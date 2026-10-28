@@ -175,13 +175,7 @@ impl RequestProcessor {
             return Ok(MenuResponse::Error("No items to choose from".to_string()));
         }
 
-        match super::bindings::select(
-            &options.prompt,
-            items,
-            options.allow_multiple,
-            options.frecency_cache.as_deref(),
-            &options.bindings,
-        )? {
+        match super::bindings::select(&options, items)? {
             crate::menu_utils::DialogOutcome::Submitted(selection) => {
                 Ok(MenuResponse::ChoiceResult {
                     action: selection.action,
@@ -204,11 +198,11 @@ impl RequestProcessor {
         on_ready: F,
     ) -> Result<MenuResponse> {
         let typed = super::bindings::validate(&options.bindings)?;
-        let selection = FzfWrapper::builder()
-            .prompt(options.prompt)
-            .stream(rx)
-            .keybinds(&typed)
-            .on_ready(on_ready);
+        let mut builder = FzfWrapper::builder().prompt(options.prompt);
+        if let Some(query) = options.initial_text {
+            builder = builder.query(query);
+        }
+        let selection = builder.stream(rx).keybinds(&typed).on_ready(on_ready);
         let result = if options.allow_multiple {
             selection.select_many()
         } else {

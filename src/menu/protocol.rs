@@ -96,6 +96,13 @@ pub struct SliderRequest {
 pub struct ChoiceOptions {
     /// Text shown before the menu query.
     pub prompt: String,
+    /// Optional initial search query, shared by GUI and terminal renderers.
+    #[serde(
+        default,
+        deserialize_with = "empty_string_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub initial_text: Option<String>,
     /// Whether the user may submit more than one item.
     pub allow_multiple: bool,
     /// Namespace used to rank and remember selections.
@@ -109,10 +116,16 @@ impl ChoiceOptions {
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
+            initial_text: None,
             allow_multiple: false,
             frecency_cache: None,
             bindings: Vec::new(),
         }
+    }
+
+    pub fn with_initial_text(mut self, text: Option<String>) -> Self {
+        self.initial_text = text.filter(|text| !text.is_empty());
+        self
     }
 
     /// Configure whether the user may submit more than one item.
@@ -437,7 +450,7 @@ pub struct MenuStatus {
 }
 
 /// Protocol version information
-pub const PROTOCOL_VERSION: &str = "8.0";
+pub const PROTOCOL_VERSION: &str = "9.0";
 
 fn legacy_protocol_version() -> String {
     "1.0".to_string()
@@ -492,6 +505,20 @@ impl SerializableMenuItem {
 mod tests {
     use super::*;
     use crate::ui::preview::FzfPreview;
+
+    #[test]
+    fn choice_initial_text_survives_hosted_protocol_and_normalizes_empty_values() {
+        let options = ChoiceOptions::new("Launch:").with_initial_text(Some("vim notes".into()));
+        let serialized = serde_json::to_string(&options).unwrap();
+        let decoded: ChoiceOptions = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(decoded.initial_text.as_deref(), Some("vim notes"));
+        let empty = ChoiceOptions::new("Launch:").with_initial_text(Some(String::new()));
+        assert!(
+            !serde_json::to_string(&empty)
+                .unwrap()
+                .contains("initial_text")
+        );
+    }
 
     #[test]
     fn test_request_serialization() {

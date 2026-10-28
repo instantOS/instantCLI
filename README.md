@@ -340,3 +340,22 @@ explicit; the old `--command` shell-string option has been removed:
 ins scratchpad show --terminal foot -- nvim 'notes with spaces.md'
 ins scratchpad show --shell-command 'printf "hello\n"; read answer'
 ```
+
+## Application launcher
+
+`ins launch` discovers desktop applications and remembers selections by their
+stable desktop-entry IDs. Entries with `Terminal=true` use the configured
+terminal. Use `--include-path` to include executable commands, or `--terminal`
+for a command-only menu that runs the selection in a terminal:
+
+```sh
+ins launch
+ins launch --include-path --query firefox
+ins launch --terminal --query nvim
+ins launch --list
+```
+
+`--query` is supported by the instantMENU, TUI and scratchpad backends.
+Use `--backend instantmenu`, `--backend tui` or `--backend scratchpad` to select
+one explicitly. The hosted menu protocol is now version 9; restart an older
+menu server when upgrading.

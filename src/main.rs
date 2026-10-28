@@ -142,17 +142,7 @@ enum Commands {
         command: DevCommands,
     },
     /// Application launcher
-    Launch {
-        /// List available applications instead of launching
-        #[arg(long)]
-        list: bool,
-        /// Also include every executable found in PATH
-        #[arg(long)]
-        include_path: bool,
-        /// Menu backend used by the interactive launcher
-        #[arg(short = 'b', long = "backend", value_enum, default_value_t = menu::MenuBackend::Auto)]
-        backend: menu::MenuBackend,
-    },
+    Launch(launch::LaunchArgs),
     /// Password-store integration backed by `pass`
     Pass {
         /// List available entries instead of opening the interactive picker
@@ -343,16 +333,8 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
             })?;
         }
         Some(Commands::Display) => display::run()?,
-        Some(Commands::Launch {
-            list,
-            include_path,
-            backend,
-        }) => {
-            let exit_code = run_async(launch::handle_launch_command(
-                *list,
-                *include_path,
-                *backend,
-            ))?;
+        Some(Commands::Launch(args)) => {
+            let exit_code = run_async(launch::handle_launch_command(args.clone()))?;
             std::process::exit(exit_code);
         }
         Some(Commands::Pass { list, gui, command }) => {
@@ -547,15 +529,28 @@ mod launch_cli_tests {
     }
 
     #[test]
+    fn launch_terminal_mode_accepts_initial_query_and_excludes_mixed_inventory() {
+        let cli = Cli::try_parse_from(["ins", "launch", "--terminal", "--query", "vim"]).unwrap();
+        let Some(Commands::Launch(args)) = cli.command else {
+            panic!("expected launch");
+        };
+        assert!(args.terminal);
+        assert_eq!(args.query.as_deref(), Some("vim"));
+        assert!(Cli::try_parse_from(["ins", "launch", "-q", "vim"]).is_ok());
+        assert!(Cli::try_parse_from(["ins", "launch", "--terminal", "--include-path"]).is_err());
+    }
+
+    #[test]
     fn launch_accepts_menu_backend() {
         let cli = Cli::try_parse_from(["ins", "launch", "--backend", "instantmenu"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Commands::Launch {
+            Some(Commands::Launch(launch::LaunchArgs {
                 list: false,
                 include_path: false,
                 backend: menu::MenuBackend::Instantmenu,
-            })
+                ..
+            }))
         ));
     }
 
@@ -564,11 +559,12 @@ mod launch_cli_tests {
         let cli = Cli::try_parse_from(["ins", "launch"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Commands::Launch {
+            Some(Commands::Launch(launch::LaunchArgs {
                 list: false,
                 include_path: false,
                 backend: menu::MenuBackend::Auto,
-            })
+                ..
+            }))
         ));
     }
 
@@ -577,10 +573,10 @@ mod launch_cli_tests {
         let cli = Cli::try_parse_from(["ins", "launch", "--include-path"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Commands::Launch {
+            Some(Commands::Launch(launch::LaunchArgs {
                 include_path: true,
                 ..
-            })
+            }))
         ));
     }
 }

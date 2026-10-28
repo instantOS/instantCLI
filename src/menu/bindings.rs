@@ -60,23 +60,25 @@ pub(super) fn validate(bindings: &[Binding]) -> Result<Vec<MenuKeybind<String>>>
 }
 
 pub(super) fn select(
-    prompt: &str,
+    options: &ChoiceOptions,
     items: Vec<SerializableMenuItem>,
-    multi: bool,
-    namespace: Option<&str>,
-    bindings: &[Binding],
 ) -> Result<DialogOutcome<MenuSelection<SerializableMenuItem, String>>> {
-    let typed = validate(bindings)?;
-    let mut state = namespace.map(frecency::MenuFrecency::open).transpose()?;
+    let typed = validate(&options.bindings)?;
+    let mut state = options
+        .frecency_cache
+        .as_deref()
+        .map(frecency::MenuFrecency::open)
+        .transpose()?;
     let mut items = items;
     if let Some(state) = state.as_mut() {
         items = state.prepare(items);
     }
-    let selection = FzfWrapper::builder()
-        .prompt(prompt.to_string())
-        .items(items)
-        .keybinds(&typed);
-    let outcome = if multi {
+    let mut builder = FzfWrapper::builder().prompt(&options.prompt);
+    if let Some(query) = &options.initial_text {
+        builder = builder.query(query);
+    }
+    let selection = builder.items(items).keybinds(&typed);
+    let outcome = if options.allow_multiple {
         selection.select_many()?
     } else {
         selection.select()?
@@ -158,7 +160,13 @@ pub(super) fn handle(
                 .with_bindings(bindings.to_vec());
             HostedMenuClient::new().choice(options, items)?
         } else {
-            select(prompt, items, multi, namespace, bindings)?
+            select(
+                &ChoiceOptions::new(prompt)
+                    .multi_select(multi)
+                    .with_frecency_cache(namespace.map(str::to_owned))
+                    .with_bindings(bindings.to_vec()),
+                items,
+            )?
         }
     } else {
         let rx = streaming::spawn_stdin_item_pump(streaming::StdinItemPumpOptions {
@@ -231,16 +239,15 @@ mod tests {
     #[test]
     fn bound_selection_preserves_action_and_values() {
         let _guard = MockQueue::new().keybind_action("ctrl-e", vec![1]).guard();
-        let bindings = vec!["ctrl-e:Edit".parse().unwrap()];
+        let options = ChoiceOptions::new("Pick")
+            .multi_select(true)
+            .with_bindings(vec!["ctrl-e:Edit".parse().unwrap()]);
         let DialogOutcome::Submitted(selection) = select(
-            "Pick",
+            &options,
             vec![
                 SerializableMenuItem::plain("alpha"),
                 SerializableMenuItem::plain("beta"),
             ],
-            true,
-            None,
-            &bindings,
         )
         .unwrap() else {
             panic!("expected selection")
