@@ -105,9 +105,13 @@ impl PackageManager {
             Self::Apt => ("sudo", &["apt", "install", "-y"]),
             Self::Dnf => ("sudo", &["dnf", "install", "-y"]),
             Self::Zypper => ("sudo", &["zypper", "install", "-y"]),
-            Self::Apk if nix::unistd::geteuid().is_root() => ("apk", &["--no-cache", "add"]),
-            Self::Apk if which::which("sudo").is_ok() => ("sudo", &["apk", "--no-cache", "add"]),
-            Self::Apk => ("doas", &["apk", "--no-cache", "add"]),
+            Self::Apk if nix::unistd::geteuid().is_root() => {
+                ("apk", &["--wait", "60", "--no-cache", "add"])
+            }
+            Self::Apk if which::which("sudo").is_ok() => {
+                ("sudo", &["apk", "--wait", "60", "--no-cache", "add"])
+            }
+            Self::Apk => ("doas", &["apk", "--wait", "60", "--no-cache", "add"]),
             Self::Pkg => ("pkg", &["install", "-y"]),
             Self::Flatpak => ("flatpak", &["install", "-y", "flathub"]),
             Self::Aur => {
@@ -161,9 +165,9 @@ impl PackageManager {
             Self::Apt => ("sudo", &["apt", "remove", "-y"]),
             Self::Dnf => ("sudo", &["dnf", "remove", "-y"]),
             Self::Zypper => ("sudo", &["zypper", "remove", "-y"]),
-            Self::Apk if nix::unistd::geteuid().is_root() => ("apk", &["del"]),
-            Self::Apk if which::which("sudo").is_ok() => ("sudo", &["apk", "del"]),
-            Self::Apk => ("doas", &["apk", "del"]),
+            Self::Apk if nix::unistd::geteuid().is_root() => ("apk", &["--wait", "60", "del"]),
+            Self::Apk if which::which("sudo").is_ok() => ("sudo", &["apk", "--wait", "60", "del"]),
+            Self::Apk => ("doas", &["apk", "--wait", "60", "del"]),
             Self::Pkg => ("pkg", &["uninstall", "-y"]),
             Self::Flatpak => ("flatpak", &["uninstall", "-y"]),
             Self::Aur => ("yay", &["-R", "--noconfirm"]),
@@ -227,8 +231,10 @@ mod tests {
         let (program, args) = manager.install_command();
         assert!(matches!(program, "apk" | "sudo" | "doas"));
         assert_eq!(args.last(), Some(&"add"));
+        assert!(args.windows(2).any(|pair| pair == ["--wait", "60"]));
         let (_, args) = manager.uninstall_command();
         assert_eq!(args.last(), Some(&"del"));
+        assert!(args.windows(2).any(|pair| pair == ["--wait", "60"]));
     }
 
     #[test]

@@ -235,6 +235,10 @@ Missing optional tools can be installed through the usual dependency confirmatio
 prompt on Alpine and postmarketOS. APK uses `sudo`, or `doas` when `sudo` is
 unavailable; root runs `apk` directly. Package mappings cover Assist tools, the
 video pipeline, password-store/OTP, backups, and supported settings applications.
+APK installs and removals wait up to 60 seconds for its database lock. If an
+interactive dependency installation fails, choose Retry to rerun the failed
+package group or Cancel to stop. Completed groups are not repeated; unattended
+installs report failures without opening a recovery prompt.
 Availability depends on the Alpine branch, architecture, and enabled repositories;
 many desktop tools require `community`. Packages without a verified APK mapping
 retain their existing fallback or are reported as unavailable.

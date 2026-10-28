@@ -124,7 +124,9 @@ fn is_lock_contention(manager: PackageManager, code: Option<i32>, diagnostics: &
                 line.contains("unable to lock database")
                     && (line.contains("temporary error")
                         || line.contains("resource temporarily unavailable")
-                        || line.contains("try again later"))
+                        || line.contains("try again later")
+                        || line.contains("interrupted system call")
+                        || line.contains("timed out"))
             }
             PackageManager::Snap => line.contains("change in progress"),
             // These normally wait internally. Only classify an actual failure
@@ -176,6 +178,11 @@ mod tests {
                 PackageManager::Apk,
                 99,
                 "ERROR: Unable to lock database: temporary error (try again later)",
+            ),
+            (
+                PackageManager::Apk,
+                99,
+                "ERROR: Unable to lock database: Interrupted system call",
             ),
             (
                 PackageManager::Snap,

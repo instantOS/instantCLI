@@ -58,8 +58,7 @@ pub fn install_package_names(manager: PackageManager, packages: &[&str]) -> Resu
         // Special case: Cargo installs one package at a time
         PackageManager::Cargo => {
             for package in packages {
-                cmd("cargo", &["install", package])
-                    .run()
+                run_package_command(PackageManager::Cargo, "cargo", &["install", package])
                     .with_context(|| format!("Failed to install {} with cargo", package))?;
             }
             Ok(())
@@ -79,8 +78,7 @@ fn install_generic(manager: PackageManager, packages: &[&str]) -> Result<()> {
     let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd(program, &args)
-        .run()
+    run_package_command(manager, program, &args)
         .with_context(|| format!("Failed to install packages with {}", manager.display_name()))?;
 
     Ok(())
@@ -92,8 +90,7 @@ fn install_aur_with_helper(helper: &str, packages: &[&str]) -> Result<()> {
     let mut args: Vec<&str> = base_args.to_vec();
     args.extend(packages);
 
-    cmd(helper, &args)
-        .run()
+    run_package_command(PackageManager::Aur, helper, &args)
         .with_context(|| format!("Failed to install packages with {}", helper))?;
 
     Ok(())

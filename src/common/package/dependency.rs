@@ -259,7 +259,8 @@ fn ensure_all_with(
 
     // Execute batched installation
     match batch.execute(confirmation) {
-        Ok(_) => {
+        Ok(false) => Ok(InstallResult::Declined),
+        Ok(true) => {
             // Verify installation
             let all_installed = deps
                 .iter()
