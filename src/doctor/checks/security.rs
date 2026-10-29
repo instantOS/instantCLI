@@ -3,43 +3,43 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
 
-/// Check if any polkit authentication agent is running
-/// This detects any agent that properly registers with polkit via D-Bus
+/// Best-effort process detection, not proof of registration or working authentication.
+/// Polkit does not expose a public API to enumerate registered session agents.
 pub async fn is_polkit_agent_running() -> bool {
-    // On GNOME, the polkit agent is integrated into gnome-shell
-    // Use existing CompositorType detection for consistency
     use crate::common::compositor::CompositorType;
-    if CompositorType::detect() == CompositorType::Gnome {
-        if is_process_running("gnome-shell").await {
-            return true;
-        }
-        if is_process_running("xdg-desktop-portal").await {
+    if CompositorType::detect() == CompositorType::Gnome && is_process_running("gnome-shell").await
+    {
+        return true;
+    }
+    for agent in [
+        "hyprpolkitagent",
+        "lxqt-policykit-agent",
+        "lxpolkit",
+        "polkit-gnome-authentication-agent-1",
+        "polkit-kde-authentication-agent-1",
+        "xfce-polkit",
+    ] {
+        if is_agent_process_running(agent).await {
             return true;
         }
     }
+    false
+}
 
-    // Check for registered polkit authentication agents via D-Bus
-    // This detects any agent that properly registers with polkit, regardless of process name
-    TokioCommand::new("busctl")
-        .arg("--user")
-        .arg("list")
+/// Match the executable basename in the current user's command lines. Several
+/// agent names exceed Linux's 15-character process-name limit, so pgrep -x alone
+/// cannot find them. These fixed names contain no regex metacharacters.
+pub(crate) async fn is_agent_process_running(agent: &str) -> bool {
+    TokioCommand::new("pgrep")
+        .args([
+            "-u",
+            &nix::unistd::Uid::current().to_string(),
+            "-f",
+            &format!("(^|/){agent}([[:space:]]|$)"),
+        ])
         .output()
         .await
-        .map(|output| {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                // Look for any RUNNING service (has a PID) that contains "polkit" or "PolicyKit" in the name
-                // Skip activatable services (those with "-" under PID column)
-                stdout.lines().any(|line| {
-                    let line_lower = line.to_lowercase();
-                    // Must have a PID (not activatable) AND contain polkit/PolicyKit
-                    (line_lower.contains("polkit") || line_lower.contains("policykit"))
-                        && line.split_whitespace().nth(1).is_some_and(|pid| pid != "-")
-                })
-            } else {
-                false
-            }
-        })
+        .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
@@ -104,26 +104,12 @@ impl DoctorCheck for PolkitAgentCheck {
             };
         }
 
-        // Functional check using pkcheck
-        // This attempts to check authorization for rebooting, allowing user interaction.
-        // If an agent is running, it should either return success (if authorized) or
-        // prompt for authentication (which we can't do here, but the existence of the
-        // prompt mechanism implies an agent).
-        // However, pkcheck returns 0 if authorized, 1 if not authorized, 2 if not authorized
-        // and no agent is available (or other errors), 3 if not authorized and dismissed.
-        // We really want to know if it *fails* to find an agent.
-
-        // Check for registered polkit authentication agents via D-Bus
-        let agent_found = is_polkit_agent_running().await;
-
-        if agent_found {
-            return CheckStatus::Pass("Polkit authentication agent detected".to_string());
+        if is_polkit_agent_running().await {
+            return CheckStatus::Pass(
+                "Polkit agent process detected (registration and authentication not tested)"
+                    .to_string(),
+            );
         }
-
-        // If no known agent process found, try the functional test as a fallback
-        // If pkcheck returns 2 or 3, it usually means no agent or cancelled.
-        // But running pkcheck might pop up a dialog which is annoying for a background check.
-        // So relying on process detection is cleaner for "doctor" style checks.
 
         CheckStatus::Fail {
             message: "No running Polkit authentication agent found".to_string(),

@@ -136,6 +136,8 @@ pub async fn run(debug: bool) -> Result<()> {
     }
 
     ensure_notification_daemon(debug).await;
+    // Authentication must not depend on wallpaper, compositor setup, or network work.
+    ensure_polkit_agent(debug).await;
 
     if debug {
         println!("Applying settings");
@@ -216,9 +218,6 @@ pub async fn run(debug: bool) -> Result<()> {
     } else if debug {
         println!("No internet connection detected");
     }
-
-    // Start polkit agent if needed
-    ensure_polkit_agent(debug).await;
 
     // Launch welcome app if enabled
     if should_show_welcome() {
@@ -346,97 +345,111 @@ fn notification_service_for(
 async fn ensure_polkit_agent(debug: bool) {
     use crate::common::display_server::DisplayServer;
 
-    // Skip if not a desktop session
-    if !DisplayServer::detect().is_desktop_session() {
-        if debug {
-            println!("Not running in a desktop session, skipping polkit agent setup");
-        }
+    let display = DisplayServer::detect();
+    let Some(agent) = polkit_agent_for(&display) else {
+        return;
+    };
+
+    // Other desktops own their agents. In instantWM, start our selected service
+    // idempotently instead of guessing registration from D-Bus process names.
+    if CompositorType::detect() != CompositorType::InstantWM
+        && crate::doctor::checks::security::is_polkit_agent_running().await
+    {
         return;
     }
 
-    // Check if polkit agent is already running
-    if crate::doctor::checks::security::is_polkit_agent_running().await {
-        if debug {
-            println!("Polkit authentication agent is already running");
+    if display == DisplayServer::Wayland {
+        let manager = systemd::SystemdManager::user();
+        if manager.service_exists("hyprpolkitagent.service") {
+            if let Err(e) = start_polkit_service(std::path::Path::new("systemctl")) {
+                eprintln!(
+                    "Failed to start polkit agent: {e:#}. Check journalctl --user -b -u hyprpolkitagent.service"
+                );
+            } else if debug {
+                println!("hyprpolkitagent.service is active (authentication not tested)");
+            }
+            // Do not bypass a failed/masked service with an unmanaged copy.
+            return;
         }
+    }
+
+    // lxqt-policykit is installed by instantdepend; lxpolkit is a different package.
+    if crate::doctor::checks::security::is_agent_process_running(agent).await {
         return;
     }
-
-    if debug {
-        println!("No polkit authentication agent found, attempting to start one");
+    match std::process::Command::new(agent).spawn() {
+        Ok(mut child) => {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    eprintln!("Polkit agent {agent} exited during startup: {status}")
+                }
+                Err(e) => eprintln!("Could not check polkit agent {agent}: {e}"),
+                Ok(None) => {
+                    // Reap when it exits rather than leaking a zombie.
+                    std::thread::spawn(move || {
+                        let _ = child.wait();
+                    });
+                    if debug {
+                        println!("Started {agent} (authentication not tested)");
+                    }
+                }
+            }
+        }
+        Err(e) => eprintln!("Failed to start polkit agent {agent}: {e}"),
     }
+}
 
-    // Try to start hyprpolkitagent via systemd user service if available
-    let systemd_manager = systemd::SystemdManager::user();
-    if systemd_manager.service_exists("hyprpolkitagent.service") {
-        if debug {
-            println!("hyprpolkitagent.service found, attempting to start systemd service");
-        }
-
-        match systemd_manager.start("hyprpolkitagent.service") {
-            Ok(()) => {
-                if debug {
-                    println!("Successfully started hyprpolkitagent service");
-                }
-                return;
-            }
-            Err(e) => {
-                if debug {
-                    eprintln!("Failed to start hyprpolkitagent service: {}", e);
-                }
-            }
-        }
+fn polkit_agent_for(
+    display: &crate::common::display_server::DisplayServer,
+) -> Option<&'static str> {
+    use crate::common::display_server::DisplayServer;
+    match display {
+        DisplayServer::Wayland => Some("hyprpolkitagent"),
+        DisplayServer::X11 => Some("lxqt-policykit-agent"),
+        DisplayServer::Unknown => None,
     }
+}
 
-    // Fallback: try to start hyprpolkitagent via PATH if available
-    if which::which("hyprpolkitagent").is_ok() {
-        if debug {
-            println!("hyprpolkitagent found in PATH, attempting to start in background");
-        }
-
-        match std::process::Command::new("hyprpolkitagent").spawn() {
-            Ok(child) => {
-                std::mem::forget(child);
-                if debug {
-                    println!("Successfully started hyprpolkitagent in background");
-                }
-                return;
-            }
-            Err(e) => {
-                if debug {
-                    eprintln!("Failed to start hyprpolkitagent: {}", e);
-                }
-            }
-        }
-    }
-
-    // Fallback: try to start lxpolkit in background if installed
-    if which::which("lxpolkit").is_ok() {
-        if debug {
-            println!("hyprpolkitagent not available, trying lxpolkit as fallback");
-        }
-
-        match std::process::Command::new("lxpolkit").spawn() {
-            Ok(child) => {
-                std::mem::forget(child);
-                if debug {
-                    println!("Successfully started lxpolkit in background");
-                }
-                return;
-            }
-            Err(e) => {
-                if debug {
-                    eprintln!("Failed to start lxpolkit: {}", e);
-                }
-            }
-        }
-    }
-
-    if debug {
-        println!(
-            "No polkit agent could be started. Neither hyprpolkitagent nor lxpolkit are available."
+fn start_polkit_service(systemctl: &std::path::Path) -> Result<()> {
+    // ConditionEnvironment=WAYLAND_DISPLAY is evaluated by the user manager,
+    // not against ins's environment. A skipped condition still makes start
+    // return success, so import the display and explicitly check active state.
+    let vars: Vec<_> = [
+        "WAYLAND_DISPLAY",
+        "DISPLAY",
+        "XAUTHORITY",
+        "XDG_SESSION_TYPE",
+        "XDG_CURRENT_DESKTOP",
+    ]
+    .into_iter()
+    .filter(|name| std::env::var_os(name).is_some())
+    .collect();
+    if !vars.is_empty() {
+        let status = std::process::Command::new(systemctl)
+            .args(["--user", "import-environment"])
+            .args(vars)
+            .status()
+            .context("Importing display environment into systemd")?;
+        anyhow::ensure!(
+            status.success(),
+            "Could not import display environment into systemd"
         );
     }
+    let status = std::process::Command::new(systemctl)
+        .args(["--user", "start", "hyprpolkitagent.service"])
+        .status()
+        .context("Starting hyprpolkitagent.service")?;
+    anyhow::ensure!(status.success(), "hyprpolkitagent.service failed to start");
+    let status = std::process::Command::new(systemctl)
+        .args(["--user", "is-active", "--quiet", "hyprpolkitagent.service"])
+        .status()
+        .context("Checking hyprpolkitagent.service")?;
+    anyhow::ensure!(
+        status.success(),
+        "hyprpolkitagent.service did not become active (it may have been skipped or exited)"
+    );
+    Ok(())
 }
 
 fn should_show_welcome() -> bool {
@@ -481,6 +494,50 @@ mod tests {
             AutostartGuard::acquire_at(&path).unwrap().is_some(),
             "acquire must succeed again after release"
         );
+    }
+
+    #[test]
+    fn polkit_uses_wayland_agent_only_on_wayland() {
+        assert_eq!(
+            super::polkit_agent_for(&DisplayServer::Wayland),
+            Some("hyprpolkitagent")
+        );
+        assert_eq!(
+            super::polkit_agent_for(&DisplayServer::X11),
+            Some("lxqt-policykit-agent")
+        );
+        assert_eq!(super::polkit_agent_for(&DisplayServer::Unknown), None);
+    }
+
+    #[test]
+    fn polkit_service_checks_active_state_even_when_start_succeeds() {
+        use std::os::unix::fs::PermissionsExt;
+        // Model systemd's condition-skip: start succeeds, is-active fails.
+        // Also verify a real start failure is surfaced without checking active.
+        for (start_exit, active_exit, succeeds) in [(0, 0, true), (0, 3, false), (1, 0, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let executable = dir.path().join("systemctl");
+            let log = dir.path().join("calls");
+            std::fs::write(&executable, format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$2\" in\n  import-environment) exit 0 ;;\n  start) exit {start_exit} ;;\n  is-active) exit {active_exit} ;;\n  *) exit 99 ;;\nesac\n",
+                log.display()
+            )).unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(super::start_polkit_service(&executable).is_ok(), succeeds);
+            let calls = std::fs::read_to_string(log).unwrap();
+            let lines: Vec<_> = calls.lines().collect();
+            let start = lines
+                .iter()
+                .position(|line| *line == "--user start hyprpolkitagent.service")
+                .unwrap();
+            if start > 0 {
+                assert!(lines[0].starts_with("--user import-environment "));
+            }
+            assert_eq!(
+                calls.contains("--user is-active --quiet hyprpolkitagent.service"),
+                start_exit == 0
+            );
+        }
     }
 
     #[test]
