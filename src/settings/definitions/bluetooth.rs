@@ -13,7 +13,7 @@ use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{BLUEMAN, BLUEZ, BLUEZ_UTILS};
+use crate::settings::deps::{BLUEMAN, BLUETUI, BLUEZ, BLUEZ_UTILS};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
@@ -432,4 +432,19 @@ gui_command_setting!(
     "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
     "blueman-manager",
     &BLUEMAN
+);
+
+// ============================================================================
+// Bluetooth Manager (TUI app)
+// ============================================================================
+
+tui_command_setting!(
+    BluetoothManagerTui,
+    "bluetooth.manager_tui",
+    "Manage Devices (Terminal)",
+    NerdFont::Bluetooth,
+    "Pair new devices and manage connected Bluetooth devices using the bluetui terminal interface.",
+    "bluetui",
+    &BLUETUI,
+    &["bluetooth", "bluetui", "devices", "terminal", "tui", "pair"]
 );

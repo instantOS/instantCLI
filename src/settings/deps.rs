@@ -279,6 +279,16 @@ pub static BLUEMAN: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("blueman-manager")],
 };
 
+pub static BLUETUI: Dependency = Dependency {
+    name: "Bluetui",
+    packages: &[
+        PackageDefinition::new("bluetui", PackageManager::Pacman),
+        PackageDefinition::new("bluetui", PackageManager::Apt),
+        PackageDefinition::new("bluetui", PackageManager::Cargo),
+    ],
+    tests: &[InstallTest::WhichSucceeds("bluetui")],
+};
+
 // Storage (storage.rs)
 
 pub static GNOME_DISKS: Dependency = Dependency {

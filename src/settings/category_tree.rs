@@ -95,6 +95,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&bluetooth::BluetoothService),
             CategoryNode::setting(&bluetooth::BluetoothCapabilityCheck),
             CategoryNode::setting(&bluetooth::BluetoothManager),
+            CategoryNode::setting(&bluetooth::BluetoothManagerTui),
         ],
         Category::InputDevices => vec![
             CategoryNode::setting(&keyboard::KeyboardLayout),
