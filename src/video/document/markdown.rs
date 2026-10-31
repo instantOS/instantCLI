@@ -137,6 +137,53 @@ mod tests {
     }
 
     #[test]
+    fn generated_cue_references_round_trip() -> anyhow::Result<()> {
+        use crate::video::document::{DocumentBlock, SegmentKind, parse_video_document};
+
+        // Exercise both single-source and multi-source metadata validation.
+        for source_ids in [vec!["a"], vec!["a", "b"]] {
+            let metadata = VideoMetadata {
+                sources: source_ids
+                    .iter()
+                    .map(|id| VideoSource {
+                        id: (*id).to_string(),
+                        name: None,
+                        source: PathBuf::from(format!("{id}.mp4")),
+                        transcript: PathBuf::from(format!("{id}.json")),
+                        audio: PathBuf::new(),
+                        hash: None,
+                    })
+                    .collect(),
+                default_source: Some("a".to_string()),
+            };
+            let source_id = source_ids.last().copied().unwrap_or("a");
+            let mut cue = cue(10_000, 10_300, "hi");
+            cue.cue_id = 2;
+            cue.source_id = source_id.to_string();
+            let markdown = build_markdown(&[cue], &metadata);
+            let document = parse_video_document(&markdown, std::path::Path::new("test.md"))?;
+            let dialogue: Vec<_> = document
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    DocumentBlock::Segment(segment) if segment.kind == SegmentKind::Dialogue => {
+                        Some(segment)
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            assert_eq!(dialogue.len(), 1);
+            assert_eq!(dialogue[0].source_id, source_id);
+            assert_eq!(dialogue[0].cue_id, Some(2));
+            assert_eq!(dialogue[0].text, "hi");
+            assert_eq!(dialogue[0].range.start, Duration::from_millis(10_000));
+            assert_eq!(dialogue[0].range.end, Duration::from_millis(10_300));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn inserts_silence_chunks() {
         let cues = vec![cue(3000, 4000, "Hello"), cue(11000, 12000, "World")];
         let metadata = VideoMetadata {
