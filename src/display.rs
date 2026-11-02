@@ -21,7 +21,10 @@ struct Output {
 struct Mode {
     width: u32,
     height: u32,
-    refresh_mhz: u32,
+    /// instantwmctl serializes the shared `OutputMode` field as
+    /// `refresh_millihertz`; `refresh_mhz` is the pre-unification name.
+    #[serde(alias = "refresh_mhz")]
+    refresh_millihertz: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,7 +116,7 @@ fn layout_commands(outputs: &[Output], layout: &Layout) -> Result<Vec<Vec<String
             .max_by_key(|mode| {
                 (
                     u64::from(mode.width) * u64::from(mode.height),
-                    mode.refresh_mhz,
+                    mode.refresh_millihertz,
                 )
             })
             .context("Connected display has no available modes")?;
@@ -133,7 +136,7 @@ fn layout_commands(outputs: &[Output], layout: &Layout) -> Result<Vec<Vec<String
             "--resolution".into(),
             format!("{}x{}", mode.width, mode.height),
             "--refresh-rate".into(),
-            format!("{:.3}", f64::from(mode.refresh_mhz) / 1000.0),
+            format!("{:.3}", f64::from(mode.refresh_millihertz) / 1000.0),
             "--transform".into(),
             "normal".into(),
         ];
@@ -228,7 +231,7 @@ pub fn run() -> Result<()> {
 mod tests {
     use super::*;
     fn outputs() -> Vec<Output> {
-        serde_json::from_str(r#"[{"name":"eDP-1","modes":[{"width":1920,"height":1080,"refresh_mhz":60000}]},{"name":"DP-1","modes":[{"width":2560,"height":1440,"refresh_mhz":144000}]}]"#).unwrap()
+        serde_json::from_str(r#"[{"name":"eDP-1","modes":[{"width":1920,"height":1080,"refresh_millihertz":60000}]},{"name":"DP-1","modes":[{"width":2560,"height":1440,"refresh_millihertz":144000}]}]"#).unwrap()
     }
     #[test]
     fn extend_clears_mirrors_and_places_heads_side_by_side() {
@@ -256,7 +259,7 @@ mod tests {
         displays[1].modes.push(Mode {
             width: 1920,
             height: 1080,
-            refresh_mhz: 60000,
+            refresh_millihertz: 60000,
         });
         let shared = x11_mirror_outputs(&displays).unwrap();
         let commands = layout_commands(&shared, &Layout::Mirror).unwrap();

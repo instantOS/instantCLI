@@ -27,7 +27,10 @@ struct DisplayModes {
 struct MonitorMode {
     width: u32,
     height: u32,
-    refresh_mhz: u32,
+    /// instantwmctl serializes the shared `OutputMode` field as
+    /// `refresh_millihertz`; `refresh_mhz` is the pre-unification name.
+    #[serde(alias = "refresh_mhz")]
+    refresh_millihertz: u32,
 }
 
 /// instantWM display provider using instantwmctl.
@@ -89,7 +92,7 @@ fn output_info(display: &DisplayModes, monitor: &MonitorInfo) -> Option<OutputIn
         .map(|mode| DisplayMode {
             width: mode.width,
             height: mode.height,
-            refresh: mode.refresh_mhz,
+            refresh: mode.refresh_millihertz,
         })
         .collect();
 
@@ -144,9 +147,9 @@ mod tests {
         let output = output_info(
             &modes(
                 r#"[{"name":"DP-1","modes":[
-                    {"width":1920,"height":1080,"refresh_mhz":60000},
-                    {"width":1280,"height":1024,"refresh_mhz":75025},
-                    {"width":1920,"height":1080,"refresh_mhz":164834}
+                    {"width":1920,"height":1080,"refresh_millihertz":60000},
+                    {"width":1280,"height":1024,"refresh_millihertz":75025},
+                    {"width":1920,"height":1080,"refresh_millihertz":164834}
                 ]}]"#,
             )[0],
             &monitor("DP-1", 1920, 1080),
@@ -175,8 +178,8 @@ mod tests {
         let output = output_info(
             &modes(
                 r#"[{"name":"DP-1","modes":[
-                    {"width":1920,"height":1080,"refresh_mhz":60000},
-                    {"width":1920,"height":1080,"refresh_mhz":60000}
+                    {"width":1920,"height":1080,"refresh_millihertz":60000},
+                    {"width":1920,"height":1080,"refresh_millihertz":60000}
                 ]}]"#,
             )[0],
             &monitor("DP-1", 1920, 1080),
@@ -203,8 +206,8 @@ mod tests {
         let output = output_info(
             &modes(
                 r#"[{"name":"DP-1","modes":[
-                    {"width":3840,"height":2160,"refresh_mhz":60000},
-                    {"width":1920,"height":1080,"refresh_mhz":60000}
+                    {"width":3840,"height":2160,"refresh_millihertz":60000},
+                    {"width":1920,"height":1080,"refresh_millihertz":60000}
                 ]}]"#,
             )[0],
             &monitor("DP-1", 1280, 720),
