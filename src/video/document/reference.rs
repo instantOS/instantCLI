@@ -77,13 +77,14 @@ pub fn parse_segment_reference(
     if let Some((prefix, rest)) = core.split_once('@') {
         let prefix = prefix.trim();
         let rest = rest.trim();
+        let source_id = prefix.rsplit_once('#').map_or(prefix, |(source, _)| source);
         let prefix_valid = is_valid_source_id(prefix);
         if !source_config.known_sources.is_empty() {
-            if source_config.known_sources.contains(prefix) {
+            if source_config.known_sources.contains(source_id) {
                 explicit_source = Some(prefix);
                 range_str = rest;
             } else if prefix_valid {
-                bail!("Unknown source id `{}` at line {}", prefix, line);
+                bail!("Unknown source id `{}` at line {}", source_id, line);
             }
         } else if prefix_valid {
             explicit_source = Some(prefix);
@@ -164,4 +165,27 @@ pub fn looks_like_timestamp_reference(value: &str) -> bool {
     // Strip transform parameters (everything after `|`).
     let time_part = range_part.split('|').next().unwrap_or(range_part).trim();
     time_part.contains(':') && time_part.contains('.')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cue_references_still_validate_source_and_cue_ids() {
+        let config = SegmentSourceConfig {
+            default_source: "a".to_string(),
+            known_sources: HashSet::from(["a".to_string()]),
+            require_explicit: false,
+        };
+
+        for (reference, expected_error) in [
+            ("b#2@00:10.0-00:10.3", "Unknown source id `b` at line 14"),
+            ("a#oops@00:10.0-00:10.3", "Invalid cue id `oops` at line 14"),
+            ("a#@00:10.0-00:10.3", "Invalid cue id `` at line 14"),
+        ] {
+            let error = parse_segment_reference(reference, &config, 14).unwrap_err();
+            assert!(format!("{error:#}").contains(expected_error));
+        }
+    }
 }
