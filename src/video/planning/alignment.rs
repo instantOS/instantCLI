@@ -1,21 +1,37 @@
 use super::assignment_solver::{McmfEdge, add_edge, min_cost_max_flow};
 use super::core::{TimelinePlan, TimelinePlanItem};
+use super::cut_snap::{AudioEnvelope, snapped_cue_bounds};
 use crate::video::document::SegmentKind;
 use crate::video::render::timeline::SourceRange;
 use crate::video::support::transcript::TranscriptCue;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use std::collections::{HashMap, HashSet};
 
-pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
+/// Loudness envelopes keyed by transcript source id. A source without an
+/// envelope falls back to plain fixed padding.
+pub type SourceEnvelopes = HashMap<String, AudioEnvelope>;
+
+/// Match planned dialogue clips to transcript cues and set their source windows.
+///
+/// When an envelope is available for a clip's source, each cut is snapped to the
+/// quietest nearby point of the audio that is actually rendered, reducing the
+/// risk of clipped words or leaked deleted speech from timestamp error.
+/// `cues` must retain the original acoustic word timings, not subtitle edits.
+pub fn align_plan_with_subtitles(
+    plan: &mut TimelinePlan,
+    cues: &[TranscriptCue],
+    envelopes: &SourceEnvelopes,
+) -> Result<()> {
     let dialogue_indices = match_dialogue_clips_to_cues(plan, cues)?;
     if dialogue_indices.is_empty() {
         return Ok(());
     }
 
-    pad_dialogue_clips(plan, cues, &dialogue_indices)?;
+    pad_dialogue_clips(plan, cues, &dialogue_indices, envelopes)?;
 
     let silence_updates = collect_silence_time_updates(&plan.items, &dialogue_indices);
     apply_clip_time_updates(plan, silence_updates);
+    validate_dialogue_runs(plan, cues)?;
 
     Ok(())
 }
@@ -153,10 +169,14 @@ fn pad_dialogue_clips(
     plan: &mut TimelinePlan,
     cues: &[TranscriptCue],
     dialogue_indices: &[usize],
+    envelopes: &SourceEnvelopes,
 ) -> Result<()> {
-    let mut cues_by_source: HashMap<&str, Vec<&TranscriptCue>> = HashMap::new();
+    let mut cues_by_source: HashMap<&str, Vec<TranscriptCue>> = HashMap::new();
     for cue in cues {
-        cues_by_source.entry(&cue.source_id).or_default().push(cue);
+        cues_by_source
+            .entry(&cue.source_id)
+            .or_default()
+            .push(cue.clone());
     }
     for source_cues in cues_by_source.values_mut() {
         source_cues.sort_by_key(|cue| cue.start);
@@ -178,16 +198,114 @@ fn pad_dialogue_clips(
             .ok_or_else(|| {
                 anyhow::anyhow!("Transcript cue #{cue_id} disappeared during padding")
             })?;
-        let owned_cues = source_cues
-            .iter()
-            .map(|cue| (*cue).clone())
-            .collect::<Vec<_>>();
-        clip.time_window = padded_cue_bounds(
-            &owned_cues,
-            cue_idx,
-            DEFAULT_DIALOGUE_PADDING_SECONDS,
-            DEFAULT_PADDING_GUARD_SECONDS,
+        let time_window = match envelopes.get(clip.source_id.as_str()) {
+            Some(envelope) => snapped_cue_bounds(
+                source_cues,
+                cue_idx,
+                DEFAULT_DIALOGUE_PADDING_SECONDS,
+                envelope,
+            )
+            .with_context(|| {
+                format!(
+                    "Cannot refine audio cuts for source `{}` cue #{cue_id}",
+                    clip.source_id
+                )
+            })?,
+            None => padded_cue_bounds(
+                source_cues,
+                cue_idx,
+                DEFAULT_DIALOGUE_PADDING_SECONDS,
+                DEFAULT_PADDING_GUARD_SECONDS,
+            ),
+        };
+        validate_positive_dialogue_bounds(&source_cues[cue_idx], time_window)?;
+        clip.time_window = time_window;
+    }
+    Ok(())
+}
+
+fn validate_positive_dialogue_bounds(cue: &TranscriptCue, bounds: SourceRange) -> Result<()> {
+    ensure!(
+        bounds.end > bounds.start,
+        "Cuts collapse dialogue for source `{}` cue #{}: [{}, {}]. Review transcript timings before rendering.",
+        cue.source_id,
+        cue.cue_id,
+        bounds.start,
+        bounds.end
+    );
+    Ok(())
+}
+
+fn validate_dialogue_bounds(cue: &TranscriptCue, bounds: SourceRange) -> Result<()> {
+    validate_positive_dialogue_bounds(cue, bounds)?;
+    // Check both ends of the retained source run: adjacent clips can preserve
+    // word parts that lie outside this cue's own clip window.
+    for word in cue.words.first().into_iter().chain(cue.words.last()) {
+        let start = word.start.as_secs_f64();
+        let end = word.end.as_secs_f64();
+        let retained = (bounds.end.min(end) - bounds.start.max(start)).max(0.0);
+        ensure!(
+            retained + 1e-9 >= (end - start) / 2.0,
+            "Cuts retain less than half of edge word `{}` for source `{}` cue #{}. Review transcript timings before rendering.",
+            word.word,
+            cue.source_id,
+            cue.cue_id
         );
+    }
+    Ok(())
+}
+
+fn validate_dialogue_runs(plan: &TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
+    let cue_map: HashMap<_, _> = cues
+        .iter()
+        .map(|cue| ((cue.source_id.as_str(), cue.cue_id), cue))
+        .collect();
+    let mut start_idx = 0;
+    while start_idx < plan.items.len() {
+        let TimelinePlanItem::Clip(first) = &plan.items[start_idx] else {
+            start_idx += 1;
+            continue;
+        };
+        let mut bounds = first.time_window;
+        let mut end_idx = start_idx + 1;
+        while let Some(item) = plan.items.get(end_idx) {
+            match item {
+                TimelinePlanItem::Music(_) => {}
+                TimelinePlanItem::Clip(clip)
+                    if clip.source_id == first.source_id
+                        && (clip.time_window.start - bounds.end).abs() <= 1e-9
+                        && clip.time_window.end >= clip.time_window.start =>
+                {
+                    bounds.end = clip.time_window.end;
+                }
+                _ => break,
+            }
+            end_idx += 1;
+        }
+
+        // Each item belongs to one run, so grouping and validation stay linear.
+        // Source silence clips contribute audio too; standalone content does not.
+        for item in &plan.items[start_idx..end_idx] {
+            let TimelinePlanItem::Clip(clip) = item else {
+                continue;
+            };
+            if clip.kind == SegmentKind::Silence {
+                continue;
+            }
+            let cue = clip
+                .cue_id
+                .and_then(|cue_id| cue_map.get(&(clip.source_id.as_str(), cue_id)))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No matched transcript cue for dialogue in source `{}` (cue {:?})",
+                        clip.source_id,
+                        clip.cue_id
+                    )
+                })?;
+            validate_positive_dialogue_bounds(cue, clip.time_window)?;
+            validate_dialogue_bounds(cue, bounds)?;
+        }
+        start_idx = end_idx;
     }
     Ok(())
 }
@@ -755,7 +873,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let clip_segments: Vec<_> = plan
             .items
@@ -775,6 +893,288 @@ mod tests {
         // Start is the padded cue start, clamped to the previous cue end plus guard.
         assert!((clip_segments[1].time_window.start - 1.12).abs() < 1e-6);
         assert!((clip_segments[1].time_window.end - 2.53).abs() < 1e-6);
+    }
+
+    #[test]
+    fn audio_snapping_keeps_kept_neighbours_contiguous_and_clear_of_deleted_words() {
+        use crate::video::support::transcript::WordTiming;
+
+        // Three abutting cues. The 1.00 s stamp is early: the first word
+        // sounds until 1.02 s, followed by a dip at 1.02-1.04 s. The 2.00 s
+        // stamp is late: the retained last word ends at 1.98 s, followed by
+        // a dip at 1.98-2.00 s before the deleted next cue sounds at 2.00 s.
+        let tone = |seconds: f64, amplitude: f64| -> Vec<u8> {
+            (0..(seconds * 16_000.0) as usize)
+                .flat_map(|n| {
+                    let phase = std::f64::consts::TAU * 200.0 * n as f64 / 16_000.0;
+                    ((amplitude * phase.sin() * 32767.0) as i16).to_le_bytes()
+                })
+                .collect::<Vec<u8>>()
+        };
+        let mut pcm = tone(1.02, 0.5);
+        pcm.extend(tone(0.02, 0.0));
+        pcm.extend(tone(0.94, 0.5));
+        pcm.extend(tone(0.02, 0.0));
+        pcm.extend(tone(1.0, 0.5));
+        let envelope = AudioEnvelope::from_s16le_reader(std::io::Cursor::new(pcm), 16_000).unwrap();
+        let mut envelopes = SourceEnvelopes::new();
+        envelopes.insert("a".to_string(), envelope);
+
+        let word = |text: &str, start: u64, end: u64| WordTiming {
+            word: text.to_string(),
+            start: Duration::from_millis(start),
+            end: Duration::from_millis(end),
+        };
+        let cue = |cue_id: usize, words: Vec<WordTiming>| TranscriptCue {
+            cue_id,
+            start: words.first().unwrap().start,
+            end: words.last().unwrap().end,
+            text: "x".to_string(),
+            words,
+            source_id: "a".to_string(),
+        };
+        let cues = vec![
+            cue(0, vec![word("one", 200, 1000)]),
+            cue(1, vec![word("two", 1000, 1800), word("last", 1800, 2000)]),
+            cue(2, vec![word("three", 2000, 2900)]),
+        ];
+
+        // Keep lines 0 and 1 (contiguous neighbours); delete line 2.
+        let aligned_windows = |markdown: &str| {
+            let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+            let mut plan = document.plan_timeline().unwrap();
+            align_plan_with_subtitles(&mut plan, &cues, &envelopes).unwrap();
+            plan.items
+                .iter()
+                .filter_map(|item| match item {
+                    TimelinePlanItem::Clip(clip) => Some(clip.time_window),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let lines = [
+            "`a#0@00:00:00.2-00:00:01.0` one\n",
+            "`a#1@00:00:01.0-00:00:02.0` two last\n",
+            "`a#2@00:00:02.0-00:00:02.9` three\n",
+        ];
+        let windows = aligned_windows(&lines[..2].concat());
+        assert_eq!(windows.len(), 2);
+        assert_eq!(
+            windows[0].end, windows[1].start,
+            "kept neighbours must share one cut"
+        );
+        assert!(
+            (1.02..=1.04).contains(&windows[0].end),
+            "cut {} is not in the dip between the words",
+            windows[0].end
+        );
+        assert!(
+            windows[1].end >= 1.98,
+            "cut {} clips the retained last word's tail",
+            windows[1].end
+        );
+        assert!(
+            windows[1].end < 2.0,
+            "cut {} misses the dip and risks leaking the deleted next cue",
+            windows[1].end
+        );
+
+        let all_windows = aligned_windows(&lines.concat());
+        for indices in [vec![0, 1], vec![0, 2], vec![2, 0], vec![1, 2]] {
+            let markdown = indices.iter().map(|&idx| lines[idx]).collect::<String>();
+            let edited_windows = aligned_windows(&markdown);
+            assert_eq!(edited_windows.len(), indices.len());
+            for (window, idx) in edited_windows.iter().zip(indices) {
+                assert_eq!(window.start, all_windows[idx].start);
+                assert_eq!(window.end, all_windows[idx].end);
+            }
+        }
+        // Deleting the first cue must not pull the next clip's beginning back
+        // into the deleted word, which really continues through 1.02 s.
+        assert!(all_windows[1].start >= 1.02);
+        assert!(all_windows[2].start >= 1.98 && all_windows[2].start < 2.0);
+    }
+
+    #[test]
+    fn two_sided_snapping_cannot_shave_away_a_short_middle_word() {
+        use crate::video::support::transcript::WordTiming;
+
+        let pcm = (0..16_000)
+            .flat_map(|sample| {
+                let time = f64::from(sample) / 16_000.0;
+                let amplitude = if (0.51..0.53).contains(&time) {
+                    0.0
+                } else {
+                    0.5
+                };
+                let value = amplitude * (std::f64::consts::TAU * 200.0 * time).sin();
+                ((value * 32767.0) as i16).to_le_bytes()
+            })
+            .collect::<Vec<_>>();
+        let envelope = AudioEnvelope::from_s16le_reader(std::io::Cursor::new(pcm), 16_000).unwrap();
+        let envelopes = SourceEnvelopes::from([("a".into(), envelope)]);
+        let cues = [(0.2, 0.5), (0.5, 0.54), (0.54, 0.9)]
+            .into_iter()
+            .enumerate()
+            .map(|(cue_id, (start, end))| {
+                let start = Duration::from_secs_f64(start);
+                let end = Duration::from_secs_f64(end);
+                TranscriptCue {
+                    cue_id,
+                    start,
+                    end,
+                    text: "word".into(),
+                    words: vec![WordTiming {
+                        word: "word".into(),
+                        start,
+                        end,
+                    }],
+                    source_id: "a".into(),
+                }
+            })
+            .collect::<Vec<_>>();
+        let document =
+            parse_video_document("`a#1@00:00:00.5-00:00:00.54` word\n", Path::new("test.md"))
+                .unwrap();
+        let mut plan = document.plan_timeline().unwrap();
+        let error = align_plan_with_subtitles(&mut plan, &cues, &envelopes).unwrap_err();
+        assert!(error.to_string().contains("less than half"));
+        assert!(error.to_string().contains("source `a` cue #1"));
+
+        let document = parse_video_document(
+            concat!(
+                "`a#0@00:00:00.2-00:00:00.5` first\n",
+                "`a#1@00:00:00.5-00:00:00.54` word\n",
+                "`a#2@00:00:00.54-00:00:00.9` last\n",
+            ),
+            Path::new("test.md"),
+        )
+        .unwrap();
+        let empty_envelopes = SourceEnvelopes::new();
+        for envelopes in [&envelopes, &empty_envelopes] {
+            let mut plan = document.plan_timeline().unwrap();
+            align_plan_with_subtitles(&mut plan, &cues, envelopes).unwrap();
+            let windows = plan
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    TimelinePlanItem::Clip(clip) => Some(clip.time_window),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(windows.len(), 3);
+            assert_eq!(windows[0].end, windows[1].start);
+            assert_eq!(windows[1].end, windows[2].start);
+            assert!(windows[0].start <= 0.5 && windows[2].end >= 0.54);
+            if !envelopes.is_empty() {
+                assert!(windows[1].end - windows[1].start < 0.02);
+            }
+        }
+    }
+
+    #[test]
+    fn dialogue_retention_uses_contiguous_source_silence_but_not_other_runs() {
+        use crate::video::support::transcript::WordTiming;
+
+        let document = parse_video_document(
+            concat!(
+                "`a#0@00:00:00.2-00:00:00.5` first\n",
+                "`a#1@00:00:00.5-00:00:00.54` middle\n",
+                "`a#2@00:00:00.54-00:00:00.9` last\n",
+            ),
+            Path::new("test.md"),
+        )
+        .unwrap();
+        let mut plan = document.plan_timeline().unwrap();
+        let windows = [(0.2, 0.525), (0.525, 0.535), (0.535, 0.9)];
+        for (idx, item) in plan.items.iter_mut().enumerate() {
+            let TimelinePlanItem::Clip(clip) = item else {
+                panic!("expected a source clip");
+            };
+            clip.time_window = SourceRange::new(windows[idx].0, windows[idx].1);
+            if idx != 1 {
+                clip.kind = SegmentKind::Silence;
+            }
+        }
+        let cues = vec![TranscriptCue {
+            cue_id: 1,
+            start: Duration::from_secs_f64(0.5),
+            end: Duration::from_secs_f64(0.54),
+            text: "middle".into(),
+            words: vec![WordTiming {
+                word: "middle".into(),
+                start: Duration::from_secs_f64(0.5),
+                end: Duration::from_secs_f64(0.54),
+            }],
+            source_id: "a".into(),
+        }];
+        validate_dialogue_runs(&plan, &cues).unwrap();
+
+        for case in 0..3 {
+            let mut separated = plan.clone();
+            if case == 2 {
+                separated.items.insert(
+                    1,
+                    TimelinePlanItem::Standalone(super::super::core::StandalonePlan {
+                        markdown: "pause".into(),
+                        duration_seconds: 1.0,
+                    }),
+                );
+            } else if let TimelinePlanItem::Clip(clip) = &mut separated.items[0] {
+                if case == 0 {
+                    clip.source_id = "other".into();
+                } else {
+                    clip.time_window.end = 0.52;
+                }
+            }
+            let error = validate_dialogue_runs(&separated, &cues).unwrap_err();
+            assert!(error.to_string().contains("less than half"));
+        }
+        if let TimelinePlanItem::Clip(clip) = &mut plan.items[1] {
+            clip.time_window.end = clip.time_window.start;
+        }
+        let error = validate_dialogue_runs(&plan, &cues).unwrap_err();
+        assert!(error.to_string().contains("collapse dialogue"));
+    }
+
+    #[test]
+    fn empty_word_timings_require_only_a_positive_dialogue_window() {
+        let cue = TranscriptCue {
+            cue_id: 1,
+            start: Duration::from_secs(1),
+            end: Duration::from_secs(2),
+            text: "untimed words".into(),
+            words: vec![],
+            source_id: "a".into(),
+        };
+        validate_dialogue_bounds(&cue, SourceRange::new(1.4, 1.5)).unwrap();
+        assert!(validate_dialogue_bounds(&cue, SourceRange::new(1.5, 1.5)).is_err());
+    }
+
+    #[test]
+    fn fixed_padding_cannot_silently_collapse_dialogue() {
+        let document = parse_video_document(
+            "`a#1@00:00:00.5-00:00:00.54` middle\n",
+            Path::new("test.md"),
+        )
+        .unwrap();
+        let mut plan = document.plan_timeline().unwrap();
+        let cues = [(0.2, 0.6), (0.5, 0.54), (0.51, 0.9)]
+            .into_iter()
+            .enumerate()
+            .map(|(cue_id, (start, end))| TranscriptCue {
+                cue_id,
+                start: Duration::from_secs_f64(start),
+                end: Duration::from_secs_f64(end),
+                text: "word".into(),
+                words: vec![],
+                source_id: "a".into(),
+            })
+            .collect::<Vec<_>>();
+        let error =
+            align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap_err();
+        assert!(error.to_string().contains("collapse dialogue"));
+        assert!(error.to_string().contains("source `a` cue #1"));
     }
 
     #[test]
@@ -804,7 +1204,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
         let clips = plan
             .items
             .iter()
@@ -836,7 +1236,8 @@ mod tests {
             source_id: "a".into(),
         }];
 
-        let error = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
+        let error =
+            align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap_err();
         assert!(error.to_string().contains("referenced more than once"));
     }
 
@@ -865,7 +1266,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let clip_segments: Vec<_> = plan
             .items
@@ -923,7 +1324,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let clip_segments: Vec<_> = plan
             .items
@@ -961,7 +1362,7 @@ mod tests {
             source_id: "a".to_string(),
         }];
 
-        let err = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
+        let err = align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap_err();
         assert!(
             err.to_string()
                 .contains("only 1 subtitle cues for 2 dialogue segments"),
@@ -1027,7 +1428,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let clip_segments: Vec<_> = plan
             .items
@@ -1104,7 +1505,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let mut iter = plan.items.iter();
         let first_clip = match iter.next() {
@@ -1161,7 +1562,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let mut iter = plan.items.iter();
         let intro = match iter.next() {
@@ -1229,7 +1630,7 @@ mod tests {
             },
         ];
 
-        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+        align_plan_with_subtitles(&mut plan, &cues, &SourceEnvelopes::new()).unwrap();
 
         let silence = plan
             .items

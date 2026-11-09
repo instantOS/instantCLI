@@ -1,13 +1,16 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::ffi::OsString;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use dirs::{cache_dir, data_dir, home_dir};
+use duct::{Expression, cmd};
 use sha2::{Digest, Sha256};
 
 use super::utils::canonicalize_existing;
+use crate::ui::prelude::{Level, emit};
 use crate::video::document::MusicDirective;
 
 pub struct MusicResolver {
@@ -127,25 +130,51 @@ impl MusicResolver {
 
         let destination = cache_path.join(&hash);
         if destination.exists() {
+            emit(
+                Level::Info,
+                "video.music.cached",
+                "Using cached music download",
+                None,
+            );
             return Ok(destination);
         }
 
-        let output = Command::new("yt-dlp")
-            .arg("--no-part")
-            .arg("--quiet")
-            .arg("--no-warnings")
-            .arg("-f")
-            .arg("bestaudio/best")
-            .arg("-o")
-            .arg(destination.to_string_lossy().into_owned())
-            .arg(url)
-            .output()
-            .with_context(|| format!("Failed to spawn yt-dlp for {}", url))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("yt-dlp failed to download {}: {}", url, stderr.trim());
-        }
+        emit(
+            Level::Info,
+            "video.music.download.start",
+            &format!("Downloading music with yt-dlp: {url}"),
+            None,
+        );
+        let mut args = [
+            "--no-part",
+            "--newline",
+            "--no-colors",
+            "--progress",
+            "--progress-delta",
+            "1",
+            "-f",
+            "bestaudio/best",
+            "-o",
+        ]
+        .map(OsString::from)
+        .to_vec();
+        args.push(destination.as_os_str().to_owned());
+        args.push(url.into());
+        let download = cmd("yt-dlp", args);
+        run_music_download(download, |line| {
+            let level = if line.starts_with("WARNING:") || line.starts_with("ERROR:") {
+                Level::Warn
+            } else {
+                Level::Info
+            };
+            emit(
+                level,
+                "video.music.download.progress",
+                &format!("Music download: {line}"),
+                None,
+            );
+        })
+        .with_context(|| format!("Failed to download music from {url}"))?;
 
         if !destination.exists() {
             let mut resolved = None;
@@ -185,8 +214,64 @@ impl MusicResolver {
             );
         }
 
+        emit(
+            Level::Success,
+            "video.music.download.complete",
+            "Music download complete",
+            None,
+        );
         Ok(destination)
     }
+}
+
+fn run_music_download(download: Expression, mut on_line: impl FnMut(&str)) -> Result<()> {
+    // Merge before reading so neither stream can fill its pipe and stall the
+    // download. Route through emit rather than inheriting output (JSON mode).
+    let handle = download
+        .stdin_null()
+        .stderr_to_stdout()
+        .unchecked()
+        .reader()
+        .context("Failed to spawn yt-dlp")?;
+    let mut reader = BufReader::new(handle);
+    let mut tail = VecDeque::new();
+    let mut buffer = Vec::new();
+    loop {
+        buffer.clear();
+        let read = match reader.read_until(b'\n', &mut buffer) {
+            Ok(read) => read,
+            Err(error) => {
+                let _ = reader.get_ref().kill();
+                return Err(error).context("Failed to read yt-dlp progress");
+            }
+        };
+        if read == 0 {
+            break;
+        }
+        let line = String::from_utf8_lossy(&buffer);
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        on_line(line);
+        if tail.len() == 24 {
+            tail.pop_front();
+        }
+        tail.push_back(line.chars().take(1024).collect::<String>());
+    }
+    // Duct guarantees an exit status after the reader reaches EOF.
+    let output = reader
+        .get_ref()
+        .try_wait()?
+        .context("yt-dlp exited without a status")?;
+    if !output.status.success() {
+        bail!(
+            "yt-dlp exited with {}:\n{}",
+            output.status,
+            tail.into_iter().collect::<Vec<_>>().join("\n")
+        );
+    }
+    Ok(())
 }
 
 fn is_url(value: &str) -> bool {
@@ -216,6 +301,64 @@ mod tests {
             .unwrap();
 
         assert_eq!(resolved, canonicalize_existing(&file).unwrap());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn streams_download_metadata_progress_and_postprocessing() {
+        let download = cmd(
+            "sh",
+            [
+                "-c",
+                "printf '[youtube] Extracting metadata\\n'; printf '[download] 25%% ETA 00:03\\n' >&2; printf '[download] 100%%\\n'; printf '[FixupM4a] Processing\\n' >&2",
+            ],
+        );
+        let mut lines = Vec::new();
+        run_music_download(download, |line| lines.push(line.to_string())).unwrap();
+        assert_eq!(
+            lines,
+            [
+                "[youtube] Extracting metadata",
+                "[download] 25% ETA 00:03",
+                "[download] 100%",
+                "[FixupM4a] Processing",
+            ]
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn download_failures_keep_diagnostics_and_report_live_output() {
+        let download = cmd(
+            "sh",
+            [
+                "-c",
+                "printf '[download] 20%%\\n'; printf 'ERROR: unavailable\\n' >&2; exit 7",
+            ],
+        );
+        let mut lines = Vec::new();
+        let error = run_music_download(download, |line| lines.push(line.to_string())).unwrap_err();
+        assert_eq!(lines, ["[download] 20%", "ERROR: unavailable"]);
+        assert!(error.to_string().contains("ERROR: unavailable"));
+        assert!(error.to_string().contains("7"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn download_diagnostics_are_bounded_and_lossy_utf8_is_supported() {
+        let download = cmd(
+            "sh",
+            [
+                "-c",
+                "printf 'old diagnostic\\n'; i=0; while [ \"$i\" -lt 30 ]; do printf 'progress\\n' >&2; i=$((i + 1)); done; printf 'ERROR: \\377failure' >&2; exit 1",
+            ],
+        );
+        let error = run_music_download(download, |_| {})
+            .unwrap_err()
+            .to_string();
+        assert!(!error.contains("old diagnostic"));
+        assert!(error.contains("failure"));
+        assert!(error.lines().count() <= 25);
     }
 
     #[test]

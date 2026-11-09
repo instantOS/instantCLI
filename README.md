@@ -55,6 +55,29 @@ See [Alpine packaging](apk/README.md) for local build instructions.
 - Arch Linux Installer
 - video editing (yes, I know it's random)
 
+### Reviewing possible non-speech in video transcripts
+
+`ins video convert` and `ins video append` compare transcript cues against a
+local Silero speech-activity detector. Cues of at least half a second with little
+detected speech get a review comment in the editable markdown:
+
+```markdown
+<!-- REVIEW: possible non-speech (background noise or silence); listen before keeping this cue. -->
+`a#17@00:12.0-00:14.2` possibly garbled transcription
+```
+
+This is a hint to listen, not a verdict: quiet speech can be flagged, and some
+noise can still look like speech. Nothing is automatically removed or muted;
+comments do not enter subtitles or change cue IDs, word timings, or cuts.
+
+The detector downloads a pinned model of about 1.2 MB on first use and runs on
+CPU through the same `uv`/`transcribe-cpp` environment as Granite. Audio stays
+local. Analysis is cached per recording and also works with existing or imported
+transcripts, without rerunning speech-to-text. If analysis is unavailable, a
+warning is logged and conversion continues without review comments. Existing
+markdown is not modified automatically; regenerate with `convert --force` to
+add comments (this overwrites that markdown, so preserve any edits first).
+
 ### Display menu
 
 `ins display` opens an instantMENU picker with Mirror, Extend, one “Only display”

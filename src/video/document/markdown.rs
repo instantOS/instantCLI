@@ -1,3 +1,4 @@
+use crate::video::support::speech_activity::SpeechActivity;
 use crate::video::support::transcript::TranscriptCue;
 use crate::video::support::utils::duration_to_tenths;
 use chrono::Utc;
@@ -7,18 +8,34 @@ use super::VideoMetadata;
 
 /// Formats a transcript cue as a video-markdown line. The compact `#N`
 /// component is stable identity; rounded timestamps remain human-readable.
-pub fn format_cue_line(source_id: &str, cue: &TranscriptCue) -> String {
-    format!(
+pub fn format_cue_line(
+    source_id: &str,
+    cue: &TranscriptCue,
+    speech_activity: Option<&SpeechActivity>,
+) -> String {
+    let line = format!(
         "`{}#{}@{}-{}` {}",
         source_id,
         cue.cue_id,
         format_timestamp(cue.start),
         format_timestamp(cue.end),
         cue.text.trim()
-    )
+    );
+    if speech_activity.is_some_and(|activity| activity.is_suspected_non_speech(cue.start, cue.end))
+    {
+        format!(
+            "<!-- REVIEW: possible non-speech (background noise or silence); listen before keeping this cue. -->\n{line}"
+        )
+    } else {
+        line
+    }
 }
 
-pub fn build_markdown(cues: &[TranscriptCue], metadata: &VideoMetadata) -> String {
+pub fn build_markdown(
+    cues: &[TranscriptCue],
+    metadata: &VideoMetadata,
+    speech_activity: Option<&SpeechActivity>,
+) -> String {
     let default_source = metadata.default_source.as_deref().unwrap_or("a");
     let mut lines = Vec::with_capacity(cues.len() * 2);
     let mut previous_end = Duration::from_secs(0);
@@ -35,7 +52,7 @@ pub fn build_markdown(cues: &[TranscriptCue], metadata: &VideoMetadata) -> Strin
                 insert_silence_lines(&mut lines, previous_end, cue.start, source_id);
             }
         }
-        lines.push(format_cue_line(source_id, cue));
+        lines.push(format_cue_line(source_id, cue, speech_activity));
 
         previous_end = cue.end;
     }
@@ -160,7 +177,7 @@ mod tests {
             let mut cue = cue(10_000, 10_300, "hi");
             cue.cue_id = 2;
             cue.source_id = source_id.to_string();
-            let markdown = build_markdown(&[cue], &metadata);
+            let markdown = build_markdown(&[cue], &metadata, None);
             let document = parse_video_document(&markdown, std::path::Path::new("test.md"))?;
             let dialogue: Vec<_> = document
                 .blocks
@@ -184,6 +201,71 @@ mod tests {
     }
 
     #[test]
+    fn review_comments_preserve_cue_identity_text_and_render_plan() -> anyhow::Result<()> {
+        use crate::video::document::{DocumentBlock, parse_video_document};
+        use crate::video::planning::{SourceEnvelopes, align_plan_with_subtitles};
+
+        let activity = SpeechActivity::from_json(
+            r#"{"version":1,"duration_seconds":5,"speech":[{"start":0,"end":1}]}"#,
+        )?;
+        let mut speech = cue(0, 1_000, "real misspeak");
+        speech.cue_id = 7;
+        let mut noise = cue(1_000, 2_000, "garbled background noise");
+        noise.cue_id = 11;
+        let mut brief = cue(2_000, 2_200, "yes");
+        brief.cue_id = 12;
+        let cues = vec![speech, noise, brief];
+        let metadata = VideoMetadata {
+            sources: vec![VideoSource {
+                id: "a".into(),
+                name: None,
+                source: "source.mp4".into(),
+                transcript: "transcript.json".into(),
+                audio: PathBuf::new(),
+                hash: None,
+            }],
+            default_source: Some("a".into()),
+        };
+        let original = build_markdown(&cues, &metadata, None);
+        let reviewed = build_markdown(&cues, &metadata, Some(&activity));
+        assert_eq!(reviewed.matches("<!-- REVIEW:").count(), 1);
+        assert!(reviewed.contains(
+            "listen before keeping this cue. -->\n`a#11@00:01.0-00:02.0` garbled background noise"
+        ));
+        let original = parse_video_document(&original, std::path::Path::new("test.md"))?;
+        let reviewed = parse_video_document(&reviewed, std::path::Path::new("test.md"))?;
+        assert_eq!(original.blocks.len(), reviewed.blocks.len());
+        for (before, after) in original.blocks.iter().zip(&reviewed.blocks) {
+            let (DocumentBlock::Segment(before), DocumentBlock::Segment(after)) = (before, after)
+            else {
+                panic!("expected dialogue segment");
+            };
+            assert_eq!(before.cue_id, after.cue_id);
+            assert_eq!(before.text, after.text);
+            assert_eq!(before.range.start, after.range.start);
+            assert_eq!(before.range.end, after.range.end);
+        }
+        let mut original_plan = original.plan_timeline()?;
+        let mut reviewed_plan = reviewed.plan_timeline()?;
+        align_plan_with_subtitles(&mut original_plan, &cues, &SourceEnvelopes::new())?;
+        align_plan_with_subtitles(&mut reviewed_plan, &cues, &SourceEnvelopes::new())?;
+        assert_eq!(original_plan.ignored_count, 0);
+        assert_eq!(reviewed_plan.ignored_count, 0);
+        assert_eq!(original_plan.items.len(), reviewed_plan.items.len());
+        for (before, after) in original_plan.items.iter().zip(&reviewed_plan.items) {
+            use crate::video::planning::TimelinePlanItem;
+            let (TimelinePlanItem::Clip(before), TimelinePlanItem::Clip(after)) = (before, after)
+            else {
+                panic!("expected dialogue clip");
+            };
+            assert_eq!(before.cue_id, after.cue_id);
+            assert_eq!(before.time_window.start, after.time_window.start);
+            assert_eq!(before.time_window.end, after.time_window.end);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn inserts_silence_chunks() {
         let cues = vec![cue(3000, 4000, "Hello"), cue(11000, 12000, "World")];
         let metadata = VideoMetadata {
@@ -198,7 +280,7 @@ mod tests {
             default_source: Some("a".to_string()),
         };
 
-        let output = build_markdown(&cues, &metadata);
+        let output = build_markdown(&cues, &metadata, None);
         assert!(output.contains("`a@00:04.0-00:09.0` SILENCE"));
         assert!(output.contains("`a@00:09.0-00:11.0` SILENCE"));
     }
