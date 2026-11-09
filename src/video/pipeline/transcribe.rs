@@ -31,6 +31,11 @@ const HF_CLI_VERSION: &str = "1.27.0";
 /// Python version requested from uv for the driver environment.
 const GRANITE_DRIVER_PYTHON: &str = "3.12";
 
+/// Pre-1.0 bindings have already broken their API in a minor release (0.2) and
+/// their timestamps feed cached transcripts and markdown cue IDs, so bump this
+/// deliberately and re-check a transcript afterwards.
+const TRANSCRIBE_CPP_PACKAGE: &str = "transcribe-cpp==0.4.1";
+
 /// Granite word-timestamp windows are capped at ~3.5 min of audio; 200 s
 /// keeps a comfortable margin while limiting per-window memory.
 const GRANITE_WINDOW_MS: u64 = 200_000;
@@ -451,7 +456,7 @@ fn run_granite_driver(
             "--python",
             GRANITE_DRIVER_PYTHON,
             "--with",
-            "transcribe-cpp",
+            TRANSCRIBE_CPP_PACKAGE,
             "--with",
             "numpy",
         ])

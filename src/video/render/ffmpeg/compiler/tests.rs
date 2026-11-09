@@ -264,6 +264,294 @@ fn rendered_repeated_cuts_keep_audio_and_video_on_the_same_source_interval() {
     }
 }
 
+#[test]
+fn acoustic_alignment_preserves_words_and_excludes_deleted_cues_in_rendered_pcm() {
+    use std::io::Cursor;
+    use std::path::Path;
+    use std::time::Duration;
+
+    use crate::video::document::parse_video_document;
+    use crate::video::planning::{
+        AudioEnvelope, SourceEnvelopes, TimelinePlanItem, align_plan_with_subtitles,
+    };
+    use crate::video::support::transcript::{TranscriptCue, WordTiming};
+
+    const RATE: usize = 48_000;
+    let temp = tempfile::tempdir().unwrap();
+    let video = temp.path().join("source.mkv");
+    let raw = temp.path().join("voice.s16le");
+    let voice = temp.path().join("voice.wav");
+
+    // Actual speech edges differ from the abutting ASR stamps by 20-40 ms.
+    // Distinct pitches identify deleted opening/middle sentences and kept words.
+    // The 40 ms silent valleys allow cuts AND the existing 5 ms fades to fit
+    // without shaving any of the retained word onsets or tails.
+    let tones = [
+        (0, 980, 1100.0),
+        (1020, 2020, 300.0),
+        (2060, 2980, 500.0),
+        (3020, 4020, 1300.0),
+        (4060, 4900, 700.0),
+    ];
+    let mut source_samples = vec![0i16; RATE * 51 / 10];
+    for (start_ms, end_ms, hz) in tones {
+        for (n, sample) in source_samples
+            .iter_mut()
+            .enumerate()
+            .take(end_ms * RATE / 1000)
+            .skip(start_ms * RATE / 1000)
+        {
+            *sample =
+                (16_000.0 * (std::f64::consts::TAU * hz * n as f64 / RATE as f64).sin()) as i16;
+        }
+    }
+    let pcm = source_samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect::<Vec<_>>();
+    let envelope = AudioEnvelope::from_s16le_reader(Cursor::new(&pcm), RATE as u32).unwrap();
+    std::fs::write(&raw, &pcm).unwrap();
+    run_ffmpeg(&[
+        "-f",
+        "s16le",
+        "-ar",
+        "48000",
+        "-ac",
+        "1",
+        "-i",
+        raw.to_str().unwrap(),
+        "-c:a",
+        "pcm_s16le",
+        voice.to_str().unwrap(),
+    ]);
+    // Match the envelope's 5 ms grid so A/V concat cannot introduce frame-rate
+    // rounding silence that would obscure a sample-level alignment regression.
+    run_ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=16x16:r=200:d=5.1",
+        "-c:v",
+        "ffv1",
+        video.to_str().unwrap(),
+    ]);
+
+    let cues = [
+        (0, 1040),
+        (1040, 2000),
+        (2000, 3040),
+        (3040, 4000),
+        (4000, 4900),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(cue_id, (start, end))| {
+        let start = Duration::from_millis(start);
+        let end = Duration::from_millis(end);
+        TranscriptCue {
+            cue_id,
+            start,
+            end,
+            text: format!("word{cue_id}"),
+            words: vec![WordTiming {
+                word: format!("word{cue_id}"),
+                start,
+                end,
+            }],
+            source_id: "a".to_string(),
+        }
+    })
+    .collect::<Vec<_>>();
+    let document = parse_video_document(
+        "`a#1@00:00:01.04-00:00:02.0` word1\n\
+         `a#2@00:00:02.0-00:00:03.04` word2\n\
+         `a#4@00:00:04.0-00:00:04.9` word4\n",
+        Path::new("alignment.md"),
+    )
+    .unwrap();
+    let mut plan = document.plan_timeline().unwrap();
+    let mut envelopes = SourceEnvelopes::new();
+    envelopes.insert("a".to_string(), envelope);
+    align_plan_with_subtitles(&mut plan, &cues, &envelopes).unwrap();
+    let windows = plan
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            TimelinePlanItem::Clip(clip) => Some(clip.time_window),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(windows.len(), 3);
+    assert_eq!(windows[0].end, windows[1].start);
+    for (cut, lo, hi) in [
+        (windows[0].start, 0.98, 1.02),
+        (windows[0].end, 2.02, 2.06),
+        (windows[1].end, 2.98, 3.02),
+        (windows[2].start, 4.02, 4.06),
+    ] {
+        assert!(
+            (lo..=hi).contains(&cut),
+            "cut {cut} missed silent valley {lo}..{hi}"
+        );
+    }
+    assert!(windows[2].end >= 4.9);
+
+    let source = AvSourceRef {
+        video,
+        audio: voice,
+        id: "a".to_string(),
+    };
+    let mut timeline = Timeline::new();
+    let mut output_start = 0.0;
+    for window in &windows {
+        let duration = window.end - window.start;
+        timeline.add_base(BaseAvClip::new(
+            output_start,
+            duration,
+            window.start,
+            source.clone(),
+            false,
+        ));
+        output_start += duration;
+    }
+    let compiler = FfmpegCompiler::new(
+        VideoDimensions::new(16, 16),
+        RenderConfig::new(RenderMode::Standard, VideoConfig::default(), None),
+    );
+    let compiled = compiler
+        .compile(temp.path().join("unused.mp4"), &timeline)
+        .unwrap();
+    let filter_idx = compiled
+        .args
+        .iter()
+        .position(|arg| arg == "-filter_complex")
+        .unwrap();
+    let graph = &compiled.args[filter_idx + 1];
+    let audio_chain = |idx| {
+        graph
+            .split(';')
+            .find(|filter| filter.ends_with(&format!("[a{idx}]")))
+            .unwrap()
+    };
+    // Only the discontinuous 2 -> 4 join gets fades; the shared 1 -> 2 cut
+    // must not fade, overlap, duplicate samples, or change duration.
+    assert_eq!(graph.matches("afade=t=out").count(), 1);
+    assert_eq!(graph.matches("afade=t=in").count(), 1);
+    assert!(!audio_chain(0).contains("afade="));
+    assert!(audio_chain(1).contains("afade=t=out"));
+    assert!(!audio_chain(1).contains("afade=t=in"));
+    assert!(audio_chain(2).contains("afade=t=in"));
+    assert!(!audio_chain(2).contains("afade=t=out"));
+    assert!(!graph.contains("acrossfade="));
+
+    // Use the compiler's actual inputs and complete graph, discarding only
+    // its video output and replacing the delivery AAC encoder with raw PCM.
+    let decoded = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error"])
+        .args(&compiled.args[..filter_idx])
+        .arg("-filter_complex")
+        .arg(format!("{graph}; [outv]nullsink"))
+        .args([
+            "-map",
+            "[outa]",
+            "-c:a",
+            "pcm_s16le",
+            "-ac",
+            "1",
+            "-ar",
+            "48000",
+            "-f",
+            "s16le",
+            "-",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
+    assert_eq!(decoded.stdout.len() % 2, 0);
+    let rendered = decoded
+        .stdout
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| i16::from_le_bytes(*bytes))
+        .collect::<Vec<_>>();
+    let sample_index = |seconds: f64| (seconds * RATE as f64).round() as usize;
+    let expected = windows
+        .iter()
+        .flat_map(|window| {
+            source_samples[sample_index(window.start)..sample_index(window.end)]
+                .iter()
+                .copied()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rendered.len(),
+        expected.len(),
+        "concat changed the duration"
+    );
+    // This checks every sample, including the first/last 20 ms of each kept
+    // tone and the contiguous join. The discontinuous fades lie in silence.
+    let max_error = rendered
+        .iter()
+        .zip(&expected)
+        .map(|(&actual, &wanted)| (i32::from(actual) - i32::from(wanted)).abs())
+        .max()
+        .unwrap();
+    assert!(
+        max_error <= 1,
+        "retained PCM changed (max error {max_error})"
+    );
+
+    let splice = sample_index(windows[1].end - windows[0].start);
+    let middle = sample_index(windows[0].end - windows[0].start);
+    let next_onset = splice + sample_index(4.06 - windows[2].start);
+    let previous_tail = splice - sample_index(windows[1].end - 2.98);
+    let rms = |samples: &[i16]| {
+        (samples.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>() / samples.len() as f64).sqrt()
+    };
+    let word_edge = RATE / 50; // 20 ms: catch shaved word parts on both sides.
+    for (label, samples) in [
+        (
+            "first onset",
+            &rendered[sample_index(1.02 - windows[0].start)..][..word_edge],
+        ),
+        (
+            "contiguous tail",
+            &rendered[middle - sample_index(windows[0].end - 2.02) - word_edge..][..word_edge],
+        ),
+        (
+            "contiguous onset",
+            &rendered[middle + sample_index(2.06 - windows[1].start)..][..word_edge],
+        ),
+        (
+            "pre-splice tail",
+            &rendered[previous_tail - word_edge..previous_tail],
+        ),
+        (
+            "post-splice onset",
+            &rendered[next_onset..next_onset + word_edge],
+        ),
+    ] {
+        assert!(
+            rms(samples) > 10_000.0,
+            "missing retained word signal: {label}"
+        );
+    }
+    // Physically silent output, not merely absent filter labels: no deleted
+    // opening sentence at t=0, no middle sentence or pop across the splice.
+    assert!(
+        rendered[..sample_index(1.02 - windows[0].start)]
+            .iter()
+            .all(|&s| s == 0)
+    );
+    assert!(rendered[previous_tail..next_onset].iter().all(|&s| s == 0));
+    assert!(rendered[splice - 1].abs() <= 1 && rendered[splice].abs() <= 1);
+}
+
 fn run_ffmpeg(args: &[&str]) {
     let status = Command::new("ffmpeg")
         .arg("-hide_banner")

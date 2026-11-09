@@ -1,4 +1,5 @@
 mod document;
+mod envelopes;
 mod ffmpeg;
 mod logging;
 mod mode;
@@ -38,6 +39,7 @@ struct RenderJob<'a> {
     verbose: bool,
     runner: &'a dyn FfmpegRunner,
 }
+
 pub(crate) use self::plan::build_timeline_plan;
 pub(crate) use self::sources::find_default_source;
 pub(crate) use self::sources::resolve_video_sources;
@@ -112,9 +114,11 @@ async fn load_render_project_from_markdown(
         bail!("No video sources configured. Add `sources` in front matter before rendering.");
     }
     let mut cues = load_transcript_cues(&sources, &project_dir)?;
-    apply_markdown_edits(&mut cues, &document);
     validate_timeline_sources(&document, &sources, &cues)?;
-    let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
+    let plan = build_timeline_plan(&document, &cues, &sources, &markdown_path)?;
+    // Subtitle corrections redistribute word timings; acoustic cut bounds must
+    // be planned from the original transcript, as they are in `video check`.
+    apply_markdown_edits(&mut cues, &document);
     let default_source = find_default_source(&document.metadata, &sources)?.clone();
 
     Ok(RenderProject {

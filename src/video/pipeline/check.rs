@@ -45,7 +45,7 @@ async fn build_check_report(args: CheckArgs) -> Result<Vec<ReportLine>> {
     let cues = load_transcript_cues(&sources, markdown_dir)?;
 
     // Build timeline plan using shared helper
-    let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
+    let plan = build_timeline_plan(&document, &cues, &sources, &markdown_path)?;
 
     let default_source = find_default_source(&document.metadata, &sources)?;
     let (video_width, video_height) = probe_video_dimensions(&default_source.source)?;
