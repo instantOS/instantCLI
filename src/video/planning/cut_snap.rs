@@ -37,7 +37,7 @@ const DISTANCE_PENALTY_DB_PER_SECOND: f32 = 100.0;
 pub(super) const SNAP_WINDOW_SECONDS: f64 = 0.06;
 
 /// Short-time loudness of a mono recording on a fixed 5 ms grid.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AudioEnvelope {
     db: Vec<f32>,
 }

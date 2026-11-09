@@ -172,6 +172,7 @@ impl FzfSelectable for ProjectMenuEntry {
                 .blank()
                 .text("This includes:")
                 .bullet("Enhanced voice audio")
+                .bullet("Audio cut measurements")
                 .bullet("Transcript cache")
                 .bullet("Generated slides")
                 .build(),
