@@ -29,12 +29,12 @@ const GRANITE_MODEL_REVISION: &str = "f73a59df77fef89ac0a34bc539d09d756793b065";
 const HF_CLI_VERSION: &str = "1.27.0";
 
 /// Python version requested from uv for the driver environment.
-const GRANITE_DRIVER_PYTHON: &str = "3.12";
+pub(super) const GRANITE_DRIVER_PYTHON: &str = "3.12";
 
 /// Pre-1.0 bindings have already broken their API in a minor release (0.2) and
 /// their timestamps feed cached transcripts and markdown cue IDs, so bump this
 /// deliberately and re-check a transcript afterwards.
-const TRANSCRIBE_CPP_PACKAGE: &str = "transcribe-cpp==0.4.1";
+pub(super) const TRANSCRIBE_CPP_PACKAGE: &str = "transcribe-cpp==0.4.1";
 
 /// Granite word-timestamp windows are capped at ~3.5 min of audio; 200 s
 /// keeps a comfortable margin while limiting per-window memory.
@@ -265,7 +265,7 @@ fn download_default_granite_model(models_dir: &Path) -> Result<PathBuf> {
 /// Runs on a dedicated thread: `reqwest::blocking` cannot be created or
 /// dropped inside an async runtime (ins runs under tokio), but a fresh OS
 /// thread has no runtime context, so the blocking client is safe there.
-fn download_file(url: &str, dest: &Path, what: &str) -> Result<()> {
+pub(super) fn download_file(url: &str, dest: &Path, what: &str) -> Result<()> {
     let url = url.to_string();
     let dest = dest.to_path_buf();
     let progress_what = what.to_string();

@@ -5,12 +5,14 @@ use std::path::{Path, PathBuf};
 
 use crate::ui::prelude::{Level, emit};
 
+use super::speech_review::review_audio;
 use super::transcribe::handle_transcribe;
 use crate::video::cli::{AppendArgs, ConvertArgs, TranscribeArgs};
 use crate::video::config::{VideoCachePaths, VideoDirectories};
 use crate::video::document::frontmatter::split_frontmatter;
 use crate::video::document::markdown::{build_markdown, format_cue_line};
 use crate::video::document::{VideoMetadata, VideoSource, parse_video_document};
+use crate::video::support::speech_activity::SpeechActivity;
 use crate::video::support::transcript::{
     TranscriptCue, is_transcriber_control_text, parse_whisper_json,
 };
@@ -44,7 +46,18 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         ensure_transcript(&video_path, &cache_paths, args.transcript.as_ref(), &args).await?;
 
     // Step 2: Generate markdown output
-    generate_markdown_output(&video_path, &video_hash, &transcript_path, &output_path)?;
+    let speech_activity = review_audio(
+        &video_path,
+        cache_paths.transcript_dir(),
+        &directories.models_dir(),
+    );
+    generate_markdown_output(
+        &video_path,
+        &video_hash,
+        &transcript_path,
+        &output_path,
+        speech_activity.as_ref(),
+    )?;
 
     emit(
         Level::Success,
@@ -80,6 +93,7 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         video_hash,
         transcript_path,
         cues,
+        speech_activity,
     } = prepare_video_and_transcript(&args).await?;
 
     let source_id = add_new_source_to_metadata(
@@ -90,7 +104,13 @@ pub async fn handle_append(args: AppendArgs) -> Result<()> {
         &transcript_path,
     )?;
 
-    let new_contents = build_appended_markdown(&markdown_contents, &metadata, &cues, &source_id)?;
+    let new_contents = build_appended_markdown(
+        &markdown_contents,
+        &metadata,
+        &cues,
+        &source_id,
+        speech_activity.as_ref(),
+    )?;
     fs::write(&markdown_path, new_contents.as_bytes()).with_context(|| {
         format!(
             "Failed to write markdown file to {}",
@@ -156,12 +176,18 @@ async fn prepare_video_and_transcript(args: &AppendArgs) -> Result<VideoAppendIn
     .await?;
 
     let cues = load_transcript_cues(&transcript_path)?;
+    let speech_activity = review_audio(
+        &video_path,
+        cache_paths.transcript_dir(),
+        &directories.models_dir(),
+    );
 
     Ok(VideoAppendInput {
         video_path,
         video_hash,
         transcript_path,
         cues,
+        speech_activity,
     })
 }
 
@@ -170,6 +196,7 @@ struct VideoAppendInput {
     video_hash: String,
     transcript_path: PathBuf,
     cues: Vec<TranscriptCue>,
+    speech_activity: Option<SpeechActivity>,
 }
 
 fn add_new_source_to_metadata(
@@ -220,11 +247,12 @@ fn build_appended_markdown(
     metadata: &VideoMetadata,
     cues: &[TranscriptCue],
     source_id: &str,
+    speech_activity: Option<&SpeechActivity>,
 ) -> Result<String> {
     let (_front_matter, body, _) = split_frontmatter(markdown_contents)?;
     let existing_body = body.trim_end_matches(&['\r', '\n'][..]);
 
-    let appended_text = build_source_markdown(cues, source_id);
+    let appended_text = build_source_markdown(cues, source_id, speech_activity);
     let mut new_body = String::new();
     if !existing_body.is_empty() {
         new_body.push_str(existing_body);
@@ -298,6 +326,7 @@ fn generate_markdown_output(
     video_hash: &str,
     transcript_path: &Path,
     output_path: &Path,
+    speech_activity: Option<&SpeechActivity>,
 ) -> Result<()> {
     let markdown_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
     let subtitle_dir = markdown_dir.join("insvideodata");
@@ -341,7 +370,7 @@ fn generate_markdown_output(
         default_source: Some("a".to_string()),
     };
 
-    let markdown = build_markdown(&cues, &metadata);
+    let markdown = build_markdown(&cues, &metadata, speech_activity);
 
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)
@@ -395,9 +424,10 @@ fn next_source_id(metadata: &crate::video::document::VideoMetadata) -> Result<St
 fn build_source_markdown(
     cues: &[crate::video::support::transcript::TranscriptCue],
     source_id: &str,
+    speech_activity: Option<&SpeechActivity>,
 ) -> String {
     cues.iter()
-        .map(|cue| format_cue_line(source_id, cue))
+        .map(|cue| format_cue_line(source_id, cue, speech_activity))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -415,5 +445,73 @@ fn determine_output_path(output: Option<PathBuf>, video_path: &Path) -> Result<P
             default_output.set_file_name(format!("{}.video.md", video_stem));
             Ok(default_output)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::document::{DocumentBlock, SegmentKind};
+
+    #[test]
+    fn convert_and_append_annotate_without_changing_transcripts_or_authored_text() -> Result<()> {
+        let temporary = tempfile::tempdir()?;
+        let video = temporary.path().join("source.mp4");
+        let transcript = temporary.path().join("source.json");
+        let markdown_path = temporary.path().join("source.video.md");
+        let json = r#"{"segments":[
+            {"start":0,"end":1,"text":"garbled noise"},
+            {"start":2,"end":3,"text":"real speech"}
+        ]}"#;
+        fs::write(&transcript, json)?;
+        let activity = SpeechActivity::from_json(
+            r#"{"version":1,"duration_seconds":3,"speech":[{"start":2,"end":3}]}"#,
+        )?;
+        generate_markdown_output(&video, "hash", &transcript, &markdown_path, Some(&activity))?;
+        assert_eq!(fs::read_to_string(&transcript)?, json);
+        assert_eq!(
+            fs::read_to_string(temporary.path().join("insvideodata/hash.json"))?,
+            json
+        );
+        let markdown = fs::read_to_string(&markdown_path)?;
+        assert_eq!(markdown.matches("<!-- REVIEW:").count(), 1);
+        assert!(markdown.contains("`a#0@00:00.0-00:01.0` garbled noise"));
+
+        let mut metadata = parse_video_document(&markdown, &markdown_path)?.metadata;
+        metadata.sources.push(VideoSource {
+            id: "b".into(),
+            name: None,
+            source: "second.mp4".into(),
+            transcript: "second.json".into(),
+            audio: PathBuf::new(),
+            hash: None,
+        });
+        let cues = load_transcript_cues(&transcript)?;
+        let authored_body =
+            "`a#1@00:02.0-00:03.0` manually corrected speech\n\n<!-- my editing note -->\n";
+        let existing = format!("{}\n{authored_body}", metadata.render_frontmatter());
+        let appended = build_appended_markdown(&existing, &metadata, &cues, "b", Some(&activity))?;
+        assert!(appended.contains(authored_body.trim_end()));
+        assert_eq!(appended.matches("<!-- REVIEW:").count(), 1);
+        assert!(appended.contains("`b#0@00:00.0-00:01.0` garbled noise"));
+        let parsed = parse_video_document(&appended, &markdown_path)?;
+        let dialogue = parsed
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                DocumentBlock::Segment(segment) if segment.kind == SegmentKind::Dialogue => {
+                    Some(segment)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(dialogue.len(), 3);
+        assert_eq!(dialogue[0].text, "manually corrected speech");
+        assert_eq!(dialogue[1].source_id, "b");
+        assert_eq!(dialogue[1].cue_id, Some(0));
+        assert_eq!(dialogue[1].text, "garbled noise");
+        assert_eq!(dialogue[2].cue_id, Some(1));
+        assert_eq!(dialogue[2].text, "real speech");
+        Ok(())
     }
 }

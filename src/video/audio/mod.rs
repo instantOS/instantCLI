@@ -136,7 +136,9 @@ pub(crate) const VOICE_MASTERING_FILTER: &str = concat!(
     // startup fade. A five-frame (1.25 s) window reacts to mic distance while
     // alternative boundary handling gives the beginning and end a full gain
     // window instead of slowly ramping it in.
-    "dynaudnorm=f=250:g=5:p=0.891:m=15:r=0.12:b=1:c=1:t=0.01,",
+    // A positive threshold fades gain toward zero around pauses, including
+    // quiet sentence tails inside the smoothing window. Keep leveling ungated.
+    "dynaudnorm=f=250:g=5:p=0.891:m=15:r=0.12:b=1:c=1:t=0,",
     "acompressor=threshold=0.10:ratio=2.5:attack=10:release=140:",
     "knee=4:detection=rms:makeup=1.5,",
     "volume=9dB,",
@@ -146,8 +148,8 @@ pub(crate) const VOICE_MASTERING_FILTER: &str = concat!(
 );
 
 pub(crate) const VOICE_MASTERING_RECIPE: &str = concat!(
-    "podcast-master:v2;eq:250Hz=-1.2dB:q0.9:3200Hz=+1.4dB:q0.9;",
-    "distance-leveler:250ms:5frames:alt-boundary:maxgain=15:target-rms=0.12;",
+    "podcast-master:v3;eq:250Hz=-1.2dB:q0.9:3200Hz=+1.4dB:q0.9;",
+    "distance-leveler:250ms:5frames:alt-boundary:maxgain=15:target-rms=0.12:ungated;",
     "compressor:rms:threshold=-20dB:ratio=2.5:1:attack=10ms:",
     "release=140ms:knee=4:makeup=1.5;gain=9dB;limit=0.708;48kHz-mono"
 );
@@ -291,7 +293,57 @@ mod tests {
     }
 
     #[test]
+    fn mastering_preserves_sentence_tails_before_pauses() {
+        let tail_ratio = |filter: &str| {
+            let output = std::process::Command::new("ffmpeg")
+                .args([
+                    "-v",
+                    "error",
+                    "-nostdin",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=220:sample_rate=48000:duration=2.4,apad=pad_dur=1.6",
+                    "-af",
+                    filter,
+                    "-f",
+                    "f32le",
+                    "-",
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let samples = output
+                .stdout
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect::<Vec<_>>();
+            assert_eq!(samples.len(), 4 * 48_000, "mastering changed duration");
+            let rms = |start: f64, end: f64| {
+                let samples = &samples[(start * 48_000.0) as usize..(end * 48_000.0) as usize];
+                (samples.iter().map(|&s| f64::from(s).powi(2)).sum::<f64>() / samples.len() as f64)
+                    .sqrt()
+            };
+            rms(2.2, 2.35) / rms(1.0, 1.15)
+        };
+        let fixed = tail_ratio(VOICE_MASTERING_FILTER);
+        assert!(
+            fixed > 0.9 && fixed < 1.1,
+            "sentence tail was faded: ratio {fixed}"
+        );
+        // Keep the fixture sensitive to the original positive-threshold bug.
+        let previous = VOICE_MASTERING_FILTER.replace(":t=0,", ":t=0.01,");
+        assert!(tail_ratio(&previous) < 0.6);
+    }
+
+    #[test]
     fn mastering_recipe_versions_cached_outputs() {
-        assert!(VOICE_MASTERING_RECIPE.contains("podcast-master:v2"));
+        assert!(VOICE_MASTERING_RECIPE.contains("podcast-master:v3"));
     }
 }
