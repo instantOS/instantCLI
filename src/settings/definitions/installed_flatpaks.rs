@@ -2,6 +2,8 @@
 //!
 //! Interactive Flatpak browser, runner, and uninstaller for installed Flatpak applications.
 
+use std::collections::BTreeSet;
+
 use anyhow::{Context, Result};
 
 use crate::common::package::{PackageManager, uninstall_packages};
@@ -10,6 +12,9 @@ use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, StreamingCommand};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::FLATPAK;
 use crate::settings::flatpak_list::FlatpakSelectionPayload;
+use crate::settings::installed_packages_manager::{
+    retry_package_operation, uninstall_confirmation_message,
+};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
@@ -61,10 +66,7 @@ pub fn show_flatpak_action_menu(app_id: &str) -> Result<()> {
 
     match action {
         FlatpakAction::Run => run_flatpak(app_id),
-        FlatpakAction::Uninstall => {
-            uninstall_flatpak(app_id)?;
-            Ok(())
-        }
+        FlatpakAction::Uninstall => uninstall_flatpaks(&[app_id.to_string()]),
     }
 }
 
@@ -79,7 +81,7 @@ impl Setting for ManageInstalledFlatpaks {
             .id("system.manage_installed_flatpaks")
             .title("Manage installed Flatpaks")
             .icon(NerdFont::Package)
-            .summary("Run or uninstall installed Flatpak applications.")
+            .summary("Run an app or select multiple Flatpak applications to uninstall.")
             .requirements(vec![&FLATPAK])
             .build()
     }
@@ -102,36 +104,28 @@ fn run_installed_flatpaks_manager() -> Result<()> {
             .arg("settings")
             .arg("internal-generate-installed-flatpak-list");
         let result = FzfWrapper::builder()
-            .prompt("Select a Flatpak app")
+            .prompt("Select Flatpak apps")
             .header(Header::fancy("Manage Installed Flatpaks"))
             .responsive_layout()
             .command::<FlatpakSelectionPayload, _>(list_command)
-            .select_one()?;
+            .select_many()?;
 
-        let app_id = match result {
-            crate::menu_utils::DialogOutcome::Submitted(row) => row.payload.app_id,
+        let app_ids: Vec<String> = match result {
+            crate::menu_utils::DialogOutcome::Submitted(selection) => selection
+                .items
+                .into_iter()
+                .map(|row| row.payload.app_id)
+                .collect(),
             crate::menu_utils::DialogOutcome::Cancelled => {
                 println!("App selection cancelled.");
                 return Ok(());
             }
         };
 
-        // Show action menu for the selected app
-        let actions = vec![FlatpakAction::Run, FlatpakAction::Uninstall];
-
-        let action = match FzfWrapper::menu().items(actions).padded().select_one()? {
-            crate::menu_utils::DialogOutcome::Submitted(a) => a,
-            crate::menu_utils::DialogOutcome::Cancelled => continue,
-        };
-
-        match action {
-            FlatpakAction::Run => run_flatpak(&app_id)?,
-            FlatpakAction::Uninstall => {
-                if uninstall_flatpak(&app_id)? {
-                    // Uninstall completed, list will refresh on next iteration
-                }
-                // Whether cancelled or completed, return to list
-            }
+        match app_ids.as_slice() {
+            [] => return Ok(()),
+            [app_id] => show_flatpak_action_menu(app_id)?,
+            _ => uninstall_flatpaks(&app_ids)?,
         }
     }
 }
@@ -154,29 +148,39 @@ pub fn run_flatpak(app_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Uninstall a Flatpak application
-pub fn uninstall_flatpak(app_id: &str) -> Result<bool> {
-    let confirm_msg = format!("Uninstall {}?", app_id);
+/// Confirm and uninstall selected apps in one Flatpak transaction.
+fn uninstall_flatpaks(app_ids: &[String]) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    let app_ids: Vec<String> = app_ids
+        .iter()
+        .filter(|app_id| seen.insert(app_id.as_str()))
+        .cloned()
+        .collect();
+    if app_ids.is_empty() {
+        return Ok(());
+    }
+
+    let confirm_msg = uninstall_confirmation_message(PackageManager::Flatpak, &app_ids);
     let confirm = FzfWrapper::builder()
         .confirm(&confirm_msg)
+        .yes_text("Uninstall")
+        .no_text("Cancel")
         .confirm_dialog()?;
 
     if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
         println!("Uninstallation cancelled.");
-        return Ok(false);
+        return Ok(());
     }
 
-    println!("Uninstalling Flatpak app: {}", app_id);
-    if !crate::settings::installed_packages_manager::retry_package_operation(
-        PackageManager::Flatpak,
-        || uninstall_packages(PackageManager::Flatpak, &[app_id]),
-    )? {
-        return Ok(false);
+    let refs: Vec<&str> = app_ids.iter().map(String::as_str).collect();
+    if !retry_package_operation(PackageManager::Flatpak, || {
+        uninstall_packages(PackageManager::Flatpak, &refs)
+    })? {
+        return Ok(());
     }
     println!(
-        "{} Flatpak app uninstallation completed successfully!",
+        "{} Flatpak uninstallation completed successfully!",
         NerdFont::Check
     );
-
-    Ok(true)
+    Ok(())
 }

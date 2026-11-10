@@ -238,7 +238,10 @@ fn format_package_list(packages: &[String]) -> String {
     lines.join("\n")
 }
 
-fn uninstall_confirmation_message(manager: PackageManager, packages: &[String]) -> String {
+pub(super) fn uninstall_confirmation_message(
+    manager: PackageManager,
+    packages: &[String],
+) -> String {
     format!(
         "Uninstall {} {} package{}?\n\n{}\n\nThis action cannot be undone.",
         packages.len(),
