@@ -140,13 +140,14 @@ pub fn show_all_diffs(
     cfg: &DotfileConfig,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
-    let (files_by_status, _) = crate::dot::git::status::categorize_files_and_get_summary(
+    let report = crate::dot::git::status::collect_status(
         all_dotfiles,
         cfg,
         db,
         &crate::dot::units::UnitIndex::default(),
     );
 
+    let files_by_status = &report.files_by_status;
     let modified_count = files_by_status
         .get(&DotFileStatus::Modified)
         .map_or(0, |v| v.len());
