@@ -4,6 +4,7 @@ use crate::game::utils::save_files::{
 };
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -86,29 +87,9 @@ impl FzfSelectable for GameMenuEntry {
         use crate::ui::preview::PreviewBuilder;
 
         match self {
-            GameMenuEntry::Game(name, _) => {
-                // Try to load game for preview
-                match (InstantGameConfig::load(), InstallationsConfig::load()) {
-                    (Ok(game_config), Ok(installations)) => {
-                        let game = game_config.games.iter().find(|g| g.name.0 == *name);
-                        let installation = installations
-                            .installations
-                            .iter()
-                            .find(|inst| inst.game_name.0 == *name);
-
-                        if let Some(game) = game {
-                            FzfPreview::Text(game.generate_preview_text(
-                                &game.description,
-                                &game.launch_command,
-                                installation,
-                            ))
-                        } else {
-                            FzfPreview::Text(format!("Game: {}", name))
-                        }
-                    }
-                    _ => FzfPreview::Text(format!("Game: {}", name)),
-                }
-            }
+            // fzf runs this only for the highlighted game. Preparing the list
+            // must not load both configs and walk every game's save directory.
+            GameMenuEntry::Game(_, _) => FzfPreview::Command(preview_command(PreviewId::GameInfo)),
             GameMenuEntry::AddGame => PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Game")
                 .text("Add a new game to track.")
@@ -165,6 +146,28 @@ impl FzfSelectable for GameMenuEntry {
                 .text("and return to the command prompt.")
                 .build(),
         }
+    }
+}
+
+pub(crate) fn render_game_preview(name: &str) -> String {
+    match (InstantGameConfig::load(), InstallationsConfig::load()) {
+        (Ok(game_config), Ok(installations)) => {
+            let game = game_config.games.iter().find(|game| game.name.0 == name);
+            let installation = installations
+                .installations
+                .iter()
+                .find(|installation| installation.game_name.0 == name);
+
+            match game {
+                Some(game) => game.generate_preview_text(
+                    &game.description,
+                    &game.launch_command,
+                    installation,
+                ),
+                None => format!("Game: {name}"),
+            }
+        }
+        _ => format!("Game: {name}"),
     }
 }
 
