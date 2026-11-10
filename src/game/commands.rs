@@ -67,6 +67,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             launch_command,
             save_path,
             create_save_path,
+            skip_save_setup,
             no_cache,
             save_group,
         } => {
@@ -86,6 +87,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
                 launch_command,
                 save_path,
                 create_save_path,
+                skip_save_setup,
                 no_cache,
             })
         }
@@ -326,6 +328,7 @@ fn handle_scan_wine_prefix(prefix: Option<String>, list: bool) -> Result<()> {
                 launch_command: None,
                 save_path: Some(item.save_path),
                 create_save_path: false,
+                skip_save_setup: false,
                 no_cache: false,
             })
         }

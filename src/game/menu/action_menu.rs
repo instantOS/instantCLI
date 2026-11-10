@@ -94,7 +94,7 @@ pub(super) fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameA
 fn action_setup_item(game_name: &str) -> GameActionItem {
     GameActionItem {
         display: format!(
-            "{} Setup",
+            "{} Set up saves",
             format_icon_colored(NerdFont::Wrench, colors::PEACH)
         ),
         action: GameAction::Setup,
@@ -105,7 +105,9 @@ fn action_setup_item(game_name: &str) -> GameActionItem {
                 game_name
             ))
             .blank()
-            .text("This game is registered but has no save data location set up yet.")
+            .text(
+                "Backups not configured. Saves are not backed up until you select their location.",
+            )
             .build(),
         keywords: vec![],
     }
@@ -114,7 +116,11 @@ fn action_setup_item(game_name: &str) -> GameActionItem {
 fn action_launch_item(game_name: &str, state: &GameState) -> GameActionItem {
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Rocket, "Launch Game")
-        .text(&format!("Launch {} with automatic save sync.", game_name));
+        .text(&if state.needs_setup {
+            format!("Launch {game_name} without save backups. You will be asked to confirm, then offered save setup after exit.")
+        } else {
+            format!("Launch {game_name} with automatic save sync.")
+        });
 
     if let Some(cmd) = &state.launch_command {
         builder = builder.blank().field("Command", cmd);
@@ -131,8 +137,13 @@ fn action_launch_item(game_name: &str, state: &GameState) -> GameActionItem {
 
     GameActionItem {
         display: format!(
-            "{} Launch",
-            format_icon_colored(NerdFont::Rocket, colors::GREEN)
+            "{} Launch{}",
+            format_icon_colored(NerdFont::Rocket, colors::GREEN),
+            if state.needs_setup {
+                " (not backed up)"
+            } else {
+                ""
+            }
         ),
         action: GameAction::Launch,
         preview: builder.build(),

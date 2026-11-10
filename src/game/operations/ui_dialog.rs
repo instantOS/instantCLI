@@ -14,6 +14,44 @@ pub(super) struct GameUi {
 }
 
 impl GameUi {
+    pub(super) fn confirm(&self, message: &str, yes: &str, no: &str) -> Result<bool> {
+        if self.graphical {
+            let mut command = Command::new("zenity");
+            command
+                .args(["--question", "--no-markup", "--width=440"])
+                .arg("--title=InstantCLI - Save backups")
+                .arg(format!("--text={message}"))
+                .arg(format!("--ok-label={yes}"))
+                .arg(format!("--cancel-label={no}"));
+            return Ok(run_bounded(&mut command, Duration::from_secs(60)));
+        }
+        Ok(crate::menu_utils::FzfWrapper::builder()
+            .confirm(message)
+            .yes_text(yes)
+            .no_text(no)
+            .confirm_dialog()?
+            == crate::menu_utils::ConfirmResult::Yes)
+    }
+
+    pub(super) fn configure_saves(&self, game_name: &str) -> Result<()> {
+        if self.graphical {
+            crate::common::terminal::launch_menu_in_terminal(
+                "game",
+                "Set up save backups",
+                &[game_name.into()],
+                crate::ui::is_debug_enabled(),
+            )
+        } else {
+            crate::game::setup::setup_tracked_game(game_name, None)
+        }
+    }
+
+    pub(super) fn backups_not_configured(&self, game_name: &str) {
+        self.notify(
+            "Backups not configured",
+            &crate::game::games::prompts::unconfigured_saves_warning(game_name),
+        );
+    }
     #[cfg(test)]
     pub(super) fn terminal() -> Self {
         Self { graphical: false }

@@ -57,6 +57,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                         launch_command: None,
                         save_path: None,
                         create_save_path: false,
+                        skip_save_setup: false,
                         no_cache: false,
                     },
                     crate::ui::is_debug_enabled(),

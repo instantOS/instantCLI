@@ -28,7 +28,10 @@ impl FzfSelectable for GameMenuEntry {
                 let badge = if *is_installed {
                     format!(" {}", format_with_color("[installed]", colors::GREEN))
                 } else {
-                    format!(" {}", format_with_color("[not set up]", colors::YELLOW))
+                    format!(
+                        " {}",
+                        format_with_color("[backups not configured]", colors::YELLOW)
+                    )
                 };
                 format!(
                     "{} {}{}",
@@ -255,7 +258,8 @@ impl Game {
                 Some(binding) => builder
                     .field("Save path", &binding.saves.save_path.display_string())
                     .text("Restoring rolls back the whole shared group."),
-                None => builder.text("Shared saves are not bound on this device."),
+                None => builder
+                    .text("Backups not configured: shared saves are not bound on this device."),
             };
             return builder.build_string();
         }
@@ -304,14 +308,13 @@ impl Game {
                 .line(
                     colors::YELLOW,
                     Some(NerdFont::Warning),
-                    "Not set up on this device",
+                    "Backups not configured",
                 )
                 .blank()
-                .text("This game is registered but hasn't been configured")
-                .text("on this device yet.")
+                .text("Saves on this device are not backed up or restored.")
                 .blank()
-                .text("To set up this game, select it from the menu and")
-                .text("choose \"Setup\" to configure the save path. You'll")
+                .text("Launch the game once if its save files don't exist yet.")
+                .text("Then choose \"Set up saves\" from its menu. You'll")
                 .text("be prompted to:")
                 .bullet("Locate the game's save data directory")
                 .bullet("Optionally restore from existing backups");

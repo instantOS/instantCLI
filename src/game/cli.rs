@@ -56,6 +56,9 @@ pub enum GameCommands {
         /// Create save path automatically when using --save-path
         #[arg(long)]
         create_save_path: bool,
+        /// Add the game without save backups; configure its save path later
+        #[arg(long, requires = "name", conflicts_with_all = ["save_path", "save_group", "create_save_path"])]
+        skip_save_setup: bool,
         /// Disable the discovered-games cache for this run
         ///
         /// Cache file: `$XDG_CACHE_HOME/instant/game-discovery-cache.json`

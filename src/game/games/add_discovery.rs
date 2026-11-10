@@ -36,7 +36,7 @@ fn manual_menu_row() -> Result<String> {
                 .text("You will be prompted for:")
                 .bullet("Game name")
                 .bullet("Description (optional)")
-                .bullet("Launch command (optional)")
+                .bullet("Launch command builder (optional)")
                 .bullet("Save data path")
                 .build(),
         )
@@ -321,6 +321,7 @@ fn resolve_discovered_selection(
             launch_command,
             save_path: payload.save_path,
             create_save_path: false,
+            skip_save_setup: false,
             no_cache,
         };
         Ok(match group {

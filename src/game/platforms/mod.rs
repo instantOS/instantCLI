@@ -25,8 +25,8 @@ use crate::game::launch_command::{
 use crate::game::utils::path::is_valid_wine_prefix;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{
-    ChecklistResult, FilePickerBuilder, FzfSelectable, FzfWrapper, Header, TextEditOutcome,
-    TextEditPrompt, prompt_text_edit,
+    ChecklistResult, DialogOutcome, FilePickerBuilder, FzfSelectable, FzfWrapper, Header,
+    TextEditOutcome, TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -234,6 +234,7 @@ pub enum LauncherType {
     UmuRun,
     Steam,
     Emulator(EmulatorPlatform),
+    Skip,
     Back,
 }
 
@@ -245,6 +246,7 @@ impl std::fmt::Display for LauncherType {
             LauncherType::UmuRun => write!(f, "umu-run"),
             LauncherType::Steam => write!(f, "steam"),
             LauncherType::Emulator(platform) => write!(f, "{}", platform.id()),
+            LauncherType::Skip => write!(f, "skip"),
             LauncherType::Back => write!(f, "back"),
         }
     }
@@ -272,7 +274,10 @@ impl FzfSelectable for LauncherItem {
 }
 
 /// Build launcher selection menu items
-fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<LauncherItem> {
+fn build_launcher_items(
+    context: Option<&LaunchCommandBuilderContext>,
+    allow_skip: bool,
+) -> Vec<LauncherItem> {
     let recommended_launcher = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
 
     [
@@ -287,6 +292,7 @@ fn build_launcher_items(context: Option<&LaunchCommandBuilderContext>) -> Vec<La
             .into_iter()
             .map(LauncherType::Emulator),
     )
+    .chain(allow_skip.then_some(LauncherType::Skip))
     .chain([LauncherType::Back])
     .map(|launcher| LauncherItem {
         launcher,
@@ -325,6 +331,10 @@ fn launcher_display(launcher: LauncherType, recommended: bool) -> String {
             )
         }
         LauncherType::Back => format!("{} Back", format_back_icon()),
+        LauncherType::Skip => format!(
+            "{} Set up launch command later",
+            format_icon_colored(NerdFont::ArrowRight, colors::SUBTEXT0)
+        ),
     }
 }
 
@@ -431,6 +441,13 @@ fn launcher_preview(
             let preset = context.and_then(|ctx| ctx.preset_for(launcher));
             presentation::launcher_preview(platform, preset.map(|preset| preset.reason.as_str()))
         }
+        LauncherType::Skip => PreviewBuilder::new()
+            .header(NerdFont::ArrowRight, "Set Up Later")
+            .text("Continue without a launch command.")
+            .blank()
+            .text("Save syncing will still work. You can configure")
+            .text("the launch command later from the game's edit menu.")
+            .build(),
         LauncherType::Back => PreviewBuilder::new()
             .header(NerdFont::ArrowLeft, "Back")
             .text("Return to previous menu.")
@@ -442,13 +459,24 @@ fn launcher_preview(
 pub fn select_launcher_type(
     context: Option<&LaunchCommandBuilderContext>,
 ) -> Result<Option<LauncherType>> {
-    let items = build_launcher_items(context);
+    select_launcher(context, false)
+}
+
+fn select_launcher(
+    context: Option<&LaunchCommandBuilderContext>,
+    allow_skip: bool,
+) -> Result<Option<LauncherType>> {
+    let items = build_launcher_items(context, allow_skip);
     let recommended = context.and_then(LaunchCommandBuilderContext::recommended_launcher);
     let initial_index =
         recommended.and_then(|launcher| items.iter().position(|item| item.launcher == launcher));
 
     let mut builder = FzfWrapper::builder()
-        .header(Header::fancy("Select Launcher Type"))
+        .header(Header::fancy(if allow_skip {
+            "Launch command (optional)"
+        } else {
+            "Select Launcher Type"
+        }))
         .prompt("Launcher")
         .responsive_layout();
 
@@ -478,6 +506,31 @@ pub fn build_launch_command_with_context(
         None => return Ok(None),
     };
 
+    build_selected_launcher(launcher_type, context)
+}
+
+/// Creation flows distinguish skipping the optional command from canceling
+/// the game. Leaving a nested builder returns to launcher selection.
+pub(crate) fn build_optional_launch_command(
+    context: Option<&LaunchCommandBuilderContext>,
+) -> Result<DialogOutcome<Option<LaunchCommand>>> {
+    loop {
+        match select_launcher(context, true)? {
+            None => return Ok(DialogOutcome::Cancelled),
+            Some(LauncherType::Skip) => return Ok(DialogOutcome::Submitted(None)),
+            Some(launcher) => {
+                if let Some(command) = build_selected_launcher(launcher, context)? {
+                    return Ok(DialogOutcome::Submitted(Some(command)));
+                }
+            }
+        }
+    }
+}
+
+fn build_selected_launcher(
+    launcher_type: LauncherType,
+    context: Option<&LaunchCommandBuilderContext>,
+) -> Result<Option<LaunchCommand>> {
     let command = match launcher_type {
         LauncherType::Manual => prompt_manual_command(),
         LauncherType::Executable => prompt_executable_command(context),
@@ -490,7 +543,7 @@ pub fn build_launch_command_with_context(
                 })
         })),
         LauncherType::Emulator(platform) => emulator::build_command(platform, context),
-        LauncherType::Back => Ok(None),
+        LauncherType::Skip | LauncherType::Back => Ok(None),
     }?;
 
     command.map(apply_launch_wrappers).transpose()
@@ -566,6 +619,7 @@ fn launcher_recommendation_label(launcher: LauncherType) -> &'static str {
         LauncherType::Steam => "Steam",
         LauncherType::Emulator(platform) => platform.name(),
         LauncherType::Back => "back",
+        LauncherType::Skip => "skip",
     }
 }
 
@@ -575,6 +629,50 @@ mod tests {
     use crate::game::launch_command::{
         EmulatorLaunchCommand, EmulatorLauncher, EmulatorOptions, SteamLaunchCommand,
     };
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+    use anyhow::Context;
+
+    #[test]
+    fn optional_command_distinguishes_skip_from_cancel() -> Result<()> {
+        let skip = build_launcher_items(None, true)
+            .iter()
+            .position(|item| item.launcher == LauncherType::Skip)
+            .context("Optional launcher menu has no skip entry")?;
+        {
+            let _guard = MockQueue::new().select_index(skip).guard();
+            assert_eq!(
+                build_optional_launch_command(None)?,
+                DialogOutcome::Submitted(None)
+            );
+        }
+        {
+            let _guard = MockQueue::new().cancel_selection().guard();
+            assert_eq!(
+                build_optional_launch_command(None)?,
+                DialogOutcome::Cancelled
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn leaving_nested_builder_returns_to_optional_launcher_choices() -> Result<()> {
+        let skip = build_launcher_items(None, true)
+            .iter()
+            .position(|item| item.launcher == LauncherType::Skip)
+            .context("Optional launcher menu has no skip entry")?;
+        let _guard = MockQueue::new()
+            .select_index(0) // Manual entry
+            .input_cancelled()
+            .select_index(skip)
+            .guard();
+        assert_eq!(
+            build_optional_launch_command(None)?,
+            DialogOutcome::Submitted(None)
+        );
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
 
     #[test]
     fn emulator_choices_keep_distinct_icons_and_recommendations() {

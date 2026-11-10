@@ -1,7 +1,6 @@
 use super::add::{AddGameOptions, ResolvedGameDetails};
 use super::add_discovery::{EmulatorPrefillResult, maybe_prefill_from_emulators};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
-use crate::game::launch_command::LaunchCommand;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
@@ -99,34 +98,40 @@ impl GameManager {
         if let Some(description) = &details.description {
             game.description = Some(description.clone());
         }
-        if let Some(command) = &details.launch_command {
-            game.launch_command = Some(LaunchCommand::from_shell_or_manual(command.clone()));
-        }
+        game.launch_command = details.launch_command;
 
         context.config.games.push(game);
 
-        context
-            .installations
-            .installations
-            .push(GameInstallation::with_kind(
+        let save_path_display = details
+            .saves
+            .as_ref()
+            .map(|saves| saves.save_path.display_string());
+        if let Some(saves) = details.saves {
+            let installation = GameInstallation::with_kind(
                 details.name.clone(),
-                details.save_path.clone(),
-                details.save_path_type,
-            ));
+                saves.save_path,
+                saves.save_path_type,
+            );
+            context.installations.installations.push(installation);
+        }
 
         context.save()?;
-
-        let save_path_display = details.save_path.display_string();
 
         println!(
             "{} Game '{}' added successfully!",
             NerdFont::Check,
             details.name
         );
-        println!(
-            "Game configuration saved with save path: {}",
-            save_path_display
-        );
+        if let Some(path) = save_path_display {
+            println!("Game configuration saved with save path: {path}");
+        } else {
+            crate::ui::emit(
+                crate::ui::Level::Warn,
+                "game.add.backups_not_configured",
+                &super::prompts::unconfigured_saves_warning(&details.name),
+                Some(serde_json::json!({"game": details.name, "backups_configured": false})),
+            );
+        }
 
         Ok(())
     }

@@ -187,6 +187,29 @@ fn sync_configured(
     use_disk: bool,
 ) -> Result<SyncReport> {
     game_config.validate_ownership(&installations)?;
+    if game_name.is_none() && held_owners.is_empty() {
+        let unconfigured: Vec<_> = game_config
+            .games
+            .iter()
+            .filter(|game| {
+                installations
+                    .owner_saves(&game_config.owner_id(&game.name.0))
+                    .is_err()
+            })
+            .map(|game| game.name.0.clone())
+            .collect();
+        if !unconfigured.is_empty() {
+            ui::report(
+                Level::Warn,
+                "game.sync.backups_not_configured",
+                &format!(
+                    "Backups not configured for: {}. These games are not being backed up. Choose Set up saves in each game's menu once its save files exist.",
+                    unconfigured.join(", ")
+                ),
+                json!({"games": unconfigured, "backups_configured": false}),
+            );
+        }
+    }
     let owners_to_sync = match game_name {
         Some(name) => vec![game_config.owner_id(&name)],
         None if !held_owners.is_empty() => held_owners.to_vec(),

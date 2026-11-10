@@ -88,7 +88,16 @@ pub(super) fn handle_action(
             Ok(ActionResult::Stay)
         }
         GameAction::Setup => {
-            setup::setup_uninstalled_games()?;
+            if state
+                .installations
+                .installations
+                .iter()
+                .any(|installation| installation.game_name.0 == game_name)
+            {
+                setup::setup_uninstalled_games()?;
+            } else {
+                setup::setup_tracked_game(game_name, None)?;
+            }
             Ok(if exit_after {
                 ActionResult::Exit
             } else {
@@ -137,15 +146,12 @@ fn handle_launch_action(game_name: &str, state: &GameState) -> Result<ActionResu
     if ensure_launch_command(game_name, state)?.is_none() {
         return Ok(ActionResult::Stay);
     }
-    if state.needs_setup {
-        FzfWrapper::message(&format!(
-            "No save path configured for '{}' on this device.\n\nUse Setup to configure the save path first.",
-            game_name
-        ))?;
-        return Ok(ActionResult::Stay);
-    }
     launch_game(Some(game_name.to_string()))?;
-    Ok(ActionResult::Exit)
+    Ok(if state.needs_setup {
+        ActionResult::Stay
+    } else {
+        ActionResult::Exit
+    })
 }
 
 fn ensure_launch_command(game_name: &str, state: &GameState) -> Result<Option<String>> {

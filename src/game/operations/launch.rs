@@ -56,7 +56,16 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
 
     game_config.validate_ownership(&installations)?;
     let owner_id = game_config.owner_id(&selected.name);
-    let _owner_lock = crate::game::save_runtime::SaveLock::owner(&owner_id)?;
+    let owner_lock = crate::game::save_runtime::SaveLock::owner(&owner_id)?;
+    // Recheck after locking so a newly configured save binding cannot be
+    // bypassed by a launch that started while setup was still running.
+    let game_config = InstantGameConfig::load()?;
+    let installations = InstallationsConfig::load()?;
+    anyhow::ensure!(
+        game_config.owner_id(&selected.name) == owner_id,
+        "Save ownership changed; retry launching the game"
+    );
+    game_config.validate_ownership(&installations)?;
     // PCSX2 batch mode exits when the VM shuts down, retaining the owner lock
     // for its entire lifetime. Save ownership comes from the declared binding.
     if let crate::game::launch_command::LaunchCommandKind::Emulator(emulator) =
@@ -64,6 +73,17 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
         && emulator.platform == crate::game::launch_command::EmulatorPlatform::Pcsx2
     {
         emulator.options.batch_mode = true;
+    }
+    if installations.owner_saves(&owner_id).is_err() {
+        anyhow::ensure!(
+            matches!(owner_id, crate::game::ownership::OwnerId::Game(_))
+                && game_config
+                    .games
+                    .iter()
+                    .any(|game| game.name.0 == selected.name),
+            "Bind the shared save group before launching this game"
+        );
+        return launch_without_backups(&selected, ui, owner_lock);
     }
     let title = format!("InstantCLI - {}", selected.name);
     let report = ui.sync_owner(&title, Duration::ZERO, &selected.name, &owner_id)?;
@@ -79,6 +99,38 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
     println!("Finished launch workflow for {}", selected.name);
 
     Ok(())
+}
+
+fn launch_without_backups(
+    game: &LaunchableGame,
+    ui: &GameUi,
+    owner_lock: crate::game::save_runtime::SaveLock,
+) -> Result<()> {
+    let warning = crate::game::games::prompts::unconfigured_saves_warning(&game.name);
+    crate::ui::emit(
+        crate::ui::Level::Warn,
+        "game.launch.backups_not_configured",
+        &warning,
+        Some(serde_json::json!({"game": game.name, "backups_configured": false})),
+    );
+    ui.backups_not_configured(&game.name);
+    if !ui.confirm(&warning, "Launch without backups", "Cancel")? {
+        return Ok(());
+    }
+
+    let launch = run_launch_command(game);
+    drop(owner_lock);
+    after_launch(launch, || {
+        ui.backups_not_configured(&game.name);
+        eprintln!("{warning}");
+        if ui.confirm(
+            &format!("Set up save backups for '{}' now?\n\nIf the game has created its save files, select their location now. Otherwise choose Later; saves remain unprotected until setup is complete.", game.name),
+            "Set up saves", "Later",
+        )? {
+            ui.configure_saves(&game.name)?;
+        }
+        Ok(())
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -266,7 +318,46 @@ mod tests {
     use super::*;
     use crate::common::TildePath;
     use crate::game::config::GameInstallation;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
     use std::path::PathBuf;
+
+    #[test]
+    fn unbacked_launch_requires_consent_and_releases_its_lock_on_cancel() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let marker = temp.path().join("ran");
+        let command = format!(
+            "touch {}",
+            crate::common::shell::shell_quote(&marker.to_string_lossy())
+        );
+        let selected = collect_launchable_games(&[game("New game", Some(&command))], &[]).remove(0);
+        let path = temp.path().join("owner.lock");
+        let lock = crate::game::save_runtime::SaveLock::at(&path)?;
+        let _guard = MockQueue::new().confirm_no().guard();
+        launch_without_backups(&selected, &GameUi::terminal(), lock)?;
+        assert!(!marker.exists());
+        let _lock = crate::game::save_runtime::SaveLock::at(&path)?;
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn unbacked_launch_runs_then_offers_setup_without_claiming_a_backup() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let marker = temp.path().join("ran");
+        let command = format!(
+            "touch {}",
+            crate::common::shell::shell_quote(&marker.to_string_lossy())
+        );
+        let selected = collect_launchable_games(&[game("New game", Some(&command))], &[]).remove(0);
+        let path = temp.path().join("owner.lock");
+        let lock = crate::game::save_runtime::SaveLock::at(&path)?;
+        let _guard = MockQueue::new().confirm_yes().confirm_no().guard();
+        launch_without_backups(&selected, &GameUi::terminal(), lock)?;
+        assert!(marker.exists());
+        let _lock = crate::game::save_runtime::SaveLock::at(&path)?;
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
 
     fn game(name: &str, launch_command: Option<&str>) -> Game {
         let mut g = Game::new(name);
