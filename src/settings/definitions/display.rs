@@ -282,7 +282,7 @@ impl Setting for ConfigureDisplay {
                 Err(e) => {
                     ctx.emit_failure(
                         "settings.display.configure.query_failed",
-                        &format!("Failed to query displays: {e}"),
+                        &format!("Failed to query displays: {e:#}"),
                     );
                     return Ok(());
                 }
@@ -293,7 +293,7 @@ impl Setting for ConfigureDisplay {
                 Err(e) => {
                     ctx.emit_failure(
                         "settings.display.configure.query_failed",
-                        &format!("Failed to query displays: {e}"),
+                        &format!("Failed to query displays: {e:#}"),
                     );
                     return Ok(());
                 }
@@ -304,7 +304,7 @@ impl Setting for ConfigureDisplay {
                 Err(e) => {
                     ctx.emit_failure(
                         "settings.display.configure.query_failed",
-                        &format!("Failed to query displays: {e}"),
+                        &format!("Failed to query displays: {e:#}"),
                     );
                     return Ok(());
                 }
@@ -316,7 +316,7 @@ impl Setting for ConfigureDisplay {
                 Err(e) => {
                     ctx.emit_failure(
                         "settings.display.configure.query_failed",
-                        &format!("Failed to query displays: {e}"),
+                        &format!("Failed to query displays: {e:#}"),
                     );
                     return Ok(());
                 }
@@ -403,7 +403,7 @@ impl Setting for ConfigureDisplay {
         if let Err(e) = result {
             ctx.emit_failure(
                 "settings.display.configure.apply_failed",
-                &format!("Failed to apply mode: {e}"),
+                &format!("Failed to apply mode: {e:#}"),
             );
             return Ok(());
         }

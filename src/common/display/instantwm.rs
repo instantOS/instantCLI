@@ -6,61 +6,22 @@
 use super::{DisplayMode, OutputInfo};
 use crate::common::instantwmctl;
 use anyhow::{Context, Result};
-use serde::Deserialize;
-
-/// One entry of `instantwmctl --json monitor list`.
-#[derive(Debug, Clone, Deserialize)]
-struct MonitorInfo {
-    name: String,
-    width: u32,
-    height: u32,
-}
-
-/// One entry of `instantwmctl --json monitor modes <output>`.
-#[derive(Debug, Clone, Deserialize)]
-struct DisplayModes {
-    name: String,
-    modes: Vec<MonitorMode>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MonitorMode {
-    width: u32,
-    height: u32,
-    /// instantwmctl serializes the shared `OutputMode` field as
-    /// `refresh_millihertz`; `refresh_mhz` is the pre-unification name.
-    #[serde(alias = "refresh_mhz")]
-    refresh_millihertz: u32,
-}
+use instantos_ipc::{DisplayModes, MonitorInfo};
 
 /// instantWM display provider using instantwmctl.
 pub struct InstantWMDisplayProvider;
 
 impl InstantWMDisplayProvider {
     pub fn get_outputs_sync() -> Result<Vec<OutputInfo>> {
-        // Ask for the outputs first: `monitor modes` answers for a single
-        // output (the focused one unless told otherwise), so every output is
-        // queried in turn. (`--json` is a top-level instantwmctl flag and has
-        // to precede the subcommand.)
-        let monitors: Vec<MonitorInfo> = instantwmctl::json(["monitor", "list"])
-            .context("Failed to execute instantwmctl monitor list")?;
-
+        let monitors: Vec<MonitorInfo> = instantwmctl::json(["monitor", "list"])?;
+        let displays: Vec<DisplayModes> = instantwmctl::json(["monitor", "modes", "all"])?;
         let mut outputs = Vec::new();
-
-        for monitor in &monitors {
-            let display_modes: Vec<DisplayModes> =
-                instantwmctl::json(["monitor", "modes", &monitor.name]).with_context(|| {
-                    format!(
-                        "Failed to execute instantwmctl monitor modes for {}",
-                        monitor.name
-                    )
-                })?;
-
-            outputs.extend(
-                display_modes
-                    .iter()
-                    .filter_map(|display| output_info(display, monitor)),
-            );
+        for display in &displays {
+            if let Some(monitor) = monitors.iter().find(|monitor| monitor.name == display.name)
+                && let Some(output) = output_info(display, monitor)?
+            {
+                outputs.push(output);
+            }
         }
 
         Ok(outputs)
@@ -85,16 +46,23 @@ impl InstantWMDisplayProvider {
 
 /// Turn one output's mode list into an [`OutputInfo`], or `None` when the
 /// output has no modes to offer (an inactive head reports an empty list).
-fn output_info(display: &DisplayModes, monitor: &MonitorInfo) -> Option<OutputInfo> {
+fn output_info(display: &DisplayModes, monitor: &MonitorInfo) -> Result<Option<OutputInfo>> {
     let mut modes: Vec<DisplayMode> = display
         .modes
         .iter()
-        .map(|mode| DisplayMode {
-            width: mode.width,
-            height: mode.height,
-            refresh: mode.refresh_millihertz,
+        .map(|mode| {
+            anyhow::ensure!(
+                mode.width > 0 && mode.height > 0 && mode.refresh_millihertz >= 0,
+                "Invalid display mode for {}: {mode:?}",
+                display.name
+            );
+            Ok(DisplayMode {
+                width: u32::try_from(mode.width)?,
+                height: u32::try_from(mode.height)?,
+                refresh: u32::try_from(mode.refresh_millihertz)?,
+            })
         })
-        .collect();
+        .collect::<Result<_>>()?;
 
     // Sort by resolution (descending), then refresh rate (descending)
     modes.sort_by(|a, b| {
@@ -105,7 +73,7 @@ fn output_info(display: &DisplayModes, monitor: &MonitorInfo) -> Option<OutputIn
     modes.dedup();
 
     if modes.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     // The mode the compositor reports for this output, falling back to the
@@ -113,28 +81,42 @@ fn output_info(display: &DisplayModes, monitor: &MonitorInfo) -> Option<OutputIn
     // so the highest rate at the active size is the closest match available.
     let current_mode = modes
         .iter()
-        .find(|mode| mode.width == monitor.width && mode.height == monitor.height)
+        .find(|mode| {
+            i64::from(mode.width) == i64::from(monitor.width)
+                && i64::from(mode.height) == i64::from(monitor.height)
+        })
         .cloned()
         .unwrap_or_else(|| modes.first().cloned().unwrap());
 
-    Some(OutputInfo {
+    Ok(Some(OutputInfo {
         name: display.name.clone(),
         make: "Unknown".to_string(),
         model: "Unknown".to_string(),
         current_mode,
         available_modes: modes,
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn monitor(name: &str, width: u32, height: u32) -> MonitorInfo {
+    fn monitor(name: &str, width: i32, height: i32) -> MonitorInfo {
         MonitorInfo {
+            id: 1,
+            position: 0,
+            backend_index: 0,
             name: name.to_string(),
             width,
             height,
+            x: 0,
+            y: 0,
+            is_selected: true,
+            vrr_support: instantos_ipc::VrrSupport::Unsupported,
+            vrr_mode: None,
+            vrr_enabled: false,
+            mirrors: Vec::new(),
+            requested_mirrors: Vec::new(),
         }
     }
 
@@ -154,6 +136,7 @@ mod tests {
             )[0],
             &monitor("DP-1", 1920, 1080),
         )
+        .expect("valid modes")
         .expect("output");
 
         let listed: Vec<(u32, u32, u32)> = output
@@ -174,6 +157,15 @@ mod tests {
     }
 
     #[test]
+    fn invalid_modes_fail_with_output_context() {
+        let display = modes(
+            r#"[{"name":"DP-1","modes":[{"width":-1920,"height":1080,"refresh_millihertz":60000}]}]"#,
+        );
+        let error = output_info(&display[0], &monitor("DP-1", 1920, 1080)).unwrap_err();
+        assert!(error.to_string().contains("Invalid display mode for DP-1"));
+    }
+
+    #[test]
     fn duplicate_modes_are_collapsed() {
         let output = output_info(
             &modes(
@@ -184,6 +176,7 @@ mod tests {
             )[0],
             &monitor("DP-1", 1920, 1080),
         )
+        .expect("valid modes")
         .expect("output");
 
         assert_eq!(output.available_modes.len(), 1);
@@ -196,6 +189,7 @@ mod tests {
                 &modes(r#"[{"name":"eDP-1","modes":[]}]"#)[0],
                 &monitor("eDP-1", 0, 0)
             )
+            .expect("valid empty modes")
             .is_none()
         );
     }
@@ -212,6 +206,7 @@ mod tests {
             )[0],
             &monitor("DP-1", 1280, 720),
         )
+        .expect("valid modes")
         .expect("output");
 
         assert_eq!(output.current_mode.width, 3840);

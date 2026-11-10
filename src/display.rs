@@ -1,7 +1,9 @@
 //! Quick display layouts. Backend-specific discovery and application live behind
 //! DisplayProvider so additional compositors can implement the same presets.
 use anyhow::{Context, Result, bail, ensure};
-use serde::Deserialize;
+use instantos_ipc::DisplayModes;
+#[cfg(test)]
+use instantos_ipc::OutputMode;
 use std::process::Command;
 
 use crate::common::{compositor::CompositorType, display_server::DisplayServer, instantwmctl};
@@ -11,22 +13,6 @@ use crate::menu::{
 };
 use crate::menu_utils::{DialogOutcome, FzfPreview};
 
-#[derive(Debug, Clone, Deserialize)]
-struct Output {
-    name: String,
-    modes: Vec<Mode>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct Mode {
-    width: u32,
-    height: u32,
-    /// instantwmctl serializes the shared `OutputMode` field as
-    /// `refresh_millihertz`; `refresh_mhz` is the pre-unification name.
-    #[serde(alias = "refresh_mhz")]
-    refresh_millihertz: u32,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum Layout {
     Mirror,
@@ -35,15 +21,15 @@ enum Layout {
 }
 
 trait DisplayProvider {
-    fn outputs(&self) -> Result<Vec<Output>>;
-    fn apply(&self, outputs: &[Output], layout: &Layout) -> Result<()>;
+    fn outputs(&self) -> Result<Vec<DisplayModes>>;
+    fn apply(&self, outputs: &[DisplayModes], layout: &Layout) -> Result<()>;
 }
 
 struct InstantWM;
 
 impl DisplayProvider for InstantWM {
-    fn outputs(&self) -> Result<Vec<Output>> {
-        let mut outputs: Vec<Output> = instantwmctl::json(["monitor", "modes", "all"])?;
+    fn outputs(&self) -> Result<Vec<DisplayModes>> {
+        let mut outputs: Vec<DisplayModes> = instantwmctl::json(["monitor", "modes", "all"])?;
         outputs.retain(|output| !output.modes.is_empty());
         // Keep the internal panel first and use stable connector ordering.
         outputs.sort_by_key(|output| {
@@ -55,7 +41,7 @@ impl DisplayProvider for InstantWM {
         Ok(outputs)
     }
 
-    fn apply(&self, outputs: &[Output], layout: &Layout) -> Result<()> {
+    fn apply(&self, outputs: &[DisplayModes], layout: &Layout) -> Result<()> {
         let mirror_outputs;
         let outputs = if matches!(layout, Layout::Mirror) && DisplayServer::detect().is_x11() {
             mirror_outputs = x11_mirror_outputs(outputs)?;
@@ -73,12 +59,12 @@ impl DisplayProvider for InstantWM {
 
 // RandR cannot scale mirror heads independently. Use the largest shared
 // resolution and let each head pick its best refresh rate at that size.
-fn x11_mirror_outputs(outputs: &[Output]) -> Result<Vec<Output>> {
+fn x11_mirror_outputs(outputs: &[DisplayModes]) -> Result<Vec<DisplayModes>> {
     let source = outputs.first().context("No connected displays")?;
     let resolution = source.modes.iter()
         .filter(|mode| outputs.iter().all(|output| output.modes.iter().any(|candidate|
             candidate.width == mode.width && candidate.height == mode.height)))
-        .max_by_key(|mode| u64::from(mode.width) * u64::from(mode.height))
+        .max_by_key(|mode| i64::from(mode.width) * i64::from(mode.height))
         .map(|mode| (mode.width, mode.height))
         .context("Displays have no shared resolution for X11 mirroring; use Other… to configure them manually")?;
     Ok(outputs
@@ -95,7 +81,7 @@ fn x11_mirror_outputs(outputs: &[Output]) -> Result<Vec<Output>> {
 
 // Enable the source first and disable unwanted heads last, so switching from
 // one single-output preset to another never deliberately disables every head.
-fn layout_commands(outputs: &[Output], layout: &Layout) -> Result<Vec<Vec<String>>> {
+fn layout_commands(outputs: &[DisplayModes], layout: &Layout) -> Result<Vec<Vec<String>>> {
     let source = match layout {
         Layout::Only(name) => outputs.iter().find(|output| &output.name == name),
         _ => outputs.first(),
@@ -115,11 +101,16 @@ fn layout_commands(outputs: &[Output], layout: &Layout) -> Result<Vec<Vec<String
             .iter()
             .max_by_key(|mode| {
                 (
-                    u64::from(mode.width) * u64::from(mode.height),
+                    i64::from(mode.width) * i64::from(mode.height),
                     mode.refresh_millihertz,
                 )
             })
             .context("Connected display has no available modes")?;
+        ensure!(
+            mode.width > 0 && mode.height > 0 && mode.refresh_millihertz >= 0,
+            "Invalid display mode for {}: {mode:?}",
+            output.name
+        );
         let mirror = matches!(layout, Layout::Mirror) && output.name != source.name;
         let mut args = vec![
             "monitor".into(),
@@ -147,7 +138,7 @@ fn layout_commands(outputs: &[Output], layout: &Layout) -> Result<Vec<Vec<String
                 "--position".into(),
                 format!("{x},0"),
             ]);
-            x += u64::from(mode.width);
+            x += u64::try_from(mode.width).context("Invalid display mode width")?;
         }
         commands.push(args);
     }
@@ -230,7 +221,7 @@ pub fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn outputs() -> Vec<Output> {
+    fn outputs() -> Vec<DisplayModes> {
         serde_json::from_str(r#"[{"name":"eDP-1","modes":[{"width":1920,"height":1080,"refresh_millihertz":60000}]},{"name":"DP-1","modes":[{"width":2560,"height":1440,"refresh_millihertz":144000}]}]"#).unwrap()
     }
     #[test]
@@ -256,7 +247,7 @@ mod tests {
     fn x11_mirror_requires_and_selects_a_shared_resolution() {
         let mut displays = outputs();
         assert!(x11_mirror_outputs(&displays).is_err());
-        displays[1].modes.push(Mode {
+        displays[1].modes.push(OutputMode {
             width: 1920,
             height: 1080,
             refresh_millihertz: 60000,
@@ -267,6 +258,13 @@ mod tests {
             args.windows(2)
                 .any(|pair| pair == ["--resolution", "1920x1080"])
         }));
+    }
+
+    #[test]
+    fn invalid_mode_does_not_generate_layout_commands() {
+        let mut displays = outputs();
+        displays[0].modes[0].height = -1080;
+        assert!(layout_commands(&displays, &Layout::Extend).is_err());
     }
 
     #[test]
