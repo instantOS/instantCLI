@@ -10,7 +10,7 @@ use colored::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Reset modified dotfiles to their original state
+/// Restore selected dotfiles to their current repository sources.
 pub fn reset_modified(
     config: &DotfileConfig,
     db: &Database,
@@ -63,38 +63,33 @@ pub fn reset_modified(
             continue;
         }
 
-        // A missing target cannot be "unmodified": reset re-creates it
-        // from its source, so deleted tracked files are restored instead
-        // of being skipped as clean.
-        let is_unmodified = if !dotfile.target_path.exists() {
-            false
-        } else {
-            match dotfile.is_target_unmodified(db) {
-                Ok(unmodified) => unmodified,
-                Err(err) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
-                    let reason = classify_encrypted_failure(&err);
-                    emit(
-                        Level::Warn,
-                        "dot.reset.skipped_encrypted",
-                        &format!(
-                            "{} Skipped reset of encrypted file ({}): {}",
-                            char::from(NerdFont::ShieldAlert),
-                            reason.label(),
-                            crate::dot::display_path(&dotfile.target_path, dotfile.is_root)
-                                .yellow()
-                        ),
-                        Some(serde_json::json!({
-                            "path": crate::dot::display_path(&dotfile.target_path, dotfile.is_root),
-                            "reason": reason.code()
-                        })),
-                    );
-                    continue;
-                }
-                Err(err) => return Err(err),
+        // Reset must leave the target matching the current source, even if
+        // the target still matches an older known source version. Missing
+        // targets are also outdated and will be re-created.
+        let is_outdated = match dotfile.is_outdated(db) {
+            Ok(outdated) => outdated,
+            Err(err) if dotfile.kind == crate::dot::dotfile::SourceKind::Age => {
+                let reason = classify_encrypted_failure(&err);
+                emit(
+                    Level::Warn,
+                    "dot.reset.skipped_encrypted",
+                    &format!(
+                        "{} Skipped reset of encrypted file ({}): {}",
+                        char::from(NerdFont::ShieldAlert),
+                        reason.label(),
+                        crate::dot::display_path(&dotfile.target_path, dotfile.is_root).yellow()
+                    ),
+                    Some(serde_json::json!({
+                        "path": crate::dot::display_path(&dotfile.target_path, dotfile.is_root),
+                        "reason": reason.code()
+                    })),
+                );
+                continue;
             }
+            Err(err) => return Err(err),
         };
 
-        if !is_unmodified {
+        if is_outdated {
             match dotfile.reset(db) {
                 Ok(_) => {
                     let relative_path =
@@ -421,6 +416,38 @@ mod tests {
         assert!(err.to_string().contains("matches 2 tracked files"));
         assert!(err.to_string().contains("~/.prime/agent/shared.json"));
         assert!(err.to_string().contains("~/.config/app/shared.json"));
+    }
+
+    #[test]
+    #[serial]
+    fn reset_updates_clean_outdated_target_without_applying_unrelated_files() -> Result<()> {
+        let env = setup_reset_test_env();
+        let target = env.home.join(".prime/agent/reset_unique_test.json");
+        let dotfiles = get_all_dotfiles(&env.config, &env.db, false)?;
+        let dotfile = dotfiles
+            .values()
+            .find(|dotfile| dotfile.target_path == target)
+            .ok_or_else(|| anyhow::anyhow!("test dotfile not found"))?;
+
+        dotfile.reset(&env.db)?;
+        fs::write(&dotfile.source_path, "updated source\n")?;
+        assert!(dotfile.is_target_unmodified(&env.db)?);
+        assert!(dotfile.is_outdated(&env.db)?);
+
+        reset_modified(
+            &env.config,
+            &env.db,
+            &target.to_string_lossy(),
+            false,
+            false,
+        )?;
+
+        assert_eq!(fs::read_to_string(&target)?, "updated source\n");
+        assert!(!dotfile.is_outdated(&env.db)?);
+        assert!(dotfile.is_target_unmodified(&env.db)?);
+        assert!(!env.home.join(".prime/agent/shared.json").exists());
+        assert!(!env.home.join(".config/app/shared.json").exists());
+        Ok(())
     }
 
     #[test]

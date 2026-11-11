@@ -34,6 +34,7 @@ pub enum DotCommands {
     },
     /// Clone a new repository (alias for 'repo clone')
     Clone(CloneArgs),
+    /// Restore dotfiles from their current repository sources, discarding local changes
     Reset {
         /// Path to reset (relative to ~). If the target does not exist, it is
         /// restored from its tracked source in the repository.
