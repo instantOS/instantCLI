@@ -21,6 +21,21 @@ pub enum EncryptionKeyKind {
     },
 }
 
+/// Truncate a public key for display in menus.
+pub(crate) fn shorten_key(key: &str) -> String {
+    const MAX_DISPLAY: usize = 40;
+    const ELLIPSIS: &str = "...";
+    if key.len() > MAX_DISPLAY {
+        format!(
+            "{}{}",
+            &key[..MAX_DISPLAY.saturating_sub(ELLIPSIS.len())],
+            ELLIPSIS
+        )
+    } else {
+        key.to_string()
+    }
+}
+
 impl EncryptionKeyKind {
     pub fn public_key(&self) -> &str {
         match self {
@@ -47,14 +62,15 @@ impl EncryptionKeyKind {
     }
 
     pub fn short_key(&self) -> String {
-        let key = self.public_key();
-        const MAX_DISPLAY: usize = 40;
-        const ELLIPSIS: &str = "...";
-        if key.len() > MAX_DISPLAY {
-            format!("{}{}", &key[..MAX_DISPLAY - ELLIPSIS.len()], ELLIPSIS)
-        } else {
-            key.to_string()
-        }
+        shorten_key(self.public_key())
+    }
+
+    pub fn icon(&self) -> String {
+        let (icon, color) = match self {
+            Self::AgeIdentity { .. } => (NerdFont::Lock, colors::GREEN),
+            Self::SshKey { .. } => (NerdFont::Terminal, colors::BLUE),
+        };
+        format_icon_colored(icon, color)
     }
 
     pub fn key_type_label(&self) -> &'static str {
@@ -164,20 +180,154 @@ pub(crate) fn discover_all_keys() -> Vec<EncryptionKeyKind> {
     keys
 }
 
-pub(crate) fn build_key_preview(key: &EncryptionKeyKind) -> String {
+fn key_preview_builder(key: &EncryptionKeyKind) -> PreviewBuilder {
     let mut builder = PreviewBuilder::new()
         .header(NerdFont::Key, &format!("{} Key", key.key_type_label()))
         .blank()
         .field("Public key", key.public_key())
-        .field("Path", &key.path().to_string_lossy())
-        .blank()
-        .subtext("Select to copy, authorize, or delete this key.");
+        .field("Path", &key.path().to_string_lossy());
 
     if let EncryptionKeyKind::SshKey { filename, .. } = key {
         builder = builder.field("SSH file", &format!("~/.ssh/{}", filename));
     }
 
-    builder.build_string()
+    builder
+}
+
+pub(crate) fn build_key_preview(key: &EncryptionKeyKind) -> String {
+    key_preview_builder(key)
+        .blank()
+        .subtext("Select to copy, authorize, or delete this key.")
+        .build_string()
+}
+
+fn generate_key_preview() -> String {
+    PreviewBuilder::new()
+        .header(NerdFont::Plus, "Generate New Key")
+        .text("Create a new x25519 encryption keypair.")
+        .blank()
+        .text("The private key is saved to:")
+        .text("  ~/.config/instant/encryption/identities/<name>")
+        .blank()
+        .subtext("Existing keys are not overwritten.")
+        .build_string()
+}
+
+/// Prompt for a key name and generate a new x25519 keypair.
+///
+/// Returns `true` when a key was generated, `false` when the user cancelled or
+/// entered an empty name.
+fn prompt_generate_key() -> Result<bool> {
+    let default_name = nix::unistd::gethostname()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "default".to_string());
+    let name = match FzfWrapper::builder()
+        .header(Header::fancy("Generate New Key"))
+        .prompt("Key name")
+        .query(&default_name)
+        .input()
+        .input_dialog()?
+    {
+        crate::menu_utils::DialogOutcome::Submitted(name) => name,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
+    };
+    if name.is_empty() {
+        return Ok(false);
+    }
+    crate::dot::operations::key::handle_init(Some(&name), false)?;
+    Ok(true)
+}
+
+/// Pick a local key to authorize in a repository.
+///
+/// Offers to generate a key when none exist. Returns `None` when the user
+/// cancels, goes back, or generates a key (the caller should refresh its menu).
+pub(crate) fn select_key_to_authorize(config: &DotfileConfig) -> Result<Option<EncryptionKeyKind>> {
+    let mut keys = discover_all_keys();
+
+    if keys.is_empty() {
+        let result = FzfWrapper::builder()
+            .responsive_layout()
+            .confirm("No local encryption key found.\n\nWould you like to generate one now?")
+            .yes_text("Generate Key")
+            .no_text("Cancel")
+            .confirm_dialog()?;
+        if result != ConfirmResult::Yes {
+            return Ok(None);
+        }
+        crate::dot::operations::key::handle_init(None, false)?;
+        keys = discover_all_keys();
+        if keys.is_empty() {
+            FzfWrapper::message("No key was generated.")?;
+            return Ok(None);
+        }
+    }
+
+    if keys.len() == 1 {
+        return Ok(Some(keys[0].clone()));
+    }
+
+    let mut items: Vec<EncryptionMenuItem> = keys
+        .iter()
+        .map(|key| {
+            let authorized_repos =
+                crate::dot::operations::key::find_repos_using_key(config, key.public_key());
+            let auth_info = if authorized_repos.is_empty() {
+                "Not authorized in any repo".to_string()
+            } else {
+                format!("Authorized in: {}", authorized_repos.join(", "))
+            };
+
+            EncryptionMenuItem {
+                action: EncryptionMenuAction::SelectKey(key.clone()),
+                display: format!(
+                    "{} {}  {}",
+                    key.icon(),
+                    key.display_name(),
+                    format_with_color(&key.short_key(), colors::OVERLAY0),
+                ),
+                preview: key_preview_builder(key)
+                    .blank()
+                    .text(&auth_info)
+                    .build_string(),
+            }
+        })
+        .collect();
+
+    items.push(EncryptionMenuItem {
+        action: EncryptionMenuAction::GenerateNewKey,
+        display: format!(
+            "{} Generate New Key",
+            format_icon_colored(NerdFont::Plus, colors::GREEN)
+        ),
+        preview: generate_key_preview(),
+    });
+
+    items.push(EncryptionMenuItem {
+        action: EncryptionMenuAction::Back,
+        display: format!("{} Back", format_back_icon()),
+        preview: PreviewBuilder::new()
+            .subtext("Return to repository encryption menu")
+            .build_string(),
+    });
+
+    let builder = FzfWrapper::builder()
+        .header(Header::fancy("Select Key to Authorize"))
+        .prompt("Key")
+        .responsive_layout();
+
+    match builder.items(items).select_one()? {
+        crate::menu_utils::DialogOutcome::Submitted(item) => match item.action {
+            EncryptionMenuAction::SelectKey(key) => Ok(Some(key)),
+            EncryptionMenuAction::GenerateNewKey => {
+                prompt_generate_key()?;
+                Ok(None)
+            }
+            EncryptionMenuAction::Back => Ok(None),
+        },
+        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+    }
 }
 
 fn copy_to_clipboard(text: &str) -> Result<()> {
@@ -480,20 +630,10 @@ pub fn handle_encryption_keys_menu(
         let mut items = Vec::new();
 
         for key in &keys {
-            let icon = format_icon_colored(
-                match key {
-                    EncryptionKeyKind::AgeIdentity { .. } => NerdFont::Lock,
-                    EncryptionKeyKind::SshKey { .. } => NerdFont::Terminal,
-                },
-                match key {
-                    EncryptionKeyKind::AgeIdentity { .. } => colors::GREEN,
-                    EncryptionKeyKind::SshKey { .. } => colors::BLUE,
-                },
-            );
             let short = format_with_color(&key.short_key(), colors::OVERLAY0);
             items.push(EncryptionMenuItem {
                 action: EncryptionMenuAction::SelectKey(key.clone()),
-                display: format!("{} {}  {}", icon, key.display_name(), short),
+                display: format!("{} {}  {}", key.icon(), key.display_name(), short),
                 preview: build_key_preview(key),
             });
         }
@@ -504,15 +644,7 @@ pub fn handle_encryption_keys_menu(
                 "{} Generate New Key",
                 format_icon_colored(NerdFont::Plus, colors::GREEN)
             ),
-            preview: PreviewBuilder::new()
-                .header(NerdFont::Plus, "Generate New Key")
-                .text("Create a new x25519 encryption keypair.")
-                .blank()
-                .text("The private key is saved to:")
-                .text("  ~/.config/instant/encryption/identities/<name>")
-                .blank()
-                .subtext("Existing keys are not overwritten.")
-                .build_string(),
+            preview: generate_key_preview(),
         });
 
         items.push(EncryptionMenuItem {
@@ -542,24 +674,7 @@ pub fn handle_encryption_keys_menu(
                         handle_key_action_menu(&key, config, db, debug)?;
                     }
                     EncryptionMenuAction::GenerateNewKey => {
-                        let default_name = nix::unistd::gethostname()
-                            .ok()
-                            .and_then(|h| h.into_string().ok())
-                            .unwrap_or_else(|| "default".to_string());
-                        let name = match FzfWrapper::builder()
-                            .header(Header::fancy("Generate New Key"))
-                            .prompt("Key name")
-                            .query(&default_name)
-                            .input()
-                            .input_dialog()?
-                        {
-                            crate::menu_utils::DialogOutcome::Submitted(name) => name,
-                            crate::menu_utils::DialogOutcome::Cancelled => continue,
-                        };
-                        if name.is_empty() {
-                            continue;
-                        }
-                        crate::dot::operations::key::handle_init(Some(&name), false)?;
+                        prompt_generate_key()?;
                     }
                     EncryptionMenuAction::Back => return Ok(()),
                 }

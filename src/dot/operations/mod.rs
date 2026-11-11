@@ -1,6 +1,7 @@
 pub mod add;
 pub mod alternative;
 pub mod apply;
+mod convert;
 pub mod decrypt;
 pub mod delete;
 pub mod encrypt;
@@ -12,8 +13,9 @@ pub mod reset;
 
 pub use add::{AddOptions, add_dotfile};
 pub use apply::apply_all;
+pub use convert::ConvertOptions;
 pub use decrypt::decrypt_dotfile;
-pub use encrypt::{ConvertOptions, encrypt_dotfile};
+pub use encrypt::encrypt_dotfile;
 pub use git_commands::{git_commit_all, git_pull_all, git_push_all, git_run_any};
 pub use key::handle_encrypt_command;
 pub use reset::reset_modified;

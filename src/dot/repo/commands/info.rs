@@ -113,13 +113,7 @@ pub(super) fn show_repository_info(
         );
     }
 
-    let defaults_disabled = repo_config.active_subdirectories.is_none()
-        && local_repo
-            .meta
-            .default_active_subdirs
-            .as_ref()
-            .map(|dirs| dirs.is_empty())
-            .unwrap_or(false);
+    let defaults_disabled = repo_config.defaults_disabled(&local_repo.meta);
 
     if defaults_disabled {
         println!(

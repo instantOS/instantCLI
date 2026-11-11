@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use serde_json;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize)]
 pub enum DotFileStatus {
@@ -395,6 +395,44 @@ pub fn categorize_files_and_get_summary<'a>(
     (files_by_status, summary)
 }
 
+/// Get the 1-based priority of a repository (earlier in config = higher priority).
+fn repo_priority(cfg: &DotfileConfig, repo_name: &str) -> usize {
+    cfg.repos
+        .iter()
+        .position(|r| r.name == repo_name)
+        .map(|p| p + 1)
+        .unwrap_or(0)
+}
+
+/// Build a JSON entry describing a dotfile's status.
+fn file_status_json(
+    file_info: &FileInfo,
+    status: &str,
+    reason: Option<&str>,
+    home: &Path,
+    show_sources: bool,
+    priority: usize,
+) -> serde_json::Value {
+    let relative_path = file_info
+        .target_path
+        .strip_prefix(home)
+        .unwrap_or(&file_info.target_path);
+    let mut json_val = serde_json::json!({
+        "path": format!("~/{}", relative_path.display()),
+        "status": status,
+        "repo": file_info.repo_name.as_str(),
+        "dotfile_dir": file_info.dotfile_dir
+    });
+    if let Some(reason) = reason {
+        json_val["reason"] = serde_json::json!(reason);
+    }
+    if show_sources {
+        json_val["priority"] = serde_json::json!(priority);
+        json_val["override"] = serde_json::json!(file_info.is_overridden);
+    }
+    json_val
+}
+
 /// Show status in JSON format
 fn show_json_status(
     files_by_status: &HashMap<DotFileStatus, Vec<FileInfo>>,
@@ -406,140 +444,42 @@ fn show_json_status(
 ) {
     let home = dirs::home_dir().unwrap_or_default();
 
-    // Helper function to get priority number for a repo
-    let get_priority = |repo_name: &str| -> usize {
-        cfg.repos
-            .iter()
-            .position(|r| r.name == repo_name)
-            .map(|p| p + 1)
-            .unwrap_or(0)
-    };
+    let entries_for =
+        |status: DotFileStatus, label: &str, reason: Option<&str>| -> Vec<serde_json::Value> {
+            files_by_status
+                .get(&status)
+                .into_iter()
+                .flatten()
+                .map(|file_info| {
+                    file_status_json(
+                        file_info,
+                        label,
+                        reason,
+                        &home,
+                        show_sources,
+                        repo_priority(cfg, file_info.repo_name.as_str()),
+                    )
+                })
+                .collect()
+        };
 
-    let modified_files: Vec<_> = files_by_status
-        .get(&DotFileStatus::Modified)
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|file_info| {
-            let relative_path = file_info
-                .target_path
-                .strip_prefix(&home)
-                .unwrap_or(&file_info.target_path);
-            let priority = get_priority(file_info.repo_name.as_str());
-            let mut json_val = serde_json::json!({
-                "path": format!("~/{}", relative_path.display()),
-                "status": "modified",
-                "repo": file_info.repo_name.as_str(),
-                "dotfile_dir": file_info.dotfile_dir
-            });
-            if show_sources {
-                json_val["priority"] = serde_json::json!(priority);
-                json_val["override"] = serde_json::json!(file_info.is_overridden);
-            }
-            json_val
-        })
-        .collect();
-
-    let outdated_files: Vec<_> = files_by_status
-        .get(&DotFileStatus::Outdated)
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|file_info| {
-            let relative_path = file_info
-                .target_path
-                .strip_prefix(&home)
-                .unwrap_or(&file_info.target_path);
-            let priority = get_priority(file_info.repo_name.as_str());
-            let mut json_val = serde_json::json!({
-                "path": format!("~/{}", relative_path.display()),
-                "status": "outdated",
-                "repo": file_info.repo_name.as_str(),
-                "dotfile_dir": file_info.dotfile_dir
-            });
-            if show_sources {
-                json_val["priority"] = serde_json::json!(priority);
-                json_val["override"] = serde_json::json!(file_info.is_overridden);
-            }
-            json_val
-        })
-        .collect();
-
-    let clean_files: Vec<_> = if show_all {
-        files_by_status
-            .get(&DotFileStatus::Clean)
-            .unwrap_or(&vec![])
-            .iter()
-            .map(|file_info| {
-                let relative_path = file_info
-                    .target_path
-                    .strip_prefix(&home)
-                    .unwrap_or(&file_info.target_path);
-                let priority = get_priority(file_info.repo_name.as_str());
-                let mut json_val = serde_json::json!({
-                    "path": format!("~/{}", relative_path.display()),
-                    "status": "clean",
-                    "repo": file_info.repo_name.as_str(),
-                    "dotfile_dir": file_info.dotfile_dir
-                });
-                if show_sources {
-                    json_val["priority"] = serde_json::json!(priority);
-                    json_val["override"] = serde_json::json!(file_info.is_overridden);
-                }
-                json_val
-            })
-            .collect()
+    let modified_files = entries_for(DotFileStatus::Modified, "modified", None);
+    let outdated_files = entries_for(DotFileStatus::Outdated, "outdated", None);
+    let clean_files = if show_all {
+        entries_for(DotFileStatus::Clean, "clean", None)
     } else {
-        vec![]
+        Vec::new()
     };
-
-    let identity_required_files: Vec<_> = files_by_status
-        .get(&DotFileStatus::IdentityRequired)
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|file_info| {
-            let relative_path = file_info
-                .target_path
-                .strip_prefix(&home)
-                .unwrap_or(&file_info.target_path);
-            let priority = get_priority(file_info.repo_name.as_str());
-            let mut json_val = serde_json::json!({
-                "path": format!("~/{}", relative_path.display()),
-                "status": "identity_required",
-                "repo": file_info.repo_name.as_str(),
-                "dotfile_dir": file_info.dotfile_dir,
-                "reason": "encrypted_source"
-            });
-            if show_sources {
-                json_val["priority"] = serde_json::json!(priority);
-                json_val["override"] = serde_json::json!(file_info.is_overridden);
-            }
-            json_val
-        })
-        .collect();
-
-    let encrypted_error_files: Vec<_> = files_by_status
-        .get(&DotFileStatus::EncryptedError)
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|file_info| {
-            let relative_path = file_info
-                .target_path
-                .strip_prefix(&home)
-                .unwrap_or(&file_info.target_path);
-            let priority = get_priority(file_info.repo_name.as_str());
-            let mut json_val = serde_json::json!({
-                "path": format!("~/{}", relative_path.display()),
-                "status": "encrypted_error",
-                "repo": file_info.repo_name.as_str(),
-                "dotfile_dir": file_info.dotfile_dir,
-                "reason": "encrypted_source_error"
-            });
-            if show_sources {
-                json_val["priority"] = serde_json::json!(priority);
-                json_val["override"] = serde_json::json!(file_info.is_overridden);
-            }
-            json_val
-        })
-        .collect();
+    let identity_required_files = entries_for(
+        DotFileStatus::IdentityRequired,
+        "identity_required",
+        Some("encrypted_source"),
+    );
+    let encrypted_error_files = entries_for(
+        DotFileStatus::EncryptedError,
+        "encrypted_error",
+        Some("encrypted_source_error"),
+    );
 
     let modified_units: Vec<_> = unit_index
         .modified_unit_statuses()
@@ -597,14 +537,7 @@ fn show_text_status(
     cfg: &DotfileConfig,
     unit_index: &UnitIndex,
 ) {
-    // Helper function to get priority number for a repo
-    let get_priority = |repo_name: &str| -> usize {
-        cfg.repos
-            .iter()
-            .position(|r| r.name == repo_name)
-            .map(|p| p + 1)
-            .unwrap_or(0)
-    };
+    let get_priority = |repo_name: &str| repo_priority(cfg, repo_name);
 
     // Show summary
     println!("Total tracked: {} files", summary.total_files);
@@ -1355,5 +1288,41 @@ mod tests {
         }
 
         assert_eq!(status, DotFileStatus::EncryptedError);
+    }
+
+    #[test]
+    fn json_status_entry_has_expected_shape() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let target_path = home.join(".config/test");
+        let dotfile = Dotfile::new(
+            dir.path().join("repo/dots/.config/test"),
+            target_path.clone(),
+            false,
+        );
+        let file_info = FileInfo {
+            target_path,
+            dotfile,
+            repo_name: crate::dot::RepoName::new("dotfiles".to_string()),
+            dotfile_dir: "dots".to_string(),
+            is_overridden: true,
+        };
+
+        let value = file_status_json(
+            &file_info,
+            "identity_required",
+            Some("encrypted_source"),
+            &home,
+            true,
+            2,
+        );
+
+        assert_eq!(value["path"], "~/.config/test");
+        assert_eq!(value["status"], "identity_required");
+        assert_eq!(value["repo"], "dotfiles");
+        assert_eq!(value["dotfile_dir"], "dots");
+        assert_eq!(value["reason"], "encrypted_source");
+        assert_eq!(value["priority"], 2);
+        assert_eq!(value["override"], true);
     }
 }

@@ -1,11 +1,12 @@
+use super::convert::{
+    ConvertDirection, ConvertOptions, PrepareOutcome, display_target, ensure_destination_absent,
+    ensure_target_unmodified, prepare_conversion,
+};
 use crate::dot::config::DotfileConfig;
 use crate::dot::db::{Database, DotFileType};
-use crate::dot::dotfile::{Dotfile, SourceKind};
-use crate::dot::dotfilerepo::DotfileRepo;
-use crate::dot::operations::encrypt::ConvertOptions;
-use crate::dot::utils::resolve_dotfile_path;
+use crate::dot::dotfile::Dotfile;
 use crate::ui::prelude::*;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
 
@@ -16,149 +17,25 @@ pub fn decrypt_dotfile(
     options: &ConvertOptions,
     debug: bool,
 ) -> Result<()> {
-    let target_path = resolve_dotfile_path(path, options.include_root, false)?;
-    let dotfile = crate::dot::utils::resolve_dotfile_to_source(
-        config,
-        db,
-        &target_path,
-        options.repo.as_deref(),
-        options.subdir.as_deref(),
-        options.include_root,
-    )?;
+    let PrepareOutcome::Ready(ctx) =
+        prepare_conversion(config, db, path, options, ConvertDirection::Decrypt)?
+    else {
+        return Ok(());
+    };
 
-    // Issue #1 (TOCTOU recovery): detect "both plaintext and ciphertext on
-    // disk" BEFORE the SourceKind check so we can recover from a previously
-    // interrupted decrypt regardless of which file the resolver picked.
-    let (plain_candidate, cipher_candidate): (std::path::PathBuf, std::path::PathBuf) =
-        match dotfile.kind {
-            SourceKind::Age => {
-                let plain = crate::dot::encryption::strip_age_suffix(&dotfile.source_path)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "encrypted source path does not end in '.age': {}",
-                            dotfile.source_path.display()
-                        )
-                    })?;
-                (plain, dotfile.source_path.clone())
-            }
-            SourceKind::Plain => {
-                let cipher = crate::dot::encryption::append_age_suffix(&dotfile.source_path);
-                (dotfile.source_path.clone(), cipher)
-            }
-        };
-
-    if plain_candidate.exists() && cipher_candidate.exists() {
-        match try_recover_decrypt_leftover(db, &plain_candidate, &cipher_candidate)? {
-            DecryptRecovery::Recovered => {
-                emit(
-                    Level::Info,
-                    "dot.decrypt.recovered_leftover",
-                    &format!(
-                        "{} Recovered from interrupted previous decrypt: {} already matches {}",
-                        char::from(NerdFont::Info),
-                        plain_candidate.display().to_string().cyan(),
-                        cipher_candidate.display().to_string().cyan(),
-                    ),
-                    Some(serde_json::json!({
-                        "decrypted_source": plain_candidate.display().to_string(),
-                        "removed_ciphertext": cipher_candidate.display().to_string(),
-                    })),
-                );
-                return Ok(());
-            }
-            DecryptRecovery::Diverged => {
-                anyhow::bail!(
-                    "plaintext source file already exists and does NOT match the encrypted source: {}\n\
-This usually means a previous decrypt was interrupted, or the file was edited \
-out-of-band. To recover, either:\n  \
-- remove {} (drops new plaintext changes), or\n  \
-- remove {} (drops the encrypted source) and re-run.",
-                    plain_candidate.display(),
-                    plain_candidate.display(),
-                    cipher_candidate.display(),
-                );
-            }
-            DecryptRecovery::Unknown => {
-                anyhow::bail!(
-                    "plaintext source file already exists: {}\n\
-The previous decrypt may have been interrupted. If you are certain {} is the \
-correct decryption of {}, delete the encrypted file and re-run; otherwise \
-delete the plaintext file and re-run.",
-                    plain_candidate.display(),
-                    plain_candidate.display(),
-                    cipher_candidate.display(),
-                );
-            }
-        }
-    }
-
-    if dotfile.kind != SourceKind::Age {
-        anyhow::bail!(
-            "{} is already backed by a plaintext source: {}",
-            display_target(&dotfile),
-            dotfile.source_path.display()
-        );
-    }
-
-    if !dotfile.source_path.exists() {
-        anyhow::bail!(
-            "encrypted source file does not exist for {}: {}",
-            display_target(&dotfile),
-            dotfile.source_path.display()
-        );
-    }
-
-    let repo_name = crate::dot::git::get_repo_name_for_dotfile(&dotfile, config);
-    let repo_config = config
-        .repos
-        .iter()
-        .find(|r| r.name == repo_name.as_str())
-        .ok_or_else(|| anyhow!("repository '{}' not found in config", repo_name))?;
-    if repo_config.read_only {
-        anyhow::bail!("repository '{}' is read-only", repo_name);
-    }
-
-    let dotfile_repo = DotfileRepo::new(config, repo_name.to_string())?;
-
-    // Check if target exists and verify it doesn't have uncommitted modifications that would be lost
-    if dotfile.target_path.exists() {
-        let is_unmodified = dotfile
-            .is_target_unmodified(db)
-            .context("verifying target modification state")?;
-        if !is_unmodified {
-            anyhow::bail!(
-                "Target file {} has local modifications. Fetch changes with `ins dot add` or reset before decrypting.",
-                dotfile.target_path.display()
-            );
-        }
-    }
-
-    // Determine the plain source path by stripping the .age suffix.
-    // Dual-existence recovery is handled at the top of this function.
-    let plain_source_path = crate::dot::encryption::strip_age_suffix(&dotfile.source_path)
-        .ok_or_else(|| {
-            anyhow!(
-                "encrypted source file path does not end in '.age': {}",
-                dotfile.source_path.display()
-            )
-        })?;
-    if plain_source_path.exists() {
-        anyhow::bail!(
-            "plaintext source file already exists: {}",
-            plain_source_path.display()
-        );
-    }
+    ensure_target_unmodified(db, &ctx.dotfile, "decrypting")?;
+    ensure_destination_absent(&ctx.plain_path, "plaintext source file")?;
 
     // Load identities for decryption
     let identities =
         crate::dot::encryption::load_identities().context("loading age decryption identities")?;
 
     // Decrypt source to memory
-    let plaintext = crate::dot::encryption::decrypt_file_to_bytes(&dotfile.source_path, &identities)
+    let plaintext = crate::dot::encryption::decrypt_file_to_bytes(&ctx.cipher_path, &identities)
         .with_context(|| {
             format!(
                 "decrypting {} — please verify that your encryption key is in ~/.config/instant/encryption/identities/ or set $AGE_IDENTITY",
-                dotfile.source_path.display()
+                ctx.cipher_path.display()
             )
         })?;
 
@@ -169,14 +46,14 @@ delete the plaintext file and re-run.",
             &format!(
                 "{} Would decrypt {} -> {}",
                 char::from(NerdFont::Info),
-                dotfile.source_path.display().to_string().cyan(),
-                plain_source_path.display().to_string().cyan()
+                ctx.cipher_path.display().to_string().cyan(),
+                ctx.plain_path.display().to_string().cyan()
             ),
             Some(serde_json::json!({
-                "target": display_target(&dotfile),
-                "source": dotfile.source_path.display().to_string(),
-                "decrypted_source": plain_source_path.display().to_string(),
-                "repo": repo_name.as_str(),
+                "target": display_target(&ctx.dotfile),
+                "source": ctx.cipher_path.display().to_string(),
+                "decrypted_source": ctx.plain_path.display().to_string(),
+                "repo": ctx.repo_name.as_str(),
                 "dry_run": true
             })),
         );
@@ -184,35 +61,35 @@ delete the plaintext file and re-run.",
     }
 
     // Compute cipher hash before deleting the file so we can clean up cache mapping
-    let cipher_hash = Dotfile::compute_hash(&dotfile.source_path)?;
+    let cipher_hash = Dotfile::compute_hash(&ctx.cipher_path)?;
 
     // Persist plaintext source file
-    crate::dot::utils::persist_file_safely(&plain_source_path, &plaintext, "plaintext source")?;
+    crate::dot::utils::persist_file_safely(&ctx.plain_path, &plaintext, "plaintext source")?;
 
     // Remove old .age source file
-    fs::remove_file(&dotfile.source_path).with_context(|| {
-        format!(
-            "removing encrypted source {}",
-            dotfile.source_path.display()
-        )
-    })?;
+    fs::remove_file(&ctx.cipher_path)
+        .with_context(|| format!("removing encrypted source {}", ctx.cipher_path.display()))?;
 
     // Update SQLite database tracking
-    db.remove_hashes_for_path(&dotfile.source_path)?;
+    db.remove_hashes_for_path(&ctx.cipher_path)?;
     db.delete_encrypted_source(&cipher_hash)?;
 
     let plain_hash = Dotfile::hash_bytes(&plaintext);
-    db.add_hash(&plain_hash, &plain_source_path, DotFileType::SourceFile)?;
-    if dotfile.target_path.exists() {
-        db.add_hash(&plain_hash, &dotfile.target_path, DotFileType::TargetFile)?;
+    db.add_hash(&plain_hash, &ctx.plain_path, DotFileType::SourceFile)?;
+    if ctx.dotfile.target_path.exists() {
+        db.add_hash(
+            &plain_hash,
+            &ctx.dotfile.target_path,
+            DotFileType::TargetFile,
+        )?;
     }
 
     // Stage changes in Git
-    let repo_path = dotfile_repo.local_path(config)?;
-    crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, debug)
-        .with_context(|| format!("staging deletion of {}", dotfile.source_path.display()))?;
-    crate::dot::git::repo_ops::git_add(&repo_path, &plain_source_path, debug)
-        .with_context(|| format!("staging {}", plain_source_path.display()))?;
+    let repo_path = ctx.dotfile_repo.local_path(config)?;
+    crate::dot::git::repo_ops::git_add(&repo_path, &ctx.cipher_path, debug)
+        .with_context(|| format!("staging deletion of {}", ctx.cipher_path.display()))?;
+    crate::dot::git::repo_ops::git_add(&repo_path, &ctx.plain_path, debug)
+        .with_context(|| format!("staging {}", ctx.plain_path.display()))?;
 
     emit(
         Level::Success,
@@ -220,13 +97,13 @@ delete the plaintext file and re-run.",
         &format!(
             "{} Decrypted {}",
             char::from(NerdFont::Check),
-            display_target(&dotfile).green()
+            display_target(&ctx.dotfile).green()
         ),
         Some(serde_json::json!({
-            "target": display_target(&dotfile),
-            "source_removed": dotfile.source_path.display().to_string(),
-            "decrypted_source": plain_source_path.display().to_string(),
-            "repo": repo_name.as_str()
+            "target": display_target(&ctx.dotfile),
+            "source_removed": ctx.cipher_path.display().to_string(),
+            "decrypted_source": ctx.plain_path.display().to_string(),
+            "repo": ctx.repo_name.as_str()
         })),
     );
 
@@ -284,67 +161,12 @@ fn print_decrypt_history_warning() {
     );
 }
 
-/// Outcome of attempting to recover from a leftover plaintext file produced
-/// by a previously interrupted decrypt run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DecryptRecovery {
-    /// The on-disk plaintext is known (via the DB) to be the decryption of
-    /// the ciphertext currently on disk. Ciphertext was removed and the
-    /// database was re-synced; the caller can return success.
-    Recovered,
-    /// The on-disk plaintext differs from the recorded decryption of the
-    /// ciphertext. Caller must bail with a divergence error.
-    Diverged,
-    /// We have no DB record for the on-disk ciphertext, so we can't safely
-    /// decide without identities. Caller must bail with recovery
-    /// instructions.
-    Unknown,
-}
-
-fn try_recover_decrypt_leftover(
-    db: &Database,
-    plain_path: &std::path::Path,
-    cipher_path: &std::path::Path,
-) -> Result<DecryptRecovery> {
-    let cipher_hash = Dotfile::compute_hash(cipher_path)
-        .with_context(|| format!("hashing encrypted source {}", cipher_path.display()))?;
-    let recorded_plain = db.get_plain_hash_for_cipher(&cipher_hash)?;
-    let Some(recorded_plain) = recorded_plain else {
-        return Ok(DecryptRecovery::Unknown);
-    };
-
-    let plain_bytes = fs::read(plain_path)
-        .with_context(|| format!("reading leftover plaintext source {}", plain_path.display()))?;
-    let current_plain = Dotfile::hash_bytes(&plain_bytes);
-
-    if current_plain != recorded_plain {
-        return Ok(DecryptRecovery::Diverged);
-    }
-
-    // Match: the leftover plaintext is the decryption of the ciphertext.
-    // Finish the previously interrupted run by removing the ciphertext and
-    // re-syncing the source-side bookkeeping.
-    fs::remove_file(cipher_path).with_context(|| {
-        format!(
-            "removing leftover encrypted source {} during recovery",
-            cipher_path.display()
-        )
-    })?;
-    db.delete_encrypted_source(&cipher_hash)?;
-    db.add_hash(&current_plain, plain_path, DotFileType::SourceFile)?;
-    Ok(DecryptRecovery::Recovered)
-}
-
-fn display_target(dotfile: &Dotfile) -> String {
-    crate::dot::display_path(&dotfile.target_path, dotfile.is_root)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::common::TildePath;
     use crate::dot::config::Repo;
-    use crate::dot::operations::encrypt::{ConvertOptions, encrypt_dotfile};
+    use crate::dot::operations::encrypt::encrypt_dotfile;
     use crate::dot::test_util::{EnvGuard, setup_encrypt_test_env};
     use crate::dot::types::RepoMetaData;
     use age::secrecy::ExposeSecret;

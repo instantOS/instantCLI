@@ -120,40 +120,15 @@ pub(super) fn list_repositories(config: &DotfileConfig, db: &Database) -> Result
                     .unwrap_or_default();
 
                 // Show subdir priority when multiple active subdirs
-                let effective_active_subdirs = config.resolve_active_subdirs(repo_config);
-                let defaults_disabled = repo_config.active_subdirectories.is_none()
-                    && repo_manager
-                        .get_repository_info(&repo_config.name)
-                        .ok()
-                        .map(|local_repo| {
-                            local_repo
-                                .meta
-                                .default_active_subdirs
-                                .as_ref()
-                                .map(|dirs| dirs.is_empty())
-                                .unwrap_or(false)
-                        })
-                        .unwrap_or(false);
-                let active_subdirs = if effective_active_subdirs.is_empty() {
-                    if defaults_disabled {
-                        "(disabled by defaults)".to_string()
-                    } else {
-                        let repo_path = config.repos_path().join(&repo_config.name);
-                        if repo_path.join("instantdots.toml").exists() || repo_config.is_external()
-                        {
-                            "(none configured)".to_string()
-                        } else {
-                            "(none detected)".to_string()
-                        }
-                    }
+                let subdir_summary = config.repo_subdir_summary(repo_config);
+                let active_subdirs = if subdir_summary.active.len() > 1 {
+                    // Show priority order for multiple subdirs
+                    format!(
+                        "{} (priority: first=highest)",
+                        subdir_summary.active_label()
+                    )
                 } else {
-                    let subdirs = effective_active_subdirs.join(", ");
-                    if effective_active_subdirs.len() > 1 {
-                        // Show priority order for multiple subdirs
-                        format!("{} (priority: first=highest)", subdirs)
-                    } else {
-                        subdirs
-                    }
+                    subdir_summary.active_label()
                 };
 
                 // Get local path in tilde notation

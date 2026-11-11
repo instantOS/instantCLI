@@ -316,15 +316,8 @@ fn build_header_text(
     repo_config: Option<&Repo>,
     dotfile_repo: &DotfileRepo,
 ) -> String {
-    let defaults_disabled = repo_config
-        .map(|repo| repo.active_subdirectories.is_none())
-        .unwrap_or(false)
-        && dotfile_repo
-            .meta
-            .default_active_subdirs
-            .as_ref()
-            .map(|dirs| dirs.is_empty())
-            .unwrap_or(false);
+    let defaults_disabled =
+        repo_config.is_some_and(|repo| repo.defaults_disabled(&dotfile_repo.meta));
 
     if defaults_disabled {
         format!(

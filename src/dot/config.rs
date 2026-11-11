@@ -30,6 +30,49 @@ impl Repo {
     pub fn is_external(&self) -> bool {
         self.metadata.is_some()
     }
+
+    /// Whether the repository metadata explicitly disables its default active
+    /// subdirectories (`default_active_subdirs = []`) while the user has not
+    /// configured an explicit active set.
+    pub fn defaults_disabled(&self, meta: &crate::dot::types::RepoMetaData) -> bool {
+        self.active_subdirectories.is_none()
+            && meta
+                .default_active_subdirs
+                .as_ref()
+                .is_some_and(|dirs| dirs.is_empty())
+    }
+}
+
+/// Human-readable summary of a repository's effective active subdirectories.
+#[derive(Debug, Clone)]
+pub struct RepoSubdirSummary {
+    pub active: Vec<String>,
+    pub defaults_disabled: bool,
+    empty_reason: EmptyActiveSubdirsReason,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EmptyActiveSubdirsReason {
+    DisabledByDefaults,
+    NoneConfigured,
+    NoneDetected,
+}
+
+impl RepoSubdirSummary {
+    /// Comma-separated active subdirectories, or a label explaining why none
+    /// are active.
+    pub fn active_label(&self) -> String {
+        if !self.active.is_empty() {
+            return self.active.join(", ");
+        }
+
+        match self.empty_reason {
+            EmptyActiveSubdirsReason::DisabledByDefaults => "(disabled by defaults)",
+            EmptyActiveSubdirsReason::NoneConfigured => "(none configured)",
+            EmptyActiveSubdirsReason::NoneDetected => "(none detected)",
+        }
+        .to_string()
+    }
 }
 
 fn default_enabled() -> bool {
@@ -127,15 +170,7 @@ impl DotfileConfig {
         }
 
         let repo_path = self.repos_path().join(&repo.name);
-        let meta = if let Some(meta) = &repo.metadata {
-            Some(meta.clone())
-        } else if repo_path.join("instantdots.toml").exists() {
-            crate::dot::meta::read_meta(&repo_path).ok()
-        } else {
-            None
-        };
-
-        match meta {
+        match self.load_repo_meta(repo, &repo_path) {
             Some(meta) => self.resolve_active_subdirs_from_meta(&repo_path, &meta),
             None => self.detect_repo_subdirs(&repo_path),
         }
@@ -150,15 +185,7 @@ impl DotfileConfig {
         }
 
         let repo_path = self.repos_path().join(&repo.name);
-        let meta = if let Some(meta) = &repo.metadata {
-            Some(meta.clone())
-        } else if repo_path.join("instantdots.toml").exists() {
-            crate::dot::meta::read_meta(&repo_path).ok()
-        } else {
-            None
-        };
-
-        match meta {
+        match self.load_repo_meta(repo, &repo_path) {
             Some(meta) => {
                 if let Some(default_active) = meta.default_active_subdirs {
                     default_active
@@ -170,6 +197,55 @@ impl DotfileConfig {
                 }
             }
             None => self.detect_repo_subdirs(&repo_path),
+        }
+    }
+
+    /// Summarize the effective active subdirectories and why the set may be
+    /// empty. This is the single source of truth for repository subdir labels
+    /// in CLI output and menu previews.
+    pub fn repo_subdir_summary(&self, repo: &Repo) -> RepoSubdirSummary {
+        let repo_path = self.repos_path().join(&repo.name);
+
+        if let Some(subdirs) = &repo.active_subdirectories {
+            return RepoSubdirSummary {
+                active: subdirs.clone(),
+                defaults_disabled: false,
+                empty_reason: EmptyActiveSubdirsReason::NoneConfigured,
+            };
+        }
+
+        match self.load_repo_meta(repo, &repo_path) {
+            Some(meta) => {
+                let defaults_disabled = repo.defaults_disabled(&meta);
+                RepoSubdirSummary {
+                    active: self.resolve_active_subdirs_from_meta(&repo_path, &meta),
+                    defaults_disabled,
+                    empty_reason: if defaults_disabled {
+                        EmptyActiveSubdirsReason::DisabledByDefaults
+                    } else {
+                        EmptyActiveSubdirsReason::NoneConfigured
+                    },
+                }
+            }
+            None => RepoSubdirSummary {
+                active: self.detect_repo_subdirs(&repo_path),
+                defaults_disabled: false,
+                empty_reason: EmptyActiveSubdirsReason::NoneDetected,
+            },
+        }
+    }
+
+    fn load_repo_meta(
+        &self,
+        repo: &Repo,
+        repo_path: &Path,
+    ) -> Option<crate::dot::types::RepoMetaData> {
+        if let Some(meta) = &repo.metadata {
+            Some(meta.clone())
+        } else if repo_path.join("instantdots.toml").exists() {
+            crate::dot::meta::read_meta(repo_path).ok()
+        } else {
+            None
         }
     }
 
@@ -653,5 +729,72 @@ mod tests {
         assert!(contents.contains("[[repos]]"));
         assert!(contents.contains("url = \"git@github.com:me/dotfiles.git\""));
         assert!(!contents.contains("repos = [{"));
+    }
+
+    fn repo(
+        active_subdirectories: Option<Vec<String>>,
+        metadata: Option<crate::dot::types::RepoMetaData>,
+    ) -> Repo {
+        Repo {
+            url: "git@github.com:me/dotfiles.git".to_string(),
+            name: "dotfiles".to_string(),
+            branch: None,
+            active_subdirectories,
+            enabled: true,
+            read_only: false,
+            metadata,
+        }
+    }
+
+    #[test]
+    fn defaults_disabled_requires_no_explicit_active_set_and_empty_defaults() {
+        let empty_defaults = crate::dot::types::RepoMetaData {
+            default_active_subdirs: Some(Vec::new()),
+            ..crate::dot::types::RepoMetaData::default()
+        };
+
+        assert!(repo(None, None).defaults_disabled(&empty_defaults));
+
+        // An explicit active set, even an empty one, is not "defaults disabled".
+        assert!(!repo(Some(Vec::new()), None).defaults_disabled(&empty_defaults));
+
+        // Auto defaults (None) are not disabled.
+        assert!(!repo(None, None).defaults_disabled(&crate::dot::types::RepoMetaData::default()));
+    }
+
+    #[test]
+    fn repo_subdir_summary_labels_explicit_empty_as_none_configured() {
+        let config = DotfileConfig::default();
+        let summary = config.repo_subdir_summary(&repo(Some(Vec::new()), None));
+
+        assert!(summary.active.is_empty());
+        assert!(!summary.defaults_disabled);
+        assert_eq!(summary.active_label(), "(none configured)");
+    }
+
+    #[test]
+    fn repo_subdir_summary_labels_empty_defaults_as_disabled() {
+        let config = DotfileConfig::default();
+        let metadata = crate::dot::types::RepoMetaData {
+            default_active_subdirs: Some(Vec::new()),
+            ..crate::dot::types::RepoMetaData::default()
+        };
+        let summary = config.repo_subdir_summary(&repo(None, Some(metadata)));
+
+        assert!(summary.active.is_empty());
+        assert!(summary.defaults_disabled);
+        assert_eq!(summary.active_label(), "(disabled by defaults)");
+    }
+
+    #[test]
+    fn repo_subdir_summary_joins_active_subdirs() {
+        let config = DotfileConfig::default();
+        let summary = config.repo_subdir_summary(&repo(
+            Some(vec!["dots".to_string(), "extras".to_string()]),
+            None,
+        ));
+
+        assert_eq!(summary.active, vec!["dots", "extras"]);
+        assert_eq!(summary.active_label(), "dots, extras");
     }
 }

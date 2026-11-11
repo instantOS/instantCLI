@@ -97,13 +97,8 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
 
     // Try to get more info from DotfileRepo
     if let Ok(dotfile_repo) = repo_manager.get_repository_info(repo_name) {
-        let defaults_disabled = repo_config.active_subdirectories.is_none()
-            && dotfile_repo
-                .meta
-                .default_active_subdirs
-                .as_ref()
-                .map(|dirs| dirs.is_empty())
-                .unwrap_or(false);
+        let subdir_summary = config.repo_subdir_summary(repo_config);
+        let defaults_disabled = subdir_summary.defaults_disabled;
 
         // Show description if present
         if let Some(desc) = &dotfile_repo.meta.description {
@@ -139,31 +134,7 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
             builder = builder.indented_line(colors::SUBTEXT0, None, "No subdirectories configured");
         } else {
             let available = dotfile_repo.meta.dots_dirs.join(", ");
-            let active = if let Some(active_subdirs) = &repo_config.active_subdirectories {
-                if active_subdirs.is_empty() {
-                    "(none configured)".to_string()
-                } else {
-                    active_subdirs.join(", ")
-                }
-            } else if dotfile_repo.meta.dots_dirs.is_empty() {
-                "(none configured)".to_string()
-            } else {
-                let repo_path = config.repos_path().join(&repo_config.name);
-                let effective_active = config.resolve_active_subdirs(repo_config);
-                if effective_active.is_empty() {
-                    if defaults_disabled {
-                        "(disabled by defaults)".to_string()
-                    } else if repo_path.join("instantdots.toml").exists()
-                        || repo_config.is_external()
-                    {
-                        "(none configured)".to_string()
-                    } else {
-                        "(none detected)".to_string()
-                    }
-                } else {
-                    effective_active.join(", ")
-                }
-            };
+            let active = subdir_summary.active_label();
             builder = builder
                 .indented_line(colors::TEXT, None, &format!("Available: {}", available))
                 .indented_line(colors::GREEN, None, &format!("Active: {}", active));
