@@ -26,7 +26,7 @@ panic = "abort"
 lto = false
 
 [dependencies]
-instantos-ipc = { version = "0.1.0", path = "../instantOS-libs/crates/instantos-ipc" }
+instantos-ipc = { version = "0.1.0", git = "https://github.com/instantOS/instantOS-libs" }
 anyhow = "1.0.102"
 bytes = "1.11.1"
 chrono = { version = "0.4.44", features = ["serde"] }
