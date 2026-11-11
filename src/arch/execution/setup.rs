@@ -259,6 +259,33 @@ fn setup_user_dotfiles(username: &str, executor: &dyn CommandRunner) -> Result<(
 
     executor.run(&mut cmd_chsh)?;
 
+    // Run the same synchronous bootstrap as the user's first terminal so
+    // plugin managers and their caches are ready before the first login.
+    // A login su sets HOME and starts in the target user's home directory;
+    // use sh to launch exactly one interactive zsh after changing the shell.
+    if crate::arch::offline::mode() == crate::arch::offline::Mode::Strict {
+        println!(
+            "{} Strict offline install: skipping zsh initialization, which may download plugins. It will run when you first open a terminal.",
+            NerdFont::Warning
+        );
+    } else {
+        println!("Initializing zsh for user: {}", username);
+        let mut cmd_zsh = Command::new("su");
+        cmd_zsh
+            .arg("--login")
+            .arg("--shell")
+            .arg("/bin/sh")
+            .arg("--command")
+            .arg("/bin/zsh -ic exit")
+            .arg(username);
+        if !executor.run_best_effort(&mut cmd_zsh, "Zsh initialization") {
+            println!(
+                "{} Zsh setup could not finish; opening a terminal after installation will run it again.",
+                NerdFont::Warning
+            );
+        }
+    }
+
     Ok(())
 }
 
