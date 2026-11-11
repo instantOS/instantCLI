@@ -1,7 +1,9 @@
 use crate::arch::engine::{
     DiskPath, InstallContext, PartitioningMethod, StepId, StepOutcome, WizardStep,
 };
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{
+    ConfirmResult, DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder,
+};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -440,15 +442,17 @@ impl WizardStep for PartitioningMethodQuestion {
 pub struct RunCfdiskStep;
 
 #[derive(Clone)]
-enum EmptyLayoutAction {
+enum ManualLayoutAction {
+    Continue,
     ReopenCfdisk,
     ChangePartitioningMethod,
     PauseInstaller,
 }
 
-impl FzfSelectable for EmptyLayoutAction {
+impl FzfSelectable for ManualLayoutAction {
     fn fzf_display_text(&self) -> String {
         match self {
+            Self::Continue => format!("{} Continue with these partitions", NerdFont::ArrowRight),
             Self::ReopenCfdisk => format!("{} Reopen cfdisk", NerdFont::HardDrive),
             Self::ChangePartitioningMethod => {
                 format!("{} Change partitioning method", NerdFont::ArrowLeft)
@@ -459,6 +463,9 @@ impl FzfSelectable for EmptyLayoutAction {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
+            Self::Continue => {
+                FzfPreview::Text("Select which partitions to use for the installation.".to_string())
+            }
             Self::ReopenCfdisk => FzfPreview::Text(
                 "Open cfdisk again and create the required partitions.".to_string(),
             ),
@@ -467,6 +474,51 @@ impl FzfSelectable for EmptyLayoutAction {
             }
             Self::PauseInstaller => FzfPreview::Text("Open the installer pause menu.".to_string()),
         }
+    }
+}
+
+impl RunCfdiskStep {
+    /// None means the user wants to reopen cfdisk.
+    fn review_layout(disk_path: &str, has_partitions: bool) -> Result<Option<StepOutcome>> {
+        let mut actions = Vec::new();
+        if has_partitions {
+            actions.push(ManualLayoutAction::Continue);
+        }
+        actions.extend([
+            ManualLayoutAction::ReopenCfdisk,
+            ManualLayoutAction::ChangePartitioningMethod,
+            ManualLayoutAction::PauseInstaller,
+        ]);
+
+        let (icon, prompt) = if has_partitions {
+            (
+                NerdFont::HardDrive,
+                format!("Manual partitioning on {disk_path}"),
+            )
+        } else {
+            (
+                NerdFont::Warning,
+                format!("No partitions found on {disk_path}"),
+            )
+        };
+        let result = FzfWrapper::builder()
+            .header(HeaderBuilder::new(icon, prompt).build())
+            .items(actions)
+            .padded()
+            .select_one()?;
+
+        Ok(match result {
+            DialogOutcome::Submitted(ManualLayoutAction::Continue) => Some(StepOutcome::Completed),
+            DialogOutcome::Submitted(ManualLayoutAction::ReopenCfdisk) => None,
+            DialogOutcome::Submitted(ManualLayoutAction::ChangePartitioningMethod) => {
+                Some(StepOutcome::revisit(
+                    StepId::PartitioningMethod,
+                    "Choose a different partitioning method.",
+                ))
+            }
+            DialogOutcome::Submitted(ManualLayoutAction::PauseInstaller)
+            | DialogOutcome::Cancelled => Some(StepOutcome::Pause),
+        })
     }
 }
 
@@ -523,42 +575,9 @@ impl WizardStep for RunCfdiskStep {
                 anyhow::ensure!(status.success(), "udevadm settle failed after cfdisk");
             }
 
-            if !super::partition::list_partitions(disk_path)?.is_empty() {
-                return Ok(StepOutcome::Completed);
-            }
-
-            let result = FzfWrapper::builder()
-                .header(
-                    HeaderBuilder::new(
-                        NerdFont::Warning,
-                        format!("No partitions found on {disk_path}"),
-                    )
-                    .build(),
-                )
-                .items(vec![
-                    EmptyLayoutAction::ReopenCfdisk,
-                    EmptyLayoutAction::ChangePartitioningMethod,
-                    EmptyLayoutAction::PauseInstaller,
-                ])
-                .padded()
-                .select_one()?;
-
-            match result {
-                crate::menu_utils::DialogOutcome::Submitted(EmptyLayoutAction::ReopenCfdisk) => {
-                    continue;
-                }
-                crate::menu_utils::DialogOutcome::Submitted(
-                    EmptyLayoutAction::ChangePartitioningMethod,
-                ) => {
-                    return Ok(StepOutcome::revisit(
-                        StepId::PartitioningMethod,
-                        "Choose a different partitioning method.",
-                    ));
-                }
-                crate::menu_utils::DialogOutcome::Submitted(EmptyLayoutAction::PauseInstaller)
-                | crate::menu_utils::DialogOutcome::Cancelled => {
-                    return Ok(StepOutcome::Pause);
-                }
+            let has_partitions = !super::partition::list_partitions(disk_path)?.is_empty();
+            if let Some(outcome) = Self::review_layout(disk_path, has_partitions)? {
+                return Ok(outcome);
             }
         }
     }
@@ -567,6 +586,46 @@ impl WizardStep for RunCfdiskStep {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_layout_can_change_method_with_or_without_existing_partitions() {
+        for (has_partitions, change_method_index) in [(false, 1), (true, 2)] {
+            let _mock = crate::menu_utils::MockQueue::new()
+                .select_index(change_method_index)
+                .guard();
+            assert!(matches!(
+                RunCfdiskStep::review_layout("/dev/vda", has_partitions).unwrap(),
+                Some(StepOutcome::Revisit {
+                    step: StepId::PartitioningMethod,
+                    ..
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn manual_layout_only_offers_continue_when_partitions_exist() {
+        for has_partitions in [false, true] {
+            let _mock = crate::menu_utils::MockQueue::new().select_index(0).guard();
+            let outcome = RunCfdiskStep::review_layout("/dev/vda", has_partitions).unwrap();
+            if has_partitions {
+                assert!(matches!(outcome, Some(StepOutcome::Completed)));
+            } else {
+                assert!(outcome.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn cancelling_manual_layout_opens_pause_menu() {
+        let _mock = crate::menu_utils::MockQueue::new()
+            .cancel_selection()
+            .guard();
+        assert!(matches!(
+            RunCfdiskStep::review_layout("/dev/vda", true).unwrap(),
+            Some(StepOutcome::Pause)
+        ));
+    }
 
     #[test]
     fn disk_question_rejects_unsafe_and_empty_paths() {
