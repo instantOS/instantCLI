@@ -10,7 +10,6 @@ mod wizard_engine;
 pub use context::{
     DataKey, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, KeyId,
 };
-pub(crate) use install_plan::SessionAnswers;
 #[cfg(test)]
 pub(crate) use install_plan::test_install_plan;
 pub use install_plan::{
@@ -18,6 +17,7 @@ pub use install_plan::{
     EncryptionPassword, EncryptionPlan, FilesystemPlan, Hostname, InstallPlan, LocaleName,
     LoginPassword, ManualPartitions, PartitionPath, StoragePlan, Timezone, Username,
 };
+pub(crate) use install_plan::{FREE_SPACE_ANSWER, SessionAnswers};
 pub use step::{AskPolicy, AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};
 pub use types::{AnswerPrivacy, BootMode, GpuKind, Kernel, PartitioningMethod, StepId, SystemInfo};

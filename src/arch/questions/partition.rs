@@ -348,7 +348,10 @@ mod tests {
 
     #[test]
     fn dual_boot_free_space_marker_is_not_a_partition() {
-        assert!(!partition_belongs_to_disk("__free_space__", "/dev/sda"));
+        assert!(!partition_belongs_to_disk(
+            crate::arch::engine::FREE_SPACE_ANSWER,
+            "/dev/sda"
+        ));
     }
 
     #[test]

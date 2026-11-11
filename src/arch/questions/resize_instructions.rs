@@ -1,5 +1,7 @@
 use crate::arch::dualboot::{ResizeStatus, ResizeVerifier, Shrinkability};
-use crate::arch::engine::{DualBootResizeMethod, InstallContext, StepId, StepOutcome, WizardStep};
+use crate::arch::engine::{
+    DualBootResizeMethod, FREE_SPACE_ANSWER, InstallContext, StepId, StepOutcome, WizardStep,
+};
 use crate::common::blockdev::Filesystem;
 use crate::common::format::format_size;
 use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper};
@@ -25,7 +27,7 @@ impl WizardStep for ResizeWorkflowStep {
 
         let needs_resize = context
             .get_answer(&StepId::DualBootPartition)
-            .map(|s| s != "__free_space__")
+            .map(|s| s != FREE_SPACE_ANSWER)
             .unwrap_or(true);
 
         is_dualboot && needs_resize

@@ -392,6 +392,10 @@ pub struct EncryptionPlan {
     pub password: EncryptionPassword,
 }
 
+/// Wizard answer meaning "install into existing free space" instead of
+/// resizing a partition. This is a stored value, not a display label.
+pub(crate) const FREE_SPACE_ANSWER: &str = "__free_space__";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualBootTarget {
     ExistingFreeSpace,
@@ -594,7 +598,7 @@ impl TryFrom<&InstallContext> for InstallPlan {
                     bail!("dual-boot partitioning cannot use automatic disk encryption")
                 }
                 let selected = required(StepId::DualBootPartition)?;
-                let target = if selected == "__free_space__" {
+                let target = if selected == FREE_SPACE_ANSWER {
                     DualBootTarget::ExistingFreeSpace
                 } else {
                     let partition = PartitionPath::parse(selected)?;
@@ -808,7 +812,7 @@ mod tests {
         let mut context = required_context("dual_boot");
         context.set_answer(StepId::UseEncryption, "yes".to_owned());
         context.set_answer(StepId::EncryptionPassword, "secret".to_owned());
-        context.set_answer(StepId::DualBootPartition, "__free_space__".to_owned());
+        context.set_answer(StepId::DualBootPartition, FREE_SPACE_ANSWER.to_owned());
 
         let error = InstallPlan::try_from(&context).unwrap_err();
         assert!(error.to_string().contains("dual-boot"));

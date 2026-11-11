@@ -1,6 +1,6 @@
 use crate::arch::dualboot::types::Shrinkability;
 use crate::arch::engine::{
-    DualBootSize, InstallContext, PartitionPath, StepId, StepOutcome, WizardStep,
+    DualBootSize, FREE_SPACE_ANSWER, InstallContext, PartitionPath, StepId, StepOutcome, WizardStep,
 };
 use crate::arch::questions::partition::partition_belongs_to_disk;
 use crate::common::format::format_size;
@@ -114,7 +114,7 @@ impl WizardStep for DualBootPartitionQuestion {
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
         // The "use existing free space" marker is disk-independent
-        if answer == "__free_space__" {
+        if answer == FREE_SPACE_ANSWER {
             return Ok(());
         }
 
@@ -189,7 +189,7 @@ impl WizardStep for DualBootPartitionQuestion {
                     format_size(free_space_bytes),
                     NerdFont::ArrowRight
                 ))?;
-                return Ok(StepOutcome::Answer("__free_space__".to_string()));
+                return Ok(StepOutcome::Answer(FREE_SPACE_ANSWER.to_string()));
             } else {
                 let mut message = format!(
                     "{} No shrinkable partitions found on {} and not enough contiguous free space.\n\
@@ -268,7 +268,7 @@ impl WizardStep for DualBootSizeQuestion {
             .get_answer(&StepId::DualBootPartition)
             .context("No partition selected")?;
 
-        if part_path == "__free_space__" {
+        if part_path == FREE_SPACE_ANSWER {
             let disk_path = context
                 .get_answer(&StepId::Disk)
                 .context("No disk selected")?;
@@ -413,7 +413,7 @@ mod tests {
         let context = context_with_disk("/dev/sda");
         assert!(
             DualBootPartitionQuestion
-                .validate(&context, "__free_space__")
+                .validate(&context, FREE_SPACE_ANSWER)
                 .is_ok()
         );
     }
