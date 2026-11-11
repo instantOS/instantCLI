@@ -12,6 +12,11 @@ default = []
 vendored = ["reqwest/native-tls-vendored", "rusqlite/bundled"]
 cross-compile = ["vendored"]
 
+# Save sync reads every byte even when nothing changed. Keep SHA-256 fast
+# in debug builds without changing its algorithm or optimizing the whole app.
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.upload]
 inherits = "dev"
 opt-level = "z"
@@ -21,6 +26,7 @@ panic = "abort"
 lto = false
 
 [dependencies]
+instantos-ipc = { version = "0.1.0", path = "../instantOS-libs/crates/instantos-ipc" }
 anyhow = "1.0.102"
 bytes = "1.11.1"
 chrono = { version = "0.4.44", features = ["serde"] }

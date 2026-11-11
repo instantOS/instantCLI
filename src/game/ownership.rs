@@ -110,6 +110,15 @@ impl InstantGameConfig {
             ));
         }
         let config_path = normalized_path(&crate::common::paths::games_config_dir()?)?;
+        let repository = self.repo.as_path();
+        let repository = if !paths.is_empty()
+            && !repository.as_os_str().is_empty()
+            && (repository.is_absolute() || repository.exists())
+        {
+            Some(normalized_path(repository)?)
+        } else {
+            None
+        };
         for (owner, path) in &paths {
             super::utils::safeguards::ensure_safe_path(
                 path,
@@ -120,20 +129,25 @@ impl InstantGameConfig {
                 "{} contains InstantCLI's configuration; choose the save-data directory",
                 owner.label()
             );
-            let repository = self.repo.as_path();
-            if !repository.as_os_str().is_empty()
-                && (repository.is_absolute() || repository.exists())
-            {
-                let repository = normalized_path(repository)?;
+            if let Some(repository) = &repository {
                 ensure!(
-                    !repository.starts_with(path) && !path.starts_with(&repository),
+                    !repository.starts_with(path) && !path.starts_with(repository),
                     "{} overlaps its backup repository",
                     owner.label()
                 );
             }
         }
+        // Observe each path once per validation, rather than issuing two stat
+        // calls for every pair. Keep these observations local: a later sync
+        // owner must revalidate paths after taking its lock, including changes
+        // to symlinks and hard links since the previous owner was processed.
+        #[cfg(unix)]
+        let metadata: Vec<_> = paths
+            .iter()
+            .map(|(_, path)| std::fs::metadata(path).ok())
+            .collect();
         for (index, (owner, path)) in paths.iter().enumerate() {
-            for (other, other_path) in &paths[..index] {
+            for (_other_index, (other, other_path)) in paths[..index].iter().enumerate() {
                 ensure!(
                     !path.starts_with(other_path) && !other_path.starts_with(path),
                     "Conflicting save ownership: {} ({}) overlaps {} ({}). For games sharing the exact same path, use game group migrate to convert all affected games together. Independent cards must use separate paths",
@@ -144,7 +158,7 @@ impl InstantGameConfig {
                 );
                 // canonicalize handles symlinks; dev/inode catches hard-linked files.
                 #[cfg(unix)]
-                if let (Ok(a), Ok(b)) = (std::fs::metadata(path), std::fs::metadata(other_path)) {
+                if let (Some(a), Some(b)) = (&metadata[index], &metadata[_other_index]) {
                     use std::os::unix::fs::MetadataExt;
                     ensure!(
                         a.dev() != b.dev() || a.ino() != b.ino(),
@@ -428,6 +442,39 @@ mod tests {
             PathContentKind::File,
         );
         assert!(config.validate_ownership(&local).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn revalidates_file_identity_when_missing_or_independent_paths_become_hard_links() -> Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        let config = InstantGameConfig::default();
+        let mut local = InstallationsConfig::default();
+        for (name, path) in [("A", &first), ("B", &second)] {
+            local.installations.push(GameInstallation::with_kind(
+                name,
+                TildePath::new(path.clone()),
+                PathContentKind::File,
+            ));
+        }
+
+        // Missing save paths are valid, and identical bytes alone do not make
+        // two independently owned files conflict.
+        config.validate_ownership(&local)?;
+        std::fs::write(&first, b"card")?;
+        std::fs::write(&second, b"card")?;
+        config.validate_ownership(&local)?;
+
+        std::fs::remove_file(&second)?;
+        std::fs::hard_link(&first, &second)?;
+        let error = config.validate_ownership(&local).unwrap_err();
+        assert!(error.to_string().contains("refer to the same inode"));
+
+        std::fs::remove_file(&second)?;
+        config.validate_ownership(&local)?;
         Ok(())
     }
 

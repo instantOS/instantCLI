@@ -112,6 +112,8 @@ pub enum PreviewId {
     SystemdService,
     #[value(name = "game-save")]
     GameSave,
+    #[value(name = "game-info")]
+    GameInfo,
     /// Per-keybind rich preview for `ins keyhelp`.
     #[value(name = "keyhelp")]
     Keyhelp,
@@ -250,6 +252,7 @@ fn should_use_collect_preview_cache(id: PreviewId, ctx: &PreviewContext) -> bool
                 | PreviewId::DefaultFileManager
                 | PreviewId::DefaultPdfViewer
                 | PreviewId::GameSave
+                | PreviewId::GameInfo
         )
 }
 
@@ -446,6 +449,10 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::Setting => render_setting_preview(ctx),
         PreviewId::SystemdService => render_systemd_service_preview(ctx),
         PreviewId::GameSave => game_save::render_game_save_preview(ctx),
+        PreviewId::GameInfo => Ok(match ctx.key() {
+            Some(name) => crate::game::games::selection::render_game_preview(name),
+            None => "No game selected".to_string(),
+        }),
         PreviewId::Keyhelp => keyhelp::render_keyhelp_preview(ctx),
         // Package previews are always handled by try_render_streaming
         _ => unreachable!("preview {id} should be handled by streaming path"),

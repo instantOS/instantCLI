@@ -9,7 +9,7 @@ use crate::game::deps::manager::{InstallDependencyOptions, install_dependency};
 use crate::game::games::prompts;
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::games::{AddGameOptions, GameManager};
-use crate::game::launch_command::LaunchCommand;
+use crate::game::platforms::{LaunchCommandBuilderContext, build_optional_launch_command};
 use crate::menu::protocol;
 use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::nerd_font::NerdFont;
@@ -501,7 +501,9 @@ fn handle_candidate(
     let game_name = candidate.name.clone();
 
     if candidate.game.is_none() {
-        ensure_game_entry(&candidate, game_config)?;
+        if !ensure_game_entry(&candidate, game_config)? {
+            return Ok(());
+        }
         *game_config = InstantGameConfig::load().context("Failed to reload game configuration")?;
     }
 
@@ -550,9 +552,9 @@ fn handle_candidate(
 fn ensure_game_entry(
     candidate: &SetupCandidate,
     game_config: &mut InstantGameConfig,
-) -> Result<()> {
+) -> Result<bool> {
     if candidate.game.is_some() {
-        return Ok(());
+        return Ok(true);
     }
 
     println!(
@@ -562,7 +564,21 @@ fn ensure_game_entry(
     );
 
     let description = prompts::get_game_description()?;
-    let launch_command = prompts::get_launch_command()?;
+    let context = LaunchCommandBuilderContext::from_game(
+        candidate
+            .installation
+            .as_ref()
+            .and_then(|installation| installation.saves.as_ref())
+            .map(|saves| saves.save_path.as_path()),
+        candidate
+            .installation
+            .as_ref()
+            .and_then(|installation| installation.launch_command.as_ref()),
+    );
+    let launch_command = match build_optional_launch_command(Some(&context))? {
+        crate::menu_utils::DialogOutcome::Submitted(command) => command,
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
+    };
 
     let mut game = Game::new(candidate.name.clone());
 
@@ -570,11 +586,7 @@ fn ensure_game_entry(
         game.description = Some(description.trim().to_string());
     }
 
-    if !launch_command.trim().is_empty() {
-        game.launch_command = Some(LaunchCommand::from_shell_or_manual(
-            launch_command.trim().to_string(),
-        ));
-    }
+    game.launch_command = launch_command;
 
     game_config.games.push(game);
     game_config.save()?;
@@ -590,7 +602,7 @@ fn ensure_game_entry(
         None,
     );
 
-    Ok(())
+    Ok(true)
 }
 
 struct SetupPreview<'a> {

@@ -4,6 +4,7 @@ use crate::game::utils::save_files::{
 };
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -27,7 +28,10 @@ impl FzfSelectable for GameMenuEntry {
                 let badge = if *is_installed {
                     format!(" {}", format_with_color("[installed]", colors::GREEN))
                 } else {
-                    format!(" {}", format_with_color("[not set up]", colors::YELLOW))
+                    format!(
+                        " {}",
+                        format_with_color("[backups not configured]", colors::YELLOW)
+                    )
                 };
                 format!(
                     "{} {}{}",
@@ -86,29 +90,9 @@ impl FzfSelectable for GameMenuEntry {
         use crate::ui::preview::PreviewBuilder;
 
         match self {
-            GameMenuEntry::Game(name, _) => {
-                // Try to load game for preview
-                match (InstantGameConfig::load(), InstallationsConfig::load()) {
-                    (Ok(game_config), Ok(installations)) => {
-                        let game = game_config.games.iter().find(|g| g.name.0 == *name);
-                        let installation = installations
-                            .installations
-                            .iter()
-                            .find(|inst| inst.game_name.0 == *name);
-
-                        if let Some(game) = game {
-                            FzfPreview::Text(game.generate_preview_text(
-                                &game.description,
-                                &game.launch_command,
-                                installation,
-                            ))
-                        } else {
-                            FzfPreview::Text(format!("Game: {}", name))
-                        }
-                    }
-                    _ => FzfPreview::Text(format!("Game: {}", name)),
-                }
-            }
+            // fzf runs this only for the highlighted game. Preparing the list
+            // must not load both configs and walk every game's save directory.
+            GameMenuEntry::Game(_, _) => FzfPreview::Command(preview_command(PreviewId::GameInfo)),
             GameMenuEntry::AddGame => PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Game")
                 .text("Add a new game to track.")
@@ -165,6 +149,28 @@ impl FzfSelectable for GameMenuEntry {
                 .text("and return to the command prompt.")
                 .build(),
         }
+    }
+}
+
+pub(crate) fn render_game_preview(name: &str) -> String {
+    match (InstantGameConfig::load(), InstallationsConfig::load()) {
+        (Ok(game_config), Ok(installations)) => {
+            let game = game_config.games.iter().find(|game| game.name.0 == name);
+            let installation = installations
+                .installations
+                .iter()
+                .find(|installation| installation.game_name.0 == name);
+
+            match game {
+                Some(game) => game.generate_preview_text(
+                    &game.description,
+                    &game.launch_command,
+                    installation,
+                ),
+                None => format!("Game: {name}"),
+            }
+        }
+        _ => format!("Game: {name}"),
     }
 }
 
@@ -252,7 +258,8 @@ impl Game {
                 Some(binding) => builder
                     .field("Save path", &binding.saves.save_path.display_string())
                     .text("Restoring rolls back the whole shared group."),
-                None => builder.text("Shared saves are not bound on this device."),
+                None => builder
+                    .text("Backups not configured: shared saves are not bound on this device."),
             };
             return builder.build_string();
         }
@@ -301,14 +308,13 @@ impl Game {
                 .line(
                     colors::YELLOW,
                     Some(NerdFont::Warning),
-                    "Not set up on this device",
+                    "Backups not configured",
                 )
                 .blank()
-                .text("This game is registered but hasn't been configured")
-                .text("on this device yet.")
+                .text("Saves on this device are not backed up or restored.")
                 .blank()
-                .text("To set up this game, select it from the menu and")
-                .text("choose \"Setup\" to configure the save path. You'll")
+                .text("Launch the game once if its save files don't exist yet.")
+                .text("Then choose \"Set up saves\" from its menu. You'll")
                 .text("be prompted to:")
                 .bullet("Locate the game's save data directory")
                 .bullet("Optionally restore from existing backups");

@@ -1,6 +1,8 @@
 use super::manager::GameCreationContext;
 use crate::common::TildePath;
-use crate::game::config::PathContentKind;
+use crate::game::config::OwnedSaves;
+use crate::game::launch_command::LaunchCommand;
+use crate::game::platforms::{LaunchCommandBuilderContext, build_optional_launch_command};
 use crate::game::utils::path::prompt_for_save_path;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
@@ -17,6 +19,7 @@ pub struct AddGameOptions {
     pub launch_command: Option<String>,
     pub save_path: Option<String>,
     pub create_save_path: bool,
+    pub skip_save_setup: bool,
     pub no_cache: bool,
     pub discovery_launch_hint: Option<crate::game::platforms::discovery::DiscoveryLaunchHint>,
 }
@@ -24,9 +27,8 @@ pub struct AddGameOptions {
 pub(super) struct ResolvedGameDetails {
     pub(super) name: String,
     pub(super) description: Option<String>,
-    pub(super) launch_command: Option<String>,
-    pub(super) save_path: TildePath,
-    pub(super) save_path_type: PathContentKind,
+    pub(super) launch_command: Option<LaunchCommand>,
+    pub(super) saves: Option<OwnedSaves>,
 }
 
 pub(super) fn resolve_add_game_details(
@@ -41,9 +43,14 @@ pub(super) fn resolve_add_game_details(
         launch_command,
         save_path,
         create_save_path,
+        skip_save_setup,
         no_cache: _,
-        discovery_launch_hint: _,
+        discovery_launch_hint,
     } = options;
+    anyhow::ensure!(
+        !skip_save_setup || (save_path.is_none() && !create_save_path),
+        "Skipping save setup cannot be combined with a save path or directory creation"
+    );
 
     let game_name = match name {
         Some(raw_name) => {
@@ -76,11 +83,21 @@ pub(super) fn resolve_add_game_details(
     };
 
     let launch_command = match launch_command {
-        Some(command) => some_if_not_empty(command),
+        Some(command) => some_if_not_empty(command).map(LaunchCommand::from_shell_or_manual),
         None if interactive_prompts => {
-            match prompt_optional_text("Enter launch command (optional)")? {
-                Some(command) => some_if_not_empty(command),
-                None => return Ok(None),
+            let save_path_hint = save_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(TildePath::from_str);
+            let mut builder_context = LaunchCommandBuilderContext::from_game(
+                save_path_hint.as_ref().map(TildePath::as_path),
+                None,
+            );
+            builder_context.add_discovery_hint(discovery_launch_hint.as_ref());
+            match build_optional_launch_command(Some(&builder_context))? {
+                crate::menu_utils::DialogOutcome::Submitted(command) => command,
+                crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
             }
         }
         None => None,
@@ -115,24 +132,28 @@ pub(super) fn resolve_add_game_details(
                 }
             }
 
-            tilde_path
+            Some(tilde_path)
         }
-        None => match prompt_manual_save_path(&game_name)? {
-            Some(path) => path,
-            None => return Ok(None),
+        None if skip_save_setup => None,
+        None => match super::prompts::get_optional_save_path(&game_name)? {
+            crate::menu_utils::DialogOutcome::Submitted(path) => path,
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
         },
     };
 
-    ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory)?;
-
-    let save_path_type = super::relocate::determine_save_path_type(&save_path)?;
+    let saves = save_path
+        .map(|path| {
+            ensure_safe_path(path.as_path(), PathUsage::SaveDirectory)?;
+            let kind = super::relocate::determine_save_path_type(&path)?;
+            Ok::<_, anyhow::Error>(OwnedSaves::new(path, kind))
+        })
+        .transpose()?;
 
     Ok(Some(ResolvedGameDetails {
         name: game_name,
         description,
         launch_command,
-        save_path,
-        save_path_type,
+        saves,
     }))
 }
 
@@ -222,4 +243,178 @@ pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<TildePat
             PathInputSelection::Cancelled => Ok(None),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::config::{InstallationsConfig, InstantGameConfig};
+    use crate::game::launch_command::LaunchCommandKind;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+
+    fn context() -> GameCreationContext {
+        GameCreationContext {
+            config: InstantGameConfig::default(),
+            installations: InstallationsConfig::default(),
+        }
+    }
+
+    #[test]
+    fn manual_add_uses_builder_and_preserves_structured_command_and_wrappers() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let saves = temp.path().join("compatdata/12345/pfx/saves");
+        fs::create_dir_all(&saves)?;
+        let context = context();
+        let _guard = MockQueue::new()
+            .input_string("New Game")
+            .select_index(3) // Steam
+            .input_string("12345")
+            .confirm_yes()
+            .checklist_confirm(vec![0]) // Gamemode
+            .select_index(0) // Configure save backups now
+            .select_index(0) // Choose the save path only after building the command
+            .input_string(saves.to_string_lossy())
+            .confirm_yes()
+            .guard();
+        let details = resolve_add_game_details(
+            AddGameOptions {
+                description: Some("Description".into()),
+                ..Default::default()
+            },
+            &context,
+        )?
+        .context("Game creation was canceled")?;
+
+        assert_eq!(details.name, "New Game");
+        assert_eq!(
+            details
+                .saves
+                .as_ref()
+                .context("Save setup was skipped")?
+                .save_path
+                .as_path(),
+            saves
+        );
+        let command = details.launch_command.context("No command was built")?;
+        assert!(
+            matches!(command.kind, LaunchCommandKind::Steam(ref steam) if steam.app_id == 12345)
+        );
+        assert!(command.wrappers.gamemode);
+        assert_eq!(scripted_responses_remaining(), 0);
+        assert!(context.config.games.is_empty());
+        assert!(context.installations.installations.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn canceling_launcher_selection_does_not_create_a_game_or_save_directory() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let saves = temp.path().join("not-created");
+        let context = context();
+        let _guard = MockQueue::new()
+            .input_string("New Game")
+            .cancel_selection()
+            .guard();
+        let details = resolve_add_game_details(
+            AddGameOptions {
+                description: Some("Description".into()),
+                save_path: Some(saves.to_string_lossy().into_owned()),
+                create_save_path: true,
+                ..Default::default()
+            },
+            &context,
+        )?;
+        assert!(details.is_none());
+        assert_eq!(scripted_responses_remaining(), 0);
+        assert!(context.config.games.is_empty());
+        assert!(context.installations.installations.is_empty());
+        assert!(!saves.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn named_cli_add_does_not_prompt_for_optional_launch_command() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let _guard = MockQueue::new().cancel_selection().guard();
+        let details = resolve_add_game_details(
+            AddGameOptions {
+                name: Some("CLI Game".into()),
+                save_path: Some(temp.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+            &context(),
+        )?
+        .context("Game creation was canceled")?;
+        assert!(details.launch_command.is_none());
+        assert_eq!(scripted_responses_remaining(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn deferring_saves_keeps_the_game_and_launch_command_without_a_binding() -> Result<()> {
+        let _guard = MockQueue::new()
+            .input_string("New Wine Game")
+            .select_index(1) // Set up saves later
+            .confirm_yes() // Acknowledge the lack of backups
+            .guard();
+        let details = resolve_add_game_details(
+            AddGameOptions {
+                description: Some("New installation".into()),
+                launch_command: Some("wine /games/new/game.exe".into()),
+                ..Default::default()
+            },
+            &context(),
+        )?
+        .context("Game creation was canceled")?;
+        assert_eq!(details.name, "New Wine Game");
+        assert!(details.saves.is_none());
+        assert!(matches!(
+            details.launch_command.context("Launcher lost")?.kind,
+            LaunchCommandKind::Wine(_)
+        ));
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn declining_the_no_backups_warning_returns_to_save_setup() -> Result<()> {
+        let _guard = MockQueue::new()
+            .input_string("New Game")
+            .select_index(1)
+            .confirm_no()
+            .cancel_selection()
+            .guard();
+        assert!(
+            resolve_add_game_details(
+                AddGameOptions {
+                    description: Some("Description".into()),
+                    launch_command: Some("game".into()),
+                    ..Default::default()
+                },
+                &context()
+            )?
+            .is_none()
+        );
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn cli_can_explicitly_defer_saves_without_prompting() -> Result<()> {
+        let _guard = MockQueue::new().cancel_selection().guard();
+        let details = resolve_add_game_details(
+            AddGameOptions {
+                name: Some("CLI Game".into()),
+                launch_command: Some("game".into()),
+                skip_save_setup: true,
+                ..Default::default()
+            },
+            &context(),
+        )?
+        .context("Game creation was canceled")?;
+        assert!(details.saves.is_none());
+        assert!(details.launch_command.is_some());
+        assert_eq!(scripted_responses_remaining(), 1);
+        Ok(())
+    }
 }
