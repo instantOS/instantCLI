@@ -54,11 +54,11 @@ pub(crate) const SWAY_CONFIG: IpcConfig = IpcConfig {
 };
 
 fn i3_selector(id: &str) -> String {
-    format!("[class=\"{id}\"]")
+    format!("[class=\"^{}$\"]", id.replace('.', "[.]"))
 }
 
 fn sway_selector(id: &str) -> String {
-    format!("[app_id=\"{id}\"]")
+    format!("[app_id=\"^{}$\"]", id.replace('.', "[.]"))
 }
 
 pub(crate) fn window_class_of(node: &Value) -> Option<String> {
@@ -194,8 +194,8 @@ pub(crate) fn get_all_scratchpad_windows(config: &IpcConfig) -> Result<Vec<Scrat
     if let Some(nodes) = find_scratchpad_nodes(&parsed) {
         for node in nodes {
             if let (Some(name), Some(id)) = (get_window_name(node), (config.id_of)(node)) {
-                // Check if this is a scratchpad window (id starts with "scratchpad_")
-                if let Some(scratchpad_name) = id.strip_prefix("scratchpad_") {
+                // Check if this is a scratchpad window (id starts with "org.instantos.scratchpad.")
+                if let Some(scratchpad_name) = crate::scratchpad::config::name_from_identity(&id) {
                     let is_visible = get_node_visible_field(node).unwrap_or(false);
                     scratchpads.push(ScratchpadWindowInfo {
                         name: scratchpad_name.to_string(),
@@ -215,7 +215,7 @@ pub(crate) fn get_all_scratchpad_windows(config: &IpcConfig) -> Result<Vec<Scrat
 /// then configure it for scratchpad use.
 pub(crate) fn create_and_wait(config: &IpcConfig, scratchpad: &ScratchpadConfig) -> Result<()> {
     let window_id = scratchpad.window_class();
-    scratchpad.launcher().spawn_detached()?;
+    scratchpad.launcher()?.spawn_detached()?;
 
     // Wait for window
     let mut attempts = 0;
@@ -328,26 +328,38 @@ mod tests {
 
     #[test]
     fn selector_and_hide_commands_match_per_compositor_syntax() {
+        let identity = "org.instantos.scratchpad.notes";
+        assert_eq!(
+            i3_selector(identity),
+            "[class=\"^org[.]instantos[.]scratchpad[.]notes$\"]"
+        );
+        assert_eq!(
+            sway_selector(identity),
+            "[app_id=\"^org[.]instantos[.]scratchpad[.]notes$\"]"
+        );
         let window_id = "test_class";
 
-        assert_eq!((I3_CONFIG.selector)(window_id), "[class=\"test_class\"]");
+        assert_eq!((I3_CONFIG.selector)(window_id), "[class=\"^test_class$\"]");
         assert_eq!(
             format!(
                 "{}{}",
                 (I3_CONFIG.selector)(window_id),
                 I3_CONFIG.hide_suffix
             ),
-            "[class=\"test_class\"] move scratchpad"
+            "[class=\"^test_class$\"] move scratchpad"
         );
 
-        assert_eq!((SWAY_CONFIG.selector)(window_id), "[app_id=\"test_class\"]");
+        assert_eq!(
+            (SWAY_CONFIG.selector)(window_id),
+            "[app_id=\"^test_class$\"]"
+        );
         assert_eq!(
             format!(
                 "{}{}",
                 (SWAY_CONFIG.selector)(window_id),
                 SWAY_CONFIG.hide_suffix
             ),
-            "[app_id=\"test_class\"] move to scratchpad"
+            "[app_id=\"^test_class$\"] move to scratchpad"
         );
     }
 }

@@ -422,6 +422,22 @@ pub fn scratchpad_config() -> ScratchpadConfig {
     ScratchpadConfig::with_launcher("insmenu".into(), launcher, 50, 60)
 }
 
+async fn wait_for_scratchpad_registration(
+    mut registered: impl FnMut() -> Result<bool>,
+) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if registered()? {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            tokio::time::Instant::now() < deadline,
+            "menu terminal did not register as a scratchpad; expected app ID org.instantos.scratchpad.insmenu"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// Run the menu server in --inside mode
 pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
     // Create server with scratchpad config for self-management
@@ -431,6 +447,12 @@ pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
         Some(scratchpad_config())
     };
     let compositor = CompositorType::detect();
+    // The terminal can start even when it ignores its app ID. Do not leave an
+    // orphan server behind when the launcher times out waiting for registration.
+    if let Some(config) = scratchpad_config.as_ref() {
+        wait_for_scratchpad_registration(|| compositor.provider().is_window_running(config))
+            .await?;
+    }
     let mut server = MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config)?;
 
     // When running --inside, the scratchpad is initially visible
@@ -477,6 +499,29 @@ pub async fn run_server_launch(no_scratchpad: bool) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn registration_wait_handles_mapping_delay_and_failure() {
+        let mut attempts = 0;
+        wait_for_scratchpad_registration(|| {
+            attempts += 1;
+            Ok(attempts == 2)
+        })
+        .await
+        .unwrap();
+        assert_eq!(attempts, 2);
+        assert!(
+            wait_for_scratchpad_registration(|| Ok(false))
+                .await
+                .is_err()
+        );
+        assert!(
+            wait_for_scratchpad_registration(|| anyhow::bail!("IPC unavailable"))
+                .await
+                .is_err()
+        );
+    }
+
     use crate::menu_utils::MockQueue;
     use std::io::{self, BufRead, Write};
     use std::os::unix::net::UnixStream;

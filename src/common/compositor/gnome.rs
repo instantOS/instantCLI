@@ -85,7 +85,7 @@ impl ScratchpadProvider for Gnome {
             Self::call_dbus_method("Unminimize", &[window.id.to_string()])?;
             Self::call_dbus_method("Activate", &[window.id.to_string()])?;
         } else {
-            config.launcher().spawn_detached()?;
+            config.launcher()?.spawn_detached()?;
         }
         Ok(())
     }
@@ -108,7 +108,7 @@ impl ScratchpadProvider for Gnome {
                 Self::call_dbus_method("Activate", &[window.id.to_string()])?;
             }
         } else {
-            config.launcher().spawn_detached()?;
+            config.launcher()?.spawn_detached()?;
         }
         Ok(())
     }
@@ -118,7 +118,7 @@ impl ScratchpadProvider for Gnome {
         let mut scratchpads = Vec::new();
 
         for window in windows {
-            if let Some(name) = window.wm_class.strip_prefix("scratchpad_") {
+            if let Some(name) = crate::scratchpad::config::name_from_identity(&window.wm_class) {
                 scratchpads.push(ScratchpadWindowInfo {
                     name: name.to_string(),
                     window_class: window.wm_class.clone(),

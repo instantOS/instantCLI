@@ -8,7 +8,7 @@ impl ScratchpadProvider for Fallback {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
         // For fallback, show just spawns the terminal
         config
-            .launcher()
+            .launcher()?
             .spawn_detached()
             .map(|_| ())
             .map_err(Into::into)

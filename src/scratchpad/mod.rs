@@ -6,11 +6,16 @@ pub mod config;
 
 pub use config::ScratchpadConfig;
 
+fn parse_name(value: &str) -> Result<String, String> {
+    config::validate_name(value).map_err(|error| error.to_string())?;
+    Ok(value.to_owned())
+}
+
 /// Shared arguments for scratchpad commands that create/configure terminals
 #[derive(clap::Args, Debug, Clone)]
 pub struct ScratchpadCreateArgs {
-    /// Scratchpad name (used as prefix for window class)
-    #[arg(long, default_value = "instantscratchpad")]
+    /// Scratchpad name (used as the final window app-ID element)
+    #[arg(long, default_value = "instantscratchpad", value_parser = parse_name)]
     pub name: String,
     /// Terminal command to launch
     #[arg(long)]
@@ -48,8 +53,8 @@ impl ScratchpadCreateArgs {
 /// Shared arguments for scratchpad commands that only need identification
 #[derive(clap::Args, Debug, Clone)]
 pub struct ScratchpadIdentifyArgs {
-    /// Scratchpad name (used as prefix for window class)
-    #[arg(long, default_value = "instantscratchpad")]
+    /// Scratchpad name (used as the final window app-ID element)
+    #[arg(long, default_value = "instantscratchpad", value_parser = parse_name)]
     pub name: String,
 }
 
@@ -57,7 +62,7 @@ pub struct ScratchpadIdentifyArgs {
 #[derive(clap::Args, Debug, Clone)]
 pub struct ScratchpadStatusArgs {
     /// Optional specific scratchpad name to check (if not provided, shows all)
-    #[arg(long)]
+    #[arg(long, value_parser = parse_name)]
     pub name: Option<String>,
 }
 

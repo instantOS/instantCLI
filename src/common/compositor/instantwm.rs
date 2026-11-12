@@ -42,7 +42,11 @@ impl ScratchpadProvider for InstantWM {
         Ok(scratchpads
             .into_iter()
             .map(|scratchpad| ScratchpadWindowInfo {
-                window_class: format!("scratchpad_{}", scratchpad.name),
+                window_class: format!(
+                    "{}{}",
+                    crate::scratchpad::config::IDENTITY_PREFIX,
+                    scratchpad.name
+                ),
                 title: scratchpad.name.clone(),
                 name: scratchpad.name,
                 visible: scratchpad.visible,
@@ -73,7 +77,7 @@ impl ScratchpadProvider for InstantWM {
 
 impl InstantWM {
     fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
-        config.launcher().spawn_detached()?;
+        config.launcher()?.spawn_detached()?;
 
         let min_delay = Duration::from_millis(20);
         let max_delay = Duration::from_millis(200);

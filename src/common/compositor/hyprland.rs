@@ -124,7 +124,7 @@ fn scratchpad_exec_dispatch(
 ) -> Result<String> {
     let argv = std::iter::once(executable.as_os_str().to_owned())
         .chain(std::iter::once("terminal".into()))
-        .chain(config.launcher().cli_args())
+        .chain(config.launcher()?.cli_args())
         .map(|arg| {
             arg.into_string()
                 .map_err(|_| anyhow::anyhow!("Hyprland command transport requires UTF-8 arguments"))
@@ -149,9 +149,9 @@ fn ensure_scratchpad_rules() -> Result<()> {
     // These rules are idempotent; re-evaluating with the same name overwrites the previous.
     // Note: size must be a table { "monitor_w * 0.8", "monitor_h * 0.8" } in lua, not the old string '80% 80%'.
     let batch = [
-        "eval hl.window_rule({name='scratch-generic-float', match={class='scratchpad_.*'}, float=true})",
-        "eval hl.window_rule({name='scratch-generic-size', match={class='scratchpad_.*'}, size={ 'monitor_w * 0.8', 'monitor_h * 0.8' }})",
-        "eval hl.window_rule({name='scratch-generic-center', match={class='scratchpad_.*'}, center=true})",
+        "eval hl.window_rule({name='scratch-generic-float', match={class='^org[.]instantos[.]scratchpad[.].+$'}, float=true})",
+        "eval hl.window_rule({name='scratch-generic-size', match={class='^org[.]instantos[.]scratchpad[.].+$'}, size={ 'monitor_w * 0.8', 'monitor_h * 0.8' }})",
+        "eval hl.window_rule({name='scratch-generic-center', match={class='^org[.]instantos[.]scratchpad[.].+$'}, center=true})",
     ]
     .join(" ; ");
 
@@ -345,8 +345,11 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     let mut scratchpads = Vec::new();
 
     for client in clients.iter() {
-        if let Some(scratchpad_name) = client.class.strip_prefix("scratchpad_") {
-            let is_visible = is_special_workspace_active(&format!("scratchpad_{scratchpad_name}"))?;
+        if let Some(scratchpad_name) = crate::scratchpad::config::name_from_identity(&client.class)
+        {
+            let is_visible = is_special_workspace_active(&format!(
+                "org.instantos.scratchpad.{scratchpad_name}"
+            ))?;
             scratchpads.push(ScratchpadWindowInfo {
                 name: scratchpad_name.to_string(),
                 window_class: client.class.clone(),
@@ -384,7 +387,7 @@ mod tests {
         let delegated = shell_words::split(&command).unwrap();
         let expected: Vec<_> = [executable.as_os_str().to_owned(), "terminal".into()]
             .into_iter()
-            .chain(config.launcher().cli_args())
+            .chain(config.launcher().unwrap().cli_args())
             .map(|arg| arg.into_string().unwrap())
             .collect();
         assert_eq!(delegated, expected);

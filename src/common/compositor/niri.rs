@@ -335,7 +335,7 @@ fn scratchpad_window(window_class: &str) -> Result<Option<NiriWindow>> {
 }
 
 fn scratchpad_name(app_id: Option<&str>) -> Option<&str> {
-    app_id?.strip_prefix("scratchpad_")
+    crate::scratchpad::config::name_from_identity(app_id?)
 }
 
 fn workspace_reference(workspace: &NiriWorkspace) -> String {
@@ -379,7 +379,7 @@ fn create_and_show_scratchpad(
     current_workspace: &NiriWorkspace,
 ) -> Result<()> {
     config
-        .launcher()
+        .launcher()?
         .spawn_detached()
         .context("Failed to launch niri scratchpad terminal")?;
 
@@ -859,7 +859,10 @@ mod tests {
 
     #[test]
     fn parses_scratchpad_name_from_app_id() {
-        assert_eq!(scratchpad_name(Some("scratchpad_menu")), Some("menu"));
+        assert_eq!(
+            scratchpad_name(Some("org.instantos.scratchpad.menu")),
+            Some("menu")
+        );
         assert_eq!(scratchpad_name(Some("kitty")), None);
         assert_eq!(scratchpad_name(None), None);
     }

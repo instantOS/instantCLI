@@ -61,7 +61,7 @@ base_env = dict(os.environ, PATH=str(bin_dir), XDG_SESSION_DESKTOP='kde',
                 KWIN_TERMINAL_MARKER=str(root / 'terminal'))
 base_env.pop('INSTANTWM', None)
 existing = json.dumps([dict(name='instantscratchpad',
-                           **{'class': 'scratchpad_instantscratchpad'},
+                           **{'class': 'org.instantos.scratchpad.instantscratchpad'},
                            title='Notes', visible=True)])
 for name, command, response, silent, failed, expected_status, launches in [
     ('first show', 'show', '[]', False, False, 0, True),

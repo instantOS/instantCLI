@@ -22,10 +22,10 @@ ln -s "${TEST_ROOT}/bin/foot" "${alias_path}"
 
 # Exercise both early dispatch and normal CLI dispatch with a global option.
 for prefix in early normal; do
-	args=(terminal --app-id scratchpad_notes --title 'Notes with spaces' -- printf 'hello world')
+	args=(terminal --app-id org.instantos.scratchpad.notes --title 'Notes with spaces' -- printf 'hello world')
 	if [[ "${prefix}" = normal ]]; then args=(--no-color "${args[@]}"); fi
 	env PATH="${TEST_ROOT}/bin" WAYLAND_DISPLAY=test "${INS_BIN}" "${args[@]}"
-	expected=$'--app-id\nscratchpad_notes\n--title\nNotes with spaces\n--\nprintf\nhello world'
+	expected=$'--app-id\norg.instantos.scratchpad.notes\n--title\nNotes with spaces\n--\nprintf\nhello world'
 	[[ "$(cat "${TERMINAL_RECORD}")" = "${expected}" ]]
 done
 

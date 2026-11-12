@@ -28,7 +28,7 @@ impl ScratchpadProvider for KWin {
         // Check if window exists - if not, create it
         // We do this check AFTER trying to show to optimize for the common case
         if !self.is_window_running(config)? {
-            config.launcher().spawn_detached()?;
+            config.launcher()?.spawn_detached()?;
             std::thread::sleep(std::time::Duration::from_millis(700));
             self.run_script(config, "show")?;
         }
@@ -47,7 +47,7 @@ impl ScratchpadProvider for KWin {
         // Check if window exists - if not, create it
         // We do this check AFTER trying to toggle to optimize for the common case
         if !self.is_window_running(config)? {
-            config.launcher().spawn_detached()?;
+            config.launcher()?.spawn_detached()?;
             std::thread::sleep(std::time::Duration::from_millis(700));
             self.run_script(config, "show")?;
         }
@@ -115,10 +115,10 @@ impl KWin {
                 var res = [];
                 for (var i = 0; i < clients.length; i++) {{
                     var c = clients[i];
-                    if (c.resourceClass.indexOf("scratchpad_") === 0 || c.resourceClass === "instantscratchpad") {{
+                    if (c.resourceClass.indexOf("org.instantos.scratchpad.") === 0) {{
                         var visible = !c.minimized && (c.desktops.indexOf(workspace.currentDesktop) !== -1 || c.onAllDesktops);
                         res.push({{
-                            name: c.resourceClass.replace("scratchpad_", ""),
+                            name: c.resourceClass.replace("org.instantos.scratchpad.", ""),
                             class: c.resourceClass,
                             title: c.caption,
                             visible: visible,
@@ -373,7 +373,7 @@ mod tests {
     fn status_preserves_titles_in_raw_and_escaped_monitor_output() -> Result<()> {
         let title = "Notes \"quoted\" at C:\\saves\n日本語";
         let payload = serde_json::to_string(&serde_json::json!([{
-            "name": "notes", "class": "scratchpad_notes", "title": title, "visible": true
+            "name": "notes", "class": "org.instantos.scratchpad.notes", "title": title, "visible": true
         }]))?;
         for quoted in [format!("\"{payload}\""), serde_json::to_string(&payload)?] {
             let mut output = Cursor::new(format!("method call ...\n   string {quoted}\n"));
