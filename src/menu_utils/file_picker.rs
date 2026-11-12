@@ -8,7 +8,7 @@ use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 use which::which;
 
 use super::fzf::{DialogOutcome, FzfWrapper};
-use crate::menu::server::tracked_spawn;
+use crate::menu_utils::process::tracked_spawn;
 
 const YAZI_INIT_LUA: &str = include_str!("yazi_init.lua");
 const YAZI_CACHE_SUBDIR: &str = "ins/menu/yazi";

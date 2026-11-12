@@ -11,6 +11,7 @@ mod fzf;
 mod keychord;
 mod mock;
 mod path_input;
+pub(crate) mod process;
 mod slider;
 mod text_input;
 

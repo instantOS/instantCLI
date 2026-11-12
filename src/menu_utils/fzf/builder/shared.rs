@@ -3,9 +3,9 @@ use std::io::Write;
 use std::process::{Command, Output};
 
 use super::SharedConfig;
-use crate::menu::server::tracked_spawn;
 use crate::menu_utils::fzf::types::Header;
 use crate::menu_utils::fzf::utils::{extract_icon_padding, handle_fzf_spawn_error};
+use crate::menu_utils::process::tracked_spawn;
 
 pub(super) use super::super::utils::base_fzf_command;
 

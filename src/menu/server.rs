@@ -1,222 +1,21 @@
 use super::processing::RequestProcessor;
 use super::protocol::*;
-use super::scratchpad_manager::ScratchpadManager;
+use super::scratchpad_manager::{ScratchpadManager, ScratchpadSession};
 use super::tui::MenuServerTui;
 use crate::common::compositor::CompositorType;
+use crate::menu_utils::process::kill_active_menu_processes;
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
-use std::io::{self, BufRead, Write};
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Output};
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::thread;
 use std::time::Duration;
 use tokio::signal;
 
-/// Global registry for tracking active menu processes (fzf, yazi, etc.) that can be cancelled
-/// when scratchpad becomes invisible
-static ACTIVE_MENU_PROCESSES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
-
-/// Register a process ID as an active menu process
-pub(crate) fn register_menu_process(pid: u32) -> Result<()> {
-    let mut processes = ACTIVE_MENU_PROCESSES
-        .lock()
-        .map_err(|e| anyhow::anyhow!("Failed to acquire process lock: {}", e))?;
-    processes.push(pid);
-    Ok(())
-}
-
-/// Unregister a process ID (called when process completes normally)
-pub(crate) fn unregister_menu_process(pid: u32) {
-    if let Ok(mut processes) = ACTIVE_MENU_PROCESSES.lock() {
-        processes.retain(|&p| p != pid);
-    }
-}
-
-/// Kill all registered menu processes (called when scratchpad becomes invisible)
-/// Uses SIGINT to simulate the same behavior as pressing ESC
-pub fn kill_active_menu_processes() -> Result<usize> {
-    let processes = if let Ok(mut procs) = ACTIVE_MENU_PROCESSES.lock() {
-        let current = procs.clone();
-        procs.clear(); // Clear the list since we're killing them all
-        current
-    } else {
-        return Ok(0); // If we can't lock, just return
-    };
-
-    let count = processes.len();
-    for pid in processes {
-        // Use SIGINT (same as Ctrl+C/ESC) instead of SIGTERM to match normal cancellation behavior
-        let _ = nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(pid as i32),
-            nix::sys::signal::Signal::SIGINT,
-        );
-    }
-
-    Ok(count)
-}
-
-/// RAII guard for a spawned menu child (fzf, yazi, ...).
-///
-/// Registers the PID on spawn and always unregisters on drop, closing the
-/// stale-PID leak when `write_all`/`wait` fails with `?`. If still running
-/// at drop, the child is killed and reaped to avoid zombies.
-pub(crate) struct TrackedChild {
-    child: Option<Child>,
-    pid: u32,
-}
-
-impl TrackedChild {
-    pub(crate) fn inner_mut(&mut self) -> &mut Child {
-        self.child.as_mut().expect("tracked child already taken")
-    }
-
-    /// Wait for exit without capturing output (inherit-stdio case, e.g. yazi).
-    pub(crate) fn wait(mut self) -> Result<ExitStatus> {
-        let mut child = self.child.take().expect("tracked child already taken");
-        Ok(child.wait()?)
-    }
-
-    /// Wait and capture output. On drop-completion the PID registration is
-    /// released; error mapping is the caller's concern.
-    pub(crate) fn finish_with_output(mut self) -> Result<Output> {
-        let child = self.child.take().expect("tracked child already taken");
-        Ok(child.wait_with_output()?)
-    }
-}
-
-impl Drop for TrackedChild {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        unregister_menu_process(self.pid);
-    }
-}
-
-/// Spawn `cmd` as configured by the caller and track it for cancellation.
-pub(crate) fn tracked_spawn(mut cmd: Command) -> Result<TrackedChild> {
-    let child = cmd.spawn()?;
-    let pid = child.id();
-    register_menu_process(pid)?;
-    Ok(TrackedChild {
-        child: Some(child),
-        pid,
-    })
-}
-
-/// Spawn with piped stdio, feed `input`, wait and return output.
-/// Used by the simple (non-streaming) fzf paths.
-pub(crate) fn run_tracked_with_input(mut cmd: Command, input: &[u8]) -> Result<Output> {
-    use std::io::Write as _;
-    use std::process::Stdio;
-
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut tracked = tracked_spawn(cmd)?;
-    if let Some(stdin) = tracked.inner_mut().stdin.as_mut() {
-        stdin.write_all(input)?;
-    }
-    tracked.finish_with_output()
-}
-
-/// Read one newline-delimited protocol frame without replacing the caller's
-/// buffer. Returning `None` means the peer closed its write side cleanly.
-fn read_menu_message<R: BufRead>(reader: &mut R) -> Result<Option<MenuMessage>> {
-    match read_menu_frame(reader)? {
-        Some(IncomingFrame::Message(message)) => Ok(Some(message)),
-        // Legacy helper: version-gated callers handle mismatches explicitly;
-        // direct readers treat them as a decode failure.
-        Some(IncomingFrame::VersionMismatch { received, .. }) => {
-            // Surface as an error so streaming readers break cleanly.
-            // `handle_connection_sync` uses `read_menu_frame` directly and
-            // replies with `ProtocolMismatch` instead.
-            anyhow::bail!("Menu protocol mismatch: received {received}")
-        }
-        Some(IncomingFrame::InvalidPayload { error, .. }) => {
-            anyhow::bail!("{error}")
-        }
-        None => Ok(None),
-    }
-}
-
-/// Two-phase frame: envelope version is decoded before the payload so a
-/// breaking payload change still yields a clean `ProtocolMismatch` instead of
-/// a dropped connection.
-enum IncomingFrame {
-    Message(MenuMessage),
-    VersionMismatch {
-        request_id: String,
-        received: String,
-    },
-    InvalidPayload {
-        request_id: String,
-        error: String,
-    },
-}
-
-#[derive(serde::Deserialize)]
-struct RawEnvelope {
-    request_id: String,
-    #[serde(default = "legacy_frame_version")]
-    protocol_version: String,
-    payload: serde_json::Value,
-    timestamp: std::time::SystemTime,
-}
-
-fn legacy_frame_version() -> String {
-    "1.0".to_string()
-}
-
-/// `Status`/`Stop` form the stable control plane: unit variants decode as a
-/// bare string (`"Status"`), struct variants as a single-key map.
-fn is_control_plane(payload: &serde_json::Value) -> bool {
-    if let Some(name) = payload.as_str() {
-        return name == "Status" || name == "Stop";
-    }
-    if let Some(object) = payload.as_object() {
-        return object.contains_key("Status") || object.contains_key("Stop");
-    }
-    false
-}
-
-fn read_menu_frame<R: BufRead>(reader: &mut R) -> Result<Option<IncomingFrame>> {
-    let mut json = String::new();
-    if reader.read_line(&mut json)? == 0 {
-        return Ok(None);
-    }
-
-    let raw: RawEnvelope = serde_json::from_str(json.trim_end())
-        .context("Failed to deserialize menu protocol frame")?;
-    if raw.protocol_version != PROTOCOL_VERSION && !is_control_plane(&raw.payload) {
-        return Ok(Some(IncomingFrame::VersionMismatch {
-            request_id: raw.request_id,
-            received: raw.protocol_version,
-        }));
-    }
-    let payload = match serde_json::from_value(raw.payload) {
-        Ok(payload) => payload,
-        Err(error) => {
-            return Ok(Some(IncomingFrame::InvalidPayload {
-                request_id: raw.request_id,
-                error: format!("Failed to deserialize menu payload: {error}"),
-            }));
-        }
-    };
-    Ok(Some(IncomingFrame::Message(MenuMessage {
-        request_id: raw.request_id,
-        protocol_version: raw.protocol_version,
-        payload,
-        timestamp: raw.timestamp,
-    })))
-}
+mod connection;
 
 /// Menu server for handling GUI menu requests
 pub struct MenuServer {
@@ -230,20 +29,6 @@ pub struct MenuServer {
 }
 
 impl MenuServer {
-    /// Create a new menu server
-    pub fn new() -> Result<Self> {
-        let tui = MenuServerTui::new()?;
-        Ok(Self {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(false)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: Some(tui),
-        })
-    }
-
     /// Create a menu server with compositor type and optional scratchpad config
     pub fn with_compositor_and_scratchpad(
         compositor: CompositorType,
@@ -321,7 +106,9 @@ impl MenuServer {
                                 tui.suspend()?;
                             }
 
-                            let _ = self.handle_connection_sync(std_stream);
+                            if let Err(error) = self.handle_connection_sync(std_stream) {
+                                eprintln!("Menu request failed: {error:#}");
+                            }
 
                             if let Some(ref mut tui) = self.tui {
                                 tui.resume()?;
@@ -365,12 +152,12 @@ impl MenuServer {
             tui.cleanup()?;
         }
 
-        self.cleanup_socket().await;
+        self.cleanup_socket();
         Ok(())
     }
 
     /// Clean up socket file
-    async fn cleanup_socket(&self) {
+    fn cleanup_socket(&self) {
         if Path::new(&self.socket_path).exists() {
             if let Err(e) = std::fs::remove_file(&self.socket_path) {
                 eprintln!("Failed to remove socket file: {e}");
@@ -378,275 +165,6 @@ impl MenuServer {
                 println!("Socket file cleaned up");
             }
         }
-    }
-
-    /// Handle a client connection synchronously.
-    ///
-    /// Single-frame requests use the historical one-line-in/one-line-out
-    /// flow. `ChoiceBegin` switches the connection into streaming mode:
-    /// the server opens the menu immediately and consumes `ChoiceChunk`
-    /// / `ChoiceEnd` frames on the same socket while fzf runs (see
-    /// `handle_choice_stream_connection`).
-    fn handle_connection_sync(&self, mut stream: UnixStream) -> Result<()> {
-        // Increment request counter for debugging
-        self.requests_processed.fetch_add(1, Ordering::SeqCst);
-
-        // Set read timeout
-        stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-
-        // Use one buffered reader for the entire connection. Replacing a
-        // BufReader after the first frame can discard later frames that were
-        // read into its internal buffer at the same time as the first one.
-        let reader_stream = stream
-            .try_clone()
-            .context("Failed to clone menu socket for request reader")?;
-        let mut reader = io::BufReader::new(reader_stream);
-        let Some(frame) = read_menu_frame(&mut reader)? else {
-            // Client disconnected - this is normal, not an error
-            return Ok(());
-        };
-        let message = match frame {
-            IncomingFrame::VersionMismatch {
-                request_id,
-                received,
-            } => {
-                return Self::write_response(
-                    &mut stream,
-                    request_id,
-                    MenuResponse::ProtocolMismatch {
-                        received,
-                        expected: PROTOCOL_VERSION.to_string(),
-                    },
-                );
-            }
-            IncomingFrame::InvalidPayload { request_id, error } => {
-                return Self::write_response(&mut stream, request_id, MenuResponse::Error(error));
-            }
-            IncomingFrame::Message(message) => message,
-        };
-
-        // Version gating lives solely in `read_menu_frame`: non-control-plane
-        // mismatches already returned as `ProtocolMismatch` above, and
-        // `Status`/`Stop` form the stable control plane. No second check here
-        // so the two `Status`/`Stop` lists cannot diverge.
-
-        if let MenuRequest::ChoiceBegin { options } = message.payload {
-            super::bindings::validate(&options.bindings)?;
-            if options.frecency_cache.is_some() {
-                return self.handle_ranked_choice_stream_connection(
-                    stream,
-                    reader,
-                    message.request_id,
-                    options,
-                );
-            }
-            return self.handle_choice_stream_connection(
-                stream,
-                reader,
-                message.request_id,
-                options,
-            );
-        }
-        if matches!(
-            message.payload,
-            MenuRequest::ChoiceChunk { .. } | MenuRequest::ChoiceEnd
-        ) {
-            let response = MenuResponse::Error(
-                "Streaming choice frames require an opening ChoiceBegin".to_string(),
-            );
-            return Self::write_response(&mut stream, message.request_id, response);
-        }
-
-        // Process request and generate response (synchronously for now)
-        let response = self.process_request_sync(message.payload)?;
-
-        Self::write_response(&mut stream, message.request_id, response)
-    }
-
-    fn write_response(
-        stream: &mut UnixStream,
-        request_id: String,
-        response: MenuResponse,
-    ) -> Result<()> {
-        // Create response envelope
-        let response_message = MenuResponseMessage {
-            request_id,
-            payload: response,
-            timestamp: std::time::SystemTime::now(),
-        };
-
-        // Send response
-        let response_json =
-            serde_json::to_string(&response_message).context("Failed to serialize response")?;
-
-        stream.write_all(response_json.as_bytes())?;
-        stream.write_all(b"\n")?; // Message delimiter
-
-        Ok(())
-    }
-
-    /// Streaming choice connection: menu opens on `ChoiceBegin`, chunks
-    /// are pumped into fzf live, response is sent after selection.
-    ///
-    /// Concurrency: a reader thread owns the connection's buffered reader
-    /// and forwards `ChoiceChunk` items into a bounded mpsc channel consumed by
-    /// `FzfBuilder::stream`; the main thread runs fzf under the standard
-    /// visibility monitor. After fzf exits, the main thread shuts down the
-    /// connection's read side and joins the reader before returning to the
-    /// accept loop. This keeps reader ownership scoped to one request even
-    /// for infinite producers (`tail -f | ins menu choice`). Unexpected EOF
-    /// before selection or `ChoiceEnd` kills fzf to avoid a ghost scratchpad
-    /// nobody will read a response from.
-    fn handle_choice_stream_connection(
-        &self,
-        mut stream: UnixStream,
-        mut reader: io::BufReader<UnixStream>,
-        request_id: String,
-        options: ChoiceOptions,
-    ) -> Result<()> {
-        if let Some(ref manager) = self.scratchpad_manager
-            && let Err(e) = manager.show()
-        {
-            eprintln!("Warning: Failed to show scratchpad: {e}");
-        }
-
-        let (tx, rx) =
-            crossbeam_channel::bounded::<SerializableMenuItem>(STREAM_ITEM_BUFFER_CAPACITY);
-        // Selection time and producer idle time are both intentionally
-        // unbounded. The initial frame still uses the normal request timeout.
-        reader.get_ref().set_read_timeout(None)?;
-        let expected_id = request_id.clone();
-
-        // The reader is request-owned even though it must run concurrently
-        // with fzf. Once selection finishes we shut down the socket's read
-        // side and join this thread before returning to the accept loop. This
-        // prevents a late EOF from an old connection cancelling a later menu.
-        let selection_finished = Arc::new(AtomicBool::new(false));
-        let reader_selection_finished = Arc::clone(&selection_finished);
-        let reader_handle = thread::spawn(move || {
-            let mut saw_end = false;
-            loop {
-                let frame = match read_menu_message(&mut reader) {
-                    Ok(Some(frame)) => frame,
-                    Ok(None) | Err(_) => break,
-                };
-                if frame.request_id != expected_id || frame.protocol_version != PROTOCOL_VERSION {
-                    break;
-                }
-                match frame.payload {
-                    MenuRequest::ChoiceChunk { items } => {
-                        let mut closed = false;
-                        for item in items {
-                            if tx.send(item).is_err() {
-                                closed = true;
-                                break;
-                            }
-                        }
-                        if closed {
-                            break;
-                        }
-                    }
-                    MenuRequest::ChoiceEnd => {
-                        saw_end = true;
-                        break;
-                    }
-                    _ => break,
-                }
-            }
-            if !saw_end && !reader_selection_finished.load(Ordering::SeqCst) {
-                let _ = kill_active_menu_processes();
-            }
-        });
-
-        let response = if self.scratchpad_manager.is_some() {
-            self.process_monitored_streaming_choice(options, rx, || {
-                Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)
-            })?
-        } else {
-            let processor =
-                RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-            processor.handle_choice_streaming(options, rx, || {
-                Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)
-            })?
-        };
-
-        // Mark completion before waking the reader so EOF caused by our own
-        // shutdown cannot be mistaken for an aborted producer. SHUT_RD leaves
-        // the write side available for the response below.
-        selection_finished.store(true, Ordering::SeqCst);
-        let _ = stream.shutdown(Shutdown::Read);
-        reader_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("Streaming choice reader thread panicked"))?;
-
-        if let Some(ref manager) = self.scratchpad_manager
-            && let Err(e) = manager.hide_fast()
-        {
-            eprintln!("Warning: Failed to hide scratchpad: {e}");
-        }
-
-        Self::write_response(&mut stream, request_id, response)
-    }
-
-    /// Collect a complete streamed corpus before starting fzf so menu-owned
-    /// frecency can establish one global order. The scratchpad is shown and
-    /// `ChoiceReady` is sent first, allowing discovery to run only after the
-    /// UI has claimed its place on screen.
-    fn handle_ranked_choice_stream_connection(
-        &self,
-        mut stream: UnixStream,
-        mut reader: io::BufReader<UnixStream>,
-        request_id: String,
-        options: ChoiceOptions,
-    ) -> Result<()> {
-        if let Some(ref manager) = self.scratchpad_manager
-            && let Err(error) = manager.show()
-        {
-            eprintln!("Warning: Failed to show scratchpad: {error}");
-        }
-
-        reader.get_ref().set_read_timeout(None)?;
-        Self::write_response(&mut stream, request_id.clone(), MenuResponse::ChoiceReady)?;
-
-        let mut items = Vec::new();
-        let response = loop {
-            let Some(frame) = read_menu_message(&mut reader)? else {
-                break MenuResponse::Error(
-                    "Ranked choice stream ended before ChoiceEnd".to_string(),
-                );
-            };
-            if frame.request_id != request_id || frame.protocol_version != PROTOCOL_VERSION {
-                break MenuResponse::Error("Invalid ranked choice stream frame".to_string());
-            }
-            match frame.payload {
-                MenuRequest::ChoiceChunk { items: chunk } => items.extend(chunk),
-                MenuRequest::ChoiceEnd => {
-                    let request = MenuRequest::Choice { options, items };
-                    break if self.scratchpad_manager.is_some() {
-                        self.process_monitored_request(request)?
-                    } else {
-                        let processor = RequestProcessor::new(
-                            self.running.clone(),
-                            self.requests_processed.clone(),
-                        );
-                        processor.process_internal(request)?
-                    };
-                }
-                _ => {
-                    break MenuResponse::Error(
-                        "Unexpected frame in ranked choice stream".to_string(),
-                    );
-                }
-            }
-        };
-
-        if let Some(ref manager) = self.scratchpad_manager
-            && let Err(error) = manager.hide_fast()
-        {
-            eprintln!("Warning: Failed to hide scratchpad: {error}");
-        }
-        Self::write_response(&mut stream, request_id, response)
     }
 
     /// Process a menu request with scratchpad visibility management and timeout
@@ -679,35 +197,22 @@ impl MenuServer {
                 | MenuRequest::Toast { .. }
         );
 
-        if should_manage_scratchpad
-            && let Some(ref manager) = self.scratchpad_manager
-            && let Err(e) = manager.show()
-        {
-            eprintln!("Warning: Failed to show scratchpad: {e}");
-        }
+        // The guard hides the scratchpad on every exit path, including errors.
+        let scratchpad = should_manage_scratchpad
+            .then(|| ScratchpadSession::show(self.scratchpad_manager.as_ref()));
 
-        // Process the request with timeout and visibility monitoring
-        let response = if should_manage_scratchpad && self.scratchpad_manager.is_some() {
-            self.process_monitored_request(request)?
+        // Process the request with timeout and visibility monitoring.
+        let response = if should_manage_scratchpad {
+            self.process_monitored_request(request)
         } else {
-            // Non-interactive requests or no scratchpad don't need monitoring
-            self.process_request_internal(request)?
+            self.process_request_internal(request)
         };
 
-        // **PERFORMANCE CRITICAL**: Hide scratchpad IMMEDIATELY after menu interaction
-        // This must be the FIRST thing we do after the user completes their interaction
-        // to return control to the user as fast as possible.
-        //
-        // NOTE: For monitored requests, monitoring is already stopped in process_monitored_request
-        // before this point to prevent false cancellations when we intentionally hide the scratchpad.
-        if should_manage_scratchpad
-            && let Some(ref manager) = self.scratchpad_manager
-            && let Err(e) = manager.hide_fast()
-        {
-            eprintln!("Warning: Failed to hide scratchpad: {e}");
-        }
+        // **PERFORMANCE CRITICAL**: Hide the scratchpad as soon as the menu
+        // interaction ends. Dropping the guard also covers error paths.
+        drop(scratchpad);
 
-        Ok(response)
+        response
     }
 
     /// Process a menu request internal logic using the dedicated processor
@@ -717,9 +222,17 @@ impl MenuServer {
             return Ok(self.get_status_info());
         }
 
-        let processor =
-            RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-        processor.process_internal(request)
+        self.processor().process_internal(request)
+    }
+
+    /// Count one accepted request for status/TUI reporting.
+    fn record_request(&self) {
+        self.requests_processed.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Build a processor sharing this server's control flags.
+    fn processor(&self) -> RequestProcessor {
+        RequestProcessor::new(self.running.clone(), self.requests_processed.clone())
     }
 
     /// Start the scratchpad visibility monitor. Returns the flags and the
@@ -823,22 +336,30 @@ impl MenuServer {
         was_killed.load(Ordering::SeqCst)
     }
 
-    /// Process request while monitoring scratchpad visibility in a background thread
-    fn process_monitored_request(&self, request: MenuRequest) -> Result<MenuResponse> {
+    /// Run `operation` while monitoring scratchpad visibility in a background
+    /// thread. A menu killed by the monitor reports `Cancelled` regardless of
+    /// what the renderer returned.
+    fn run_monitored<F>(&self, operation: F) -> Result<MenuResponse>
+    where
+        F: FnOnce() -> Result<MenuResponse>,
+    {
         let (monitoring_active, was_killed, monitoring_handle) = self.start_visibility_monitor();
 
-        // Process the request normally - if fzf gets killed, it will return cancelled
-        let result = self.process_request_internal(request);
+        let result = operation();
 
         let killed =
             Self::finish_visibility_monitor(&monitoring_active, &was_killed, monitoring_handle);
 
-        // If the process was killed due to invisibility, return cancelled regardless of what fzf returned
         if killed {
             Ok(MenuResponse::Cancelled)
         } else {
             result
         }
+    }
+
+    /// Process request while monitoring scratchpad visibility in a background thread
+    fn process_monitored_request(&self, request: MenuRequest) -> Result<MenuResponse> {
+        self.run_monitored(|| self.process_request_internal(request))
     }
 
     /// Monitored variant of `RequestProcessor::handle_choice_streaming`
@@ -850,20 +371,10 @@ impl MenuServer {
         rx: crossbeam_channel::Receiver<SerializableMenuItem>,
         on_ready: F,
     ) -> Result<MenuResponse> {
-        let (monitoring_active, was_killed, monitoring_handle) = self.start_visibility_monitor();
-
-        let processor =
-            RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
-        let result = processor.handle_choice_streaming(options, rx, on_ready);
-
-        let killed =
-            Self::finish_visibility_monitor(&monitoring_active, &was_killed, monitoring_handle);
-
-        if killed {
-            Ok(MenuResponse::Cancelled)
-        } else {
-            result
-        }
+        self.run_monitored(|| {
+            self.processor()
+                .handle_choice_streaming(options, rx, on_ready)
+        })
     }
 
     /// Get server status information
@@ -898,12 +409,6 @@ impl MenuServer {
         };
 
         MenuResponse::StatusResult(status_info)
-    }
-}
-
-impl Default for MenuServer {
-    fn default() -> Self {
-        Self::new().expect("Failed to create default MenuServer")
     }
 }
 
@@ -973,75 +478,73 @@ pub async fn run_server_launch(no_scratchpad: bool) -> Result<i32> {
 mod tests {
     use super::*;
     use crate::menu_utils::MockQueue;
+    use std::io::{self, BufRead, Write};
+    use std::os::unix::net::UnixStream;
 
-    #[test]
-    fn test_server_creation() {
-        // Skip TUI initialization in tests since it requires a terminal
-        let server = MenuServer {
+    fn test_server(running: bool) -> MenuServer {
+        MenuServer {
             socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(false)),
+            running: Arc::new(AtomicBool::new(running)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
             scratchpad_manager: None,
             tui: None, // Skip TUI for tests
-        };
+        }
+    }
+
+    #[test]
+    fn test_server_creation() {
+        let server = test_server(false);
         assert!(!server.socket_path.is_empty());
     }
 
     #[test]
-    fn framed_reader_preserves_coalesced_stream_frames() {
-        let (mut writer, reader) = UnixStream::pair().unwrap();
-        let request_id = "coalesced".to_string();
-        let messages = [
-            MenuMessage::new(
-                request_id.clone(),
-                MenuRequest::ChoiceBegin {
-                    options: ChoiceOptions::new("Pick"),
-                },
-            ),
-            MenuMessage::new(
-                request_id.clone(),
-                MenuRequest::ChoiceChunk {
-                    items: vec![SerializableMenuItem::plain("first")],
-                },
-            ),
-            MenuMessage::new(request_id, MenuRequest::ChoiceEnd),
-        ];
-        let wire = messages
-            .iter()
-            .map(|message| serde_json::to_string(message).unwrap() + "\n")
-            .collect::<String>();
-        writer.write_all(wire.as_bytes()).unwrap();
-        writer.shutdown(Shutdown::Write).unwrap();
+    fn request_counter_counts_one_per_connection() {
+        let server = test_server(true);
+        let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
+        let message = MenuMessage::new("count".to_string(), MenuRequest::Status);
+        serde_json::to_writer(&mut client_stream, &message).unwrap();
+        client_stream.write_all(b"\n").unwrap();
 
-        let mut reader = io::BufReader::new(reader);
-        assert!(matches!(
-            read_menu_message(&mut reader).unwrap().unwrap().payload,
-            MenuRequest::ChoiceBegin { .. }
-        ));
-        assert!(matches!(
-            read_menu_message(&mut reader).unwrap().unwrap().payload,
-            MenuRequest::ChoiceChunk { items } if items[0].display_text == "first"
-        ));
-        assert!(matches!(
-            read_menu_message(&mut reader).unwrap().unwrap().payload,
-            MenuRequest::ChoiceEnd
-        ));
-        assert!(read_menu_message(&mut reader).unwrap().is_none());
+        server.handle_connection_sync(server_stream).unwrap();
+
+        assert_eq!(server.requests_processed.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn request_counter_does_not_double_count_processed_requests() {
+        let server = test_server(true);
+        let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
+        let message = MenuMessage::new(
+            "count-choice".to_string(),
+            MenuRequest::Choice {
+                options: ChoiceOptions::new("Pick"),
+                items: Vec::new(),
+            },
+        );
+        serde_json::to_writer(&mut client_stream, &message).unwrap();
+        client_stream.write_all(b"\n").unwrap();
+
+        server.handle_connection_sync(server_stream).unwrap();
+
+        assert_eq!(server.requests_processed.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn empty_connection_does_not_count_as_request() {
+        let server = test_server(true);
+        let (client_stream, server_stream) = UnixStream::pair().unwrap();
+        drop(client_stream);
+
+        server.handle_connection_sync(server_stream).unwrap();
+
+        assert_eq!(server.requests_processed.load(Ordering::SeqCst), 0);
     }
 
     #[test]
     fn completed_stream_joins_reader_while_producer_remains_open() {
-        let server = MenuServer {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(true)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: None,
-        };
+        let server = test_server(true);
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let request_id = "open-producer".to_string();
         let begin = MenuMessage::new(
@@ -1074,15 +577,7 @@ mod tests {
 
     #[test]
     fn ranked_stream_preserves_bindings() {
-        let server = MenuServer {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(true)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: None,
-        };
+        let server = test_server(true);
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let request_id = "ranked".to_string();
         let server_thread = std::thread::spawn(move || {
@@ -1135,15 +630,7 @@ mod tests {
 
     #[test]
     fn legacy_application_request_receives_protocol_error() {
-        let server = MenuServer {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(true)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: None,
-        };
+        let server = test_server(true);
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let message = MenuMessage::new("legacy".to_string(), MenuRequest::Show);
         let mut value = serde_json::to_value(message).unwrap();
@@ -1167,15 +654,7 @@ mod tests {
 
     #[test]
     fn legacy_status_request_can_inspect_current_protocol() {
-        let server = MenuServer {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(true)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: None,
-        };
+        let server = test_server(true);
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let message = MenuMessage::new("legacy-status".to_string(), MenuRequest::Status);
         let mut value = serde_json::to_value(message).unwrap();
@@ -1200,15 +679,7 @@ mod tests {
     fn old_input_payload_with_old_version_yields_mismatch_not_drop() {
         // 7.x wire (`secret` bool, no `kind`) sent with an old version must
         // get a clean `ProtocolMismatch`, not a dropped connection.
-        let server = MenuServer {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(true)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: None,
-        };
+        let server = test_server(true);
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let raw = serde_json::json!({
             "request_id": "old-input",
@@ -1237,15 +708,7 @@ mod tests {
     fn same_version_invalid_input_yields_error_not_drop() {
         // `password` + `initial_text` with the current version fails closed
         // with an `Error` response carrying the request id.
-        let server = MenuServer {
-            socket_path: default_socket_path(),
-            running: Arc::new(AtomicBool::new(true)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-            tui: None,
-        };
+        let server = test_server(true);
         let (mut client_stream, server_stream) = UnixStream::pair().unwrap();
         let raw = serde_json::json!({
             "request_id": "bad-input",

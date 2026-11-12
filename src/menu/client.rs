@@ -1,5 +1,6 @@
 use super::protocol::*;
 use super::streaming;
+use super::wire::{write_menu_message, write_menu_message_buffered};
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::{DialogOutcome, MenuSelection};
 use anyhow::{Context, Result};
@@ -678,23 +679,6 @@ pub fn force_fallback_mode() {
     if let Ok(mut guard) = transport_override().write() {
         *guard = Some(MenuTransport::KittyTransient);
     }
-}
-
-/// Write one NDJSON `MenuMessage` frame to a menu socket.
-fn write_menu_message(stream: &UnixStream, message: &MenuMessage) -> Result<()> {
-    write_menu_message_buffered(&mut io::BufWriter::new(stream), message)
-}
-
-/// Write one NDJSON frame via an existing buffered writer (flushes per
-/// frame so chunks arrive with minimal latency).
-fn write_menu_message_buffered<W: io::Write>(
-    writer: &mut io::BufWriter<W>,
-    message: &MenuMessage,
-) -> Result<()> {
-    serde_json::to_writer(&mut *writer, message).context("Failed to serialize menu message")?;
-    writer.write_all(b"\n")?;
-    writer.flush()?;
-    Ok(())
 }
 
 /// Print formatted status information

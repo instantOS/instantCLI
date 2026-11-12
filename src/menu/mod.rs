@@ -30,6 +30,7 @@ pub mod slide;
 pub(crate) mod streaming;
 pub(crate) mod terminal;
 pub mod tui;
+pub(crate) mod wire;
 use client::HostedMenuClient;
 pub use commands::{MenuCommands, ServerCommands};
 use slide::SliderPreset;

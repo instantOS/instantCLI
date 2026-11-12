@@ -24,9 +24,6 @@ impl RequestProcessor {
 
     /// Process a menu request without any monitoring or scratchpad management
     pub fn process_internal(&self, request: MenuRequest) -> Result<MenuResponse> {
-        // Increment request counter
-        self.requests_processed.fetch_add(1, Ordering::SeqCst);
-
         match request {
             MenuRequest::Choice { options, items } => self.handle_choice(options, items),
             MenuRequest::Confirm { message } => self.handle_confirm_request(message),
@@ -310,17 +307,17 @@ mod tests {
     }
 
     #[test]
-    fn test_request_counter() {
+    fn status_reports_shared_request_counter() {
         let running = Arc::new(AtomicBool::new(true));
-        let requests_processed = Arc::new(AtomicU64::new(0));
-        let processor = RequestProcessor::new(running, requests_processed.clone());
+        let requests_processed = Arc::new(AtomicU64::new(7));
+        let processor = RequestProcessor::new(running, requests_processed);
 
-        assert_eq!(requests_processed.load(Ordering::SeqCst), 0);
+        let response = processor.process_internal(MenuRequest::Status).unwrap();
 
-        let request = MenuRequest::Status;
-        let _ = processor.process_internal(request);
-
-        assert_eq!(requests_processed.load(Ordering::SeqCst), 1);
+        match response {
+            MenuResponse::StatusResult(status) => assert_eq!(status.requests_processed, 7),
+            _ => panic!("Expected status response"),
+        }
     }
 
     #[test]

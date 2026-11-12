@@ -75,6 +75,38 @@ impl ScratchpadManager {
     }
 }
 
+/// RAII guard that hides the scratchpad when dropped.
+///
+/// Showing is explicit because callers choose between checked and fast show,
+/// but hiding must also happen when request processing fails. Holding this
+/// guard for the duration of a request guarantees that.
+pub(crate) struct ScratchpadSession<'a> {
+    manager: Option<&'a ScratchpadManager>,
+}
+
+impl<'a> ScratchpadSession<'a> {
+    /// Show the scratchpad (if configured) and return a guard that hides it
+    /// on drop.
+    pub(crate) fn show(manager: Option<&'a ScratchpadManager>) -> Self {
+        if let Some(manager) = manager
+            && let Err(e) = manager.show()
+        {
+            eprintln!("Warning: Failed to show scratchpad: {e}");
+        }
+        Self { manager }
+    }
+}
+
+impl Drop for ScratchpadSession<'_> {
+    fn drop(&mut self) {
+        if let Some(manager) = self.manager
+            && let Err(e) = manager.hide_fast()
+        {
+            eprintln!("Warning: Failed to hide scratchpad: {e}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
