@@ -1,7 +1,7 @@
 //! Dev-time audit for undeclared step-state reads.
 //!
-//! The [`WizardStep`] contract requires every step answer that `should_ask`,
-//! `ask_policy`, `preselect_answer`, or `validate` reads to be declared in
+//! The [`WizardStep`] contract requires every step answer that `is_relevant`,
+//! `is_available`, `ask_policy`, `preselect_answer`, or `validate` reads to be declared in
 //! [`WizardStep::depends_on`] — nothing else enforces that, and undeclared
 //! reads silently break dependency invalidation. The engine therefore wraps
 //! those synchronous hooks: while one runs, the answer accessors on
@@ -107,7 +107,7 @@ mod tests {
     fn reads_outside_an_audit_are_not_recorded() {
         record_read(StepId::Timezone);
         let step = ReadsTwoAnswers;
-        hook(&step, "should_ask", || {
+        hook(&step, "is_relevant", || {
             record_read(StepId::Keymap);
         });
         // The stray read was ignored; the audited one was cleared by the hook.

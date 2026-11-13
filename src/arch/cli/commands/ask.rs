@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::engine::{
     InstallContext, InstallPlan, InstallSummary, StepId, SystemInfo, WizardEngine, WizardOutcome,
     build_install_summary,
@@ -145,7 +146,7 @@ fn ensure_internet(system_info: &SystemInfo, mode: crate::arch::offline::Mode) -
         return Ok(());
     }
 
-    bail!("No internet connection detected. Arch installation requires internet.");
+    bail!("No internet connection detected. Installation requires internet.");
 }
 
 /// The tools the wizard and the execution layer need before they can start.
@@ -154,7 +155,19 @@ fn ensure_internet(system_info: &SystemInfo, mode: crate::arch::offline::Mode) -
 /// ships without them and a live session is throwaway. On a running system
 /// they are usually already present — and installing them is a change to the
 /// user's machine, so it is offered rather than done.
-fn required_dependencies() -> Vec<&'static crate::common::package::Dependency> {
+///
+/// The installation toolchain differs by variant: Arch ships `pacstrap`,
+/// `arch-chroot` and `genfstab` in `arch-install-scripts`, while Artix ships
+/// `basestrap`, `artix-chroot` and `fstabgen` in `artools-base`.
+fn required_dependencies(
+    linux_variant: ArchLinuxVariant,
+) -> Vec<&'static crate::common::package::Dependency> {
+    let install_scripts = if linux_variant.is_artix() {
+        &crate::common::deps::ARTOOLS_BASE
+    } else {
+        &crate::common::deps::ARCH_INSTALL_SCRIPTS
+    };
+
     vec![
         &crate::common::deps::FZF,
         &crate::common::deps::GIT,
@@ -163,8 +176,7 @@ fn required_dependencies() -> Vec<&'static crate::common::package::Dependency> {
         &crate::common::deps::BTRFS_PROGS,
         &crate::common::deps::NTFSPROGS,
         &crate::common::deps::NTFS_3G,
-        // Provides pacstrap, arch-chroot and genfstab.
-        &crate::common::deps::ARCH_INSTALL_SCRIPTS,
+        install_scripts,
     ]
 }
 
@@ -174,13 +186,13 @@ fn required_dependencies() -> Vec<&'static crate::common::package::Dependency> {
 /// survives the reboot. The same list and the same install machinery serve the
 /// running-system preflight, which *does* offer rather than acts — see
 /// [`required_dependencies`].
-fn install_live_iso_dependencies() -> Result<()> {
+fn install_live_iso_dependencies(linux_variant: ArchLinuxVariant) -> Result<()> {
     if !crate::common::distro::is_live_iso() {
         return Ok(());
     }
 
-    println!("Detected Arch Linux Live ISO environment.");
-    match crate::common::package::ensure_all_auto(&required_dependencies())? {
+    println!("Detected live ISO environment.");
+    match crate::common::package::ensure_all_auto(&required_dependencies(linux_variant))? {
         crate::common::package::InstallResult::AlreadyInstalled
         | crate::common::package::InstallResult::Installed => Ok(()),
         other => bail!("Could not install the installer's prerequisites: {other:?}"),
@@ -194,14 +206,17 @@ fn install_live_iso_dependencies() -> Result<()> {
 /// present. Discovering that at the first `pacstrap` would be after the disk
 /// was already partitioned, so the check happens up front and the install is
 /// offered here instead.
-fn preflight_dependencies(profile: crate::arch::host::HostProfile) -> Result<()> {
-    install_live_iso_dependencies()?;
+fn preflight_dependencies(
+    profile: crate::arch::host::HostProfile,
+    linux_variant: ArchLinuxVariant,
+) -> Result<()> {
+    install_live_iso_dependencies(linux_variant)?;
 
     if profile.etc_is_ephemeral() {
         return Ok(());
     }
 
-    let dependencies = required_dependencies();
+    let dependencies = required_dependencies(linux_variant);
     let missing: Vec<_> = dependencies
         .iter()
         .copied()
@@ -238,8 +253,17 @@ fn preflight_dependencies(profile: crate::arch::host::HostProfile) -> Result<()>
     }
 }
 
-fn print_system_checks(system_info: &SystemInfo, install_mode: crate::arch::offline::Mode) {
+fn print_system_checks(
+    system_info: &SystemInfo,
+    install_mode: crate::arch::offline::Mode,
+    linux_variant: ArchLinuxVariant,
+) {
     println!("System Checks:");
+    println!(
+        "  Arch Linux variant: {} ({})",
+        linux_variant.label(),
+        linux_variant.init_system().label()
+    );
     println!("  Boot Mode: {}", system_info.boot_mode);
     println!("  Internet: {}", system_info.internet_connected);
     println!(
@@ -372,7 +396,9 @@ async fn run_full_wizard(
     // Installation requires root privileges
     ensure_root()?;
 
-    println!("Starting Arch Linux installation wizard...");
+    let linux_variant =
+        ArchLinuxVariant::detect().context("could not detect the installation variant")?;
+    println!("Starting {} installation wizard...", linux_variant.label());
 
     let config_path = resolve_config_path(output_config);
 
@@ -384,8 +410,9 @@ async fn run_full_wizard(
     ensure_internet(&system_info, install_mode)?;
     preflight_dependencies(
         crate::arch::host::HostProfile::detect().unwrap_or(crate::arch::host::HostProfile::LiveIso),
+        linux_variant,
     )?;
-    print_system_checks(&system_info, install_mode);
+    print_system_checks(&system_info, install_mode, linux_variant);
 
     let existing_context = match load_existing_context(&config_path, &system_info)? {
         ExistingContextOutcome::Continue(context) => context,
@@ -425,9 +452,32 @@ pub(super) async fn handle_ask_command(
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_internet;
+    use super::{ensure_internet, required_dependencies};
+    use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
     use crate::arch::engine::SystemInfo;
     use crate::arch::offline::Mode;
+
+    fn uses(dependencies: &[&crate::common::package::Dependency], name: &str) -> bool {
+        dependencies
+            .iter()
+            .any(|dependency| dependency.name == name)
+    }
+
+    #[test]
+    fn artix_selects_the_artools_toolchain() {
+        let dependencies = required_dependencies(ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC));
+
+        assert!(uses(&dependencies, "artools-base"));
+        assert!(!uses(&dependencies, "arch-install-scripts"));
+    }
+
+    #[test]
+    fn arch_keeps_the_arch_install_scripts_toolchain() {
+        let dependencies = required_dependencies(ArchLinuxVariant::Arch);
+
+        assert!(uses(&dependencies, "arch-install-scripts"));
+        assert!(!uses(&dependencies, "artools-base"));
+    }
 
     #[test]
     fn ensure_internet_errors_when_offline() {

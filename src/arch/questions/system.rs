@@ -166,7 +166,7 @@ impl FzfSelectable for Kernel {
         match self {
             Kernel::Linux => PreviewBuilder::new()
                 .header(NerdFont::Gear, "linux")
-                .subtext("The standard Arch kernel with the latest updates.")
+                .subtext("The standard Linux kernel with the latest updates.")
                 .blank()
                 .line(colors::TEAL, None, "Best for")
                 .bullets(["Most systems", "Up-to-date hardware support"])
@@ -370,19 +370,16 @@ impl WizardStep for MirrorRegionQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<crate::arch::engine::KeyId> {
-        vec![
-            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionsKey>(),
-            crate::arch::engine::KeyId::of::<crate::arch::mirrors::MirrorRegionsFetchFailed>(),
-        ]
+        vec![crate::arch::engine::KeyId::of::<
+            crate::arch::mirrors::MirrorRegionsKey,
+        >()]
     }
 
-    /// Skip this question if mirror regions fetch failed.
-    /// Installation will proceed with fallback mirrorlist.
-    fn should_ask(&self, context: &InstallContext) -> bool {
-        // If the fetch failed, skip this question
-        !context
-            .get::<crate::arch::mirrors::MirrorRegionsFetchFailed>()
-            .unwrap_or(false)
+    /// The provider publishes no choices for Artix or unavailable region data.
+    fn is_available(&self, context: &InstallContext) -> bool {
+        context
+            .get::<crate::arch::mirrors::MirrorRegionsKey>()
+            .is_some_and(|regions| !regions.is_empty())
     }
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
@@ -747,7 +744,7 @@ impl WizardStep for EncryptionPasswordQuestion {
         true
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         context.get_answer_bool(StepId::UseEncryption)
     }
 
@@ -893,6 +890,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mirror_region_question_requires_available_choices() {
+        let context = InstallContext::new();
+        assert!(!MirrorRegionQuestion.is_available(&context));
+        context.set::<crate::arch::mirrors::MirrorRegionsKey>(Vec::new());
+        assert!(!MirrorRegionQuestion.is_available(&context));
+        context.set::<crate::arch::mirrors::MirrorRegionsKey>(vec!["Germany".to_string()]);
+        assert!(MirrorRegionQuestion.is_available(&context));
     }
 
     #[test]

@@ -1,9 +1,12 @@
 use super::CommandRunner;
+use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
 use crate::arch::engine::InstallPlan;
 use crate::arch::execution::pacman::Pacman;
 use crate::arch::mkinitcpio::MkinitcpioConfig;
+use crate::common::config_edit::set_keys;
 use crate::common::locale_gen::apply_enable_disable;
 use anyhow::{Context, Result};
+use std::path::Path;
 use std::process::Command;
 
 /// Groups that users should be added to for normal desktop usage
@@ -54,19 +57,32 @@ pub fn add_user_to_groups(username: &str, executor: &dyn CommandRunner) -> Resul
 pub async fn install_config(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
-    // Enable multilib for 32-bit support (needed for lib32-vulkan-* GPU drivers)
+    // Enable the native 32-bit repository (needed for lib32-vulkan-* GPU drivers)
     // This runs before package installation so lib32 packages can be installed.
-    println!("Enabling multilib repository...");
-    Pacman::current()
-        .enable_multilib(executor.dry_run())
+    println!("Enabling the native 32-bit repository...");
+    Pacman::for_variant(plan.linux_variant)
+        .enable_32bit_repositories(executor.dry_run())
         .await?;
 
-    // Update repos after enabling multilib
+    // Refresh databases after enabling 32-bit packages
     sync_repos(executor)?;
 
-    configure_pacman_target(executor).await?;
+    println!("Configuring target pacman settings...");
+    Pacman::for_variant(plan.linux_variant)
+        .configure_settings(executor.dry_run())
+        .await?;
+
+    // Full instantOS needs packages that only live in Arch's extra/multilib
+    // repositories. Enable Arch repository support before the standard package batch so
+    // packages such as inter-font resolve on Artix too.
+    if plan.linux_variant.is_artix() && !plan.minimal_mode {
+        Pacman::for_variant(plan.linux_variant)
+            .enable_arch_repository_support(executor)
+            .await?;
+    }
+
     install_standard_packages(plan, executor)?;
-    configure_machine_identity(executor)?;
+    configure_machine_identity(executor, plan.linux_variant)?;
     configure_timezone(plan, executor)?;
     configure_locale(plan, executor)?;
     configure_network(plan, executor)?;
@@ -134,7 +150,10 @@ fn machine_identity_files() -> Vec<std::path::PathBuf> {
 /// nothing to do. It runs unconditionally because the alternative — a target
 /// that inherits the source system's identity — is a silent, hard-to-debug
 /// failure that only appears once the machine is booted from the new disk.
-fn configure_machine_identity(executor: &dyn CommandRunner) -> Result<()> {
+fn configure_machine_identity(
+    executor: &dyn CommandRunner,
+    linux_variant: ArchLinuxVariant,
+) -> Result<()> {
     println!("Setting up machine identity...");
 
     let files = machine_identity_files();
@@ -142,23 +161,98 @@ fn configure_machine_identity(executor: &dyn CommandRunner) -> Result<()> {
         for path in &files {
             println!("[DRY RUN] rm -f {}", path.display());
         }
-        println!("[DRY RUN] systemd-machine-id-setup");
+        if linux_variant.is_systemd() {
+            println!("[DRY RUN] systemd-machine-id-setup");
+        } else {
+            println!("[DRY RUN] dbus-uuidgen --ensure=/etc/machine-id");
+            println!("[DRY RUN] ln -sfn /etc/machine-id /var/lib/dbus/machine-id");
+        }
         return Ok(());
     }
 
     remove_machine_identity(&files)?;
 
-    // Best effort: a target without systemd has no identity to speak of, and
-    // failing the whole Config step over it would be a worse outcome than a
-    // missing machine-id systemd will generate on first boot.
-    let mut cmd = Command::new("systemd-machine-id-setup");
-    if !executor.run_best_effort(&mut cmd, "machine-id generation") {
-        println!(
-            "Warning: could not generate a machine-id; systemd will create one on first boot."
-        );
+    if linux_variant.is_systemd() {
+        // Best effort: a target without systemd has no identity to speak of,
+        // and failing the whole Config step over it would be a worse outcome
+        // than a missing machine-id systemd will generate on first boot.
+        let mut cmd = Command::new("systemd-machine-id-setup");
+        if !executor.run_best_effort(&mut cmd, "machine-id generation") {
+            println!(
+                "Warning: could not generate a machine-id; systemd will create one on first boot."
+            );
+        }
+        return Ok(());
     }
 
+    ensure_artix_machine_id(executor)
+}
+
+/// Generate `/etc/machine-id` with the D-Bus tool Artix ships, falling back to
+/// the kernel's random UUID when `dbus-uuidgen` is not installed.
+///
+/// `/var/lib/dbus/machine-id` must resolve to the same value as
+/// `/etc/machine-id`; a symlink is what a stock Artix installation uses.
+fn ensure_artix_machine_id(executor: &dyn CommandRunner) -> Result<()> {
+    let root = target_root();
+    let machine_id = root.join("etc/machine-id");
+    let dbus_id = root.join("var/lib/dbus/machine-id");
+
+    let mut cmd = Command::new("dbus-uuidgen");
+    cmd.arg(format!("--ensure={}", machine_id.display()));
+    if executor.run(&mut cmd).is_err() {
+        println!("dbus-uuidgen is unavailable; generating a machine-id directly.");
+        write_random_machine_id(&machine_id)?;
+    }
+
+    link_dbus_machine_id(&dbus_id)
+}
+
+/// Write a random 32-character machine-id without dashes, the format
+/// `machine-id(5)` requires.
+fn write_random_machine_id(path: &Path) -> Result<()> {
+    let uuid = std::fs::read_to_string("/proc/sys/kernel/random/uuid")
+        .context("Failed to read a random UUID for /etc/machine-id")?;
+    let compact: String = uuid.chars().filter(|character| *character != '-').collect();
+    let compact = compact.trim();
+    if compact.len() != 32
+        || !compact
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        anyhow::bail!("the kernel returned an invalid random UUID: {uuid:?}");
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    std::fs::write(path, format!("{compact}\n"))
+        .with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
+}
+
+/// Point `/var/lib/dbus/machine-id` at `/etc/machine-id`, replacing any stale
+/// file or link.
+fn link_dbus_machine_id(dbus_id: &Path) -> Result<()> {
+    if let Some(parent) = dbus_id.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+
+    match std::fs::remove_file(dbus_id) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(anyhow::anyhow!(
+                "Failed to replace {}: {error}",
+                dbus_id.display()
+            ));
+        }
+    }
+
+    std::os::unix::fs::symlink("/etc/machine-id", dbus_id)
+        .with_context(|| format!("Failed to link {} to /etc/machine-id", dbus_id.display()))
 }
 
 /// Delete any existing machine identity so regeneration cannot be skipped.
@@ -259,15 +353,7 @@ fn install_standard_packages(plan: &InstallPlan, executor: &dyn CommandRunner) -
     println!("Installing standard packages...");
     let packages = crate::arch::execution::packages::build_standard_package_plan(plan)?;
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-    Pacman::current().install(&package_refs, executor)?;
-    Ok(())
-}
-
-async fn configure_pacman_target(executor: &dyn CommandRunner) -> Result<()> {
-    println!("Configuring target pacman settings...");
-    Pacman::current()
-        .configure_settings(executor.dry_run())
-        .await?;
+    Pacman::for_variant(plan.linux_variant).install(&package_refs, executor)?;
     Ok(())
 }
 
@@ -281,9 +367,18 @@ pub fn config_package_list(plan: &InstallPlan) -> Vec<String> {
     if plan.storage.encryption().is_some() {
         packages.push("lvm2".to_string());
         packages.push("cryptsetup".to_string());
+        // Artix packages the init scripts separately from the tools.
+        for base in ["lvm2", "cryptsetup"] {
+            if let Some(package) = plan.linux_variant.init_service_package(base) {
+                packages.push(package);
+            }
+        }
     }
 
-    if plan.use_plymouth && !plan.minimal_mode {
+    if plan.use_plymouth
+        && !plan.minimal_mode
+        && plan.linux_variant.supports_plymouth_configuration()
+    {
         packages.push("plymouth".to_string());
     }
 
@@ -292,7 +387,7 @@ pub fn config_package_list(plan: &InstallPlan) -> Vec<String> {
 
 fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     let use_encryption = plan.storage.encryption().is_some();
-    let use_plymouth = plan.use_plymouth;
+    let use_plymouth = plan.use_plymouth && plan.linux_variant.supports_plymouth_configuration();
     let use_btrfs = plan.storage.filesystem().is_btrfs();
 
     if !use_encryption && !use_plymouth && !use_btrfs {
@@ -314,7 +409,11 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
             println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
         }
         if use_encryption {
-            println!("[DRY RUN] Adding 'encrypt lvm2' to HOOKS in /etc/mkinitcpio.conf");
+            if plan.linux_variant.uses_systemd_initramfs() {
+                println!("[DRY RUN] Adding 'encrypt lvm2' to HOOKS in /etc/mkinitcpio.conf");
+            } else {
+                println!("[DRY RUN] Adding 'encrypt lvm2 resume' to HOOKS in /etc/mkinitcpio.conf");
+            }
         }
         println!("[DRY RUN] mkinitcpio -P");
         return Ok(());
@@ -324,53 +423,7 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
     let content = std::fs::read_to_string(conf_path).context("Failed to read mkinitcpio.conf")?;
 
     let mut config = MkinitcpioConfig::parse(&content)?;
-
-    if use_btrfs {
-        config.ensure_module("btrfs");
-    }
-
-    // Switch to systemd hooks
-    if config.contains_hook("base") && config.contains_hook("udev") {
-        config.replace_hook("udev", "systemd");
-    }
-
-    // Plymouth should be after systemd but before encrypt/sd-encrypt
-    // And definitely before sd-encrypt to show password prompt
-    if use_plymouth && !plan.minimal_mode {
-        config.ensure_hook_position(
-            "plymouth",
-            &["base", "systemd", "udev"],       // After these
-            &["sd-encrypt", "encrypt", "lvm2"], // Before these
-        );
-    }
-
-    // Ensure keyboard and keymap/sd-vconsole are present
-    if !config.contains_hook("sd-vconsole") {
-        if config.contains_hook("keymap") {
-            config.replace_hook("keymap", "sd-vconsole");
-        } else {
-            // Ensure sd-vconsole comes after keyboard (or just add it if keyboard not present)
-            config.ensure_hook_position("sd-vconsole", &["keyboard"], &[]);
-        }
-    }
-
-    // Remove consolefont if present as sd-vconsole handles it
-    config.remove_hook("consolefont");
-
-    // Add encryption hooks in correct order: block -> sd-encrypt -> lvm2 -> resume -> filesystems
-    if use_encryption && config.contains_hook("block") && config.contains_hook("filesystems") {
-        // Replace legacy encrypt hook if present
-        if config.contains_hook("encrypt") {
-            config.replace_hook("encrypt", "sd-encrypt");
-        } else {
-            config.ensure_hook("sd-encrypt");
-        }
-
-        // Ensure correct ordering for full disk encryption with LVM and resume
-        config.ensure_hook_position("sd-encrypt", &["block"], &["filesystems"]);
-        config.ensure_hook_position("lvm2", &["sd-encrypt"], &["filesystems"]);
-        config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
-    }
+    apply_initramfs_hooks(plan, &mut config);
 
     std::fs::write(conf_path, config.to_string())?;
 
@@ -380,14 +433,111 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
     Ok(())
 }
 
+/// Apply the variant's initramfs hook policy to a parsed `mkinitcpio.conf`.
+///
+/// systemd targets boot with systemd hooks; Artix targets keep the busybox
+/// hooks and must never gain an `sd-*` hook, which would wait for a systemd
+/// that is not PID 1.
+fn apply_initramfs_hooks(plan: &InstallPlan, config: &mut MkinitcpioConfig) {
+    let use_encryption = plan.storage.encryption().is_some();
+    let use_plymouth = plan.use_plymouth && plan.linux_variant.supports_plymouth_configuration();
+
+    if plan.storage.filesystem().is_btrfs() {
+        config.ensure_module("btrfs");
+    }
+
+    if plan.linux_variant.uses_systemd_initramfs() {
+        // Switch to systemd hooks
+        if config.contains_hook("base") && config.contains_hook("udev") {
+            config.replace_hook("udev", "systemd");
+        }
+
+        // Plymouth should be after systemd but before encrypt/sd-encrypt
+        // And definitely before sd-encrypt to show password prompt
+        if use_plymouth && !plan.minimal_mode {
+            config.ensure_hook_position(
+                "plymouth",
+                &["base", "systemd", "udev"],       // After these
+                &["sd-encrypt", "encrypt", "lvm2"], // Before these
+            );
+        }
+
+        // Ensure keyboard and keymap/sd-vconsole are present
+        if !config.contains_hook("sd-vconsole") {
+            if config.contains_hook("keymap") {
+                config.replace_hook("keymap", "sd-vconsole");
+            } else {
+                // Ensure sd-vconsole comes after keyboard (or just add it if keyboard not present)
+                config.ensure_hook_position("sd-vconsole", &["keyboard"], &[]);
+            }
+        }
+
+        // Remove consolefont if present as sd-vconsole handles it
+        config.remove_hook("consolefont");
+
+        // Add encryption hooks in correct order: block -> sd-encrypt -> lvm2 -> resume -> filesystems
+        if use_encryption && config.contains_hook("block") && config.contains_hook("filesystems") {
+            // Replace legacy encrypt hook if present
+            if config.contains_hook("encrypt") {
+                config.replace_hook("encrypt", "sd-encrypt");
+            } else {
+                config.ensure_hook("sd-encrypt");
+            }
+
+            // Ensure correct ordering for full disk encryption with LVM and resume
+            config.ensure_hook_position("sd-encrypt", &["block"], &["filesystems"]);
+            config.ensure_hook_position("lvm2", &["sd-encrypt"], &["filesystems"]);
+            config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
+        }
+
+        return;
+    }
+
+    // Artix: busybox initramfs. Undo any systemd hooks a copied configuration
+    // may carry before adding the classic equivalents.
+    config.remove_hook("sd-vconsole");
+    config.remove_hook("sd-encrypt");
+    if config.contains_hook("systemd") {
+        config.replace_hook("systemd", "udev");
+    }
+
+    if !config.contains_hook("keymap") {
+        config.ensure_hook_position(
+            "keymap",
+            &["udev", "keyboard"],
+            &["encrypt", "lvm2", "filesystems"],
+        );
+    }
+    if !config.contains_hook("consolefont") {
+        config.ensure_hook_position(
+            "consolefont",
+            &["keymap"],
+            &["encrypt", "lvm2", "filesystems"],
+        );
+    }
+
+    if use_plymouth && !plan.minimal_mode {
+        config.ensure_hook_position("plymouth", &["base", "udev"], &["encrypt", "lvm2"]);
+    }
+
+    if use_encryption && config.contains_hook("block") && config.contains_hook("filesystems") {
+        config.ensure_hook("encrypt");
+        config.ensure_hook_position("encrypt", &["block"], &["filesystems"]);
+        config.ensure_hook_position("lvm2", &["encrypt"], &["filesystems"]);
+        config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
+    }
+}
+
 fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     let keymap = plan.keymap.as_str();
-
-    let contents = format!(
-        "KEYMAP={}\nFONT={}\n",
-        keymap,
-        plan.console_font.installed_name()
+    let font = plan.console_font.installed_name();
+    let openrc = matches!(
+        plan.linux_variant,
+        ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)
     );
+    let non_default_font = plan.console_font.name() != crate::common::console_font::DEFAULT_NAME;
+
+    let contents = format!("KEYMAP={}\nFONT={}\n", keymap, font);
     println!(
         "Setting console keymap to {} and font to {}",
         keymap,
@@ -401,13 +551,45 @@ fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
             );
         }
         println!("[DRY RUN] Write /etc/vconsole.conf:\n{contents}");
-    } else {
-        crate::common::console_font::install_snapshot(&target_root(), &plan.console_font)?;
-        std::fs::write(target_root().join("etc/vconsole.conf"), contents)
-            .context("Writing console keyboard and font configuration")?;
+        if openrc {
+            println!("[DRY RUN] Write /etc/conf.d/keymaps: keymap=\"{keymap}\"");
+            println!("[DRY RUN] Write /etc/conf.d/consolefont: consolefont=\"{font}\"");
+            if non_default_font {
+                println!("[DRY RUN] rc-update add consolefont boot");
+            }
+        }
+        return Ok(());
+    }
+
+    let root = target_root();
+    crate::common::console_font::install_snapshot(&root, &plan.console_font)?;
+    std::fs::write(root.join("etc/vconsole.conf"), contents)
+        .context("Writing console keyboard and font configuration")?;
+
+    if openrc {
+        // OpenRC reads the keymap and font from /etc/conf.d rather than
+        // /etc/vconsole.conf, which is a systemd convention.
+        let conf_d = root.join("etc/conf.d");
+        std::fs::create_dir_all(&conf_d)
+            .with_context(|| format!("Failed to create {}", conf_d.display()))?;
+        set_conf_d_value(&conf_d.join("keymaps"), "keymap", keymap)?;
+        set_conf_d_value(&conf_d.join("consolefont"), "consolefont", font)?;
+
+        if non_default_font {
+            executor.run(Command::new("rc-update").args(["add", "consolefont", "boot"]))?;
+        }
     }
 
     Ok(())
+}
+
+/// Update one quoted key in an OpenRC `/etc/conf.d` file, preserving every
+/// other setting the package shipped.
+fn set_conf_d_value(path: &Path, key: &str, value: &str) -> Result<()> {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let quoted = format!("\"{value}\"");
+    let edit = set_keys(&content, &[(key, &quoted)]);
+    std::fs::write(path, edit.content).with_context(|| format!("Writing {}", path.display()))
 }
 
 fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
@@ -419,8 +601,9 @@ fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
     // timedatectl set-timezone "$REGION"
     // timedatectl needs a running D-Bus/systemd, which the installer's chroot
     // does not provide; the call only stalls there before failing. Go
-    // straight to the manual configuration in that case.
-    if !super::is_chroot() {
+    // straight to the manual configuration in that case, and on Artix where
+    // systemd is not present at all.
+    if plan.linux_variant.is_systemd() && !super::is_chroot() {
         let mut cmd = Command::new("timedatectl");
         cmd.arg("set-timezone").arg(timezone);
 
@@ -446,13 +629,13 @@ fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
 
     // ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
     let source = format!("/usr/share/zoneinfo/{}", timezone);
-    let target = "/etc/localtime";
+    let target = target_root().join("etc/localtime");
 
     // Remove existing link/file if it exists to avoid error
-    if std::path::Path::new(target).exists() {
-        std::fs::remove_file(target)?;
+    if target.exists() {
+        std::fs::remove_file(&target)?;
     }
-    std::os::unix::fs::symlink(&source, target)?;
+    std::os::unix::fs::symlink(&source, &target)?;
 
     // hwclock --systohc
     let mut cmd_hw = Command::new("hwclock");
@@ -467,41 +650,63 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
 
     println!("Setting locale to {}", locale);
 
+    // localectl talks to systemd-localed over D-Bus, which neither Artix nor
+    // the installer's chroot provides. Extract just the LANG part, e.g.
+    // "en_US.UTF-8" from "en_US.UTF-8 UTF-8".
+    let lang = locale.split_whitespace().next().unwrap_or(locale);
+    let use_localectl = plan.linux_variant.is_systemd() && !super::is_chroot();
+
     if executor.dry_run() {
         println!("[DRY RUN] Uncommenting {} in /etc/locale.gen", locale);
         println!("[DRY RUN] locale-gen");
-        // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
-        let lang = locale.split_whitespace().next().unwrap_or(locale);
-        println!("[DRY RUN] localectl set-locale LANG={}", lang);
-    } else {
-        // Read /etc/locale.gen
-        let locale_gen_path = "/etc/locale.gen";
-        let content =
-            std::fs::read_to_string(locale_gen_path).context("Failed to read /etc/locale.gen")?;
-
-        // Enable the selected locale, preserving the file's formatting. The
-        // answer is always an available locale, so this only ever uncomments;
-        // the write is skipped when nothing changed.
-        if let Some(updated) = apply_enable_disable(&content, &[locale.to_owned()], &[]) {
-            std::fs::write(locale_gen_path, updated)?;
-        }
-
-        // Run locale-gen
-        let mut cmd = Command::new("locale-gen");
-        executor.run(&mut cmd)?;
-
-        // Set the system locale. localectl talks to systemd-localed over
-        // D-Bus, which the installer's chroot does not run (the call only
-        // stalls there), so write /etc/locale.conf directly in that case —
-        // the same thing localectl would do.
-        // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
-        let lang = locale.split_whitespace().next().unwrap_or(locale);
-        if super::is_chroot() {
-            std::fs::write("/etc/locale.conf", format!("LANG={}\n", lang))?;
+        if use_localectl {
+            println!("[DRY RUN] localectl set-locale LANG={}", lang);
         } else {
-            let mut cmd = Command::new("localectl");
-            cmd.arg("set-locale").arg(format!("LANG={}", lang));
-            executor.run(&mut cmd)?;
+            println!("[DRY RUN] Write /etc/locale.conf: LANG={}", lang);
+            if plan.linux_variant.is_artix() {
+                println!("[DRY RUN] Write /etc/env.d/02locale: LANG={}", lang);
+            }
+        }
+        return Ok(());
+    }
+
+    let root = target_root();
+    // Read /etc/locale.gen
+    let locale_gen_path = root.join("etc/locale.gen");
+    let content = std::fs::read_to_string(&locale_gen_path)
+        .with_context(|| format!("Failed to read {}", locale_gen_path.display()))?;
+
+    // Enable the selected locale, preserving the file's formatting. The
+    // answer is always an available locale, so this only ever uncomments;
+    // the write is skipped when nothing changed.
+    if let Some(updated) = apply_enable_disable(&content, &[locale.to_owned()], &[]) {
+        std::fs::write(&locale_gen_path, updated)?;
+    }
+
+    // Run locale-gen
+    let mut cmd = Command::new("locale-gen");
+    executor.run(&mut cmd)?;
+
+    // Set the system locale. localectl talks to systemd-localed over
+    // D-Bus, which the installer's chroot does not run (the call only
+    // stalls there), so write /etc/locale.conf directly in that case —
+    // the same thing localectl would do.
+    if use_localectl {
+        let mut cmd = Command::new("localectl");
+        cmd.arg("set-locale").arg(format!("LANG={}", lang));
+        executor.run(&mut cmd)?;
+    } else {
+        std::fs::write(root.join("etc/locale.conf"), format!("LANG={}\n", lang))
+            .context("Writing /etc/locale.conf")?;
+
+        if plan.linux_variant.is_artix() {
+            // Artix's OpenRC profile scripts read /etc/env.d before
+            // /etc/locale.conf exists on a fresh boot.
+            let env_d = root.join("etc/env.d");
+            std::fs::create_dir_all(&env_d)
+                .with_context(|| format!("Failed to create {}", env_d.display()))?;
+            std::fs::write(env_d.join("02locale"), format!("LANG={}\n", lang))
+                .context("Writing /etc/env.d/02locale")?;
         }
     }
 
@@ -510,20 +715,44 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
 
 fn configure_network(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     let hostname = plan.hostname.as_str();
+    let openrc = matches!(
+        plan.linux_variant,
+        ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)
+    );
 
     println!("Setting hostname to {}", hostname);
 
     if executor.dry_run() {
         println!("[DRY RUN] echo '{}' > /etc/hostname", hostname);
         println!("[DRY RUN] Writing /etc/hosts");
-    } else {
-        std::fs::write("/etc/hostname", format!("{}\n", hostname))?;
+        if openrc {
+            println!("[DRY RUN] Write /etc/conf.d/hostname: hostname=\"{hostname}\"");
+        }
+        return Ok(());
+    }
 
-        let hosts_content = format!(
-            "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\t{}.localdomain\t{}\n",
-            hostname, hostname
-        );
-        std::fs::write("/etc/hosts", hosts_content)?;
+    let root = target_root();
+    std::fs::create_dir_all(root.join("etc"))
+        .with_context(|| format!("Failed to create {}", root.join("etc").display()))?;
+    std::fs::write(root.join("etc/hostname"), format!("{}\n", hostname))
+        .context("Writing /etc/hostname")?;
+
+    let hosts_content = format!(
+        "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\t{}.localdomain\t{}\n",
+        hostname, hostname
+    );
+    std::fs::write(root.join("etc/hosts"), hosts_content).context("Writing /etc/hosts")?;
+
+    if openrc {
+        // OpenRC's hostname service reads the value from /etc/conf.d.
+        let conf_d = root.join("etc/conf.d");
+        std::fs::create_dir_all(&conf_d)
+            .with_context(|| format!("Failed to create {}", conf_d.display()))?;
+        std::fs::write(
+            conf_d.join("hostname"),
+            format!("hostname=\"{}\"\n", hostname),
+        )
+        .context("Writing the OpenRC hostname configuration")?;
     }
 
     Ok(())
@@ -639,8 +868,17 @@ pub fn configure_sudo(executor: &dyn CommandRunner) -> Result<()> {
 pub fn configure_plymouth(
     use_plymouth: bool,
     minimal_mode: bool,
+    linux_variant: ArchLinuxVariant,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
+    if !linux_variant.supports_plymouth_configuration() {
+        println!(
+            "The installer does not configure Plymouth on {}; skipping it.",
+            linux_variant.label()
+        );
+        return Ok(());
+    }
+
     if !use_plymouth || minimal_mode {
         return Ok(());
     }
@@ -697,7 +935,52 @@ pub fn configure_plymouth(
 
 #[cfg(test)]
 mod tests {
+    use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
+    use crate::arch::execution::CommandRunner;
     use crate::arch::execution::mock::MockRunner;
+    use std::process::{Command, Output};
+
+    /// A runner whose commands always fail, used to exercise fallbacks.
+    struct FailingRunner;
+
+    impl CommandRunner for FailingRunner {
+        fn dry_run(&self) -> bool {
+            false
+        }
+
+        fn run(&self, _command: &mut Command) -> anyhow::Result<()> {
+            anyhow::bail!("simulated failure")
+        }
+
+        fn run_with_input(&self, _command: &mut Command, _input: &str) -> anyhow::Result<()> {
+            anyhow::bail!("simulated failure")
+        }
+
+        fn run_with_output(&self, _command: &mut Command) -> anyhow::Result<Option<Output>> {
+            anyhow::bail!("simulated failure")
+        }
+
+        fn log(&self, _message: &str) {}
+    }
+
+    fn artix_plan(init: ArtixInitSystem) -> crate::arch::engine::InstallPlan {
+        let mut plan = crate::arch::engine::test_install_plan();
+        plan.linux_variant = ArchLinuxVariant::Artix(init);
+        plan
+    }
+
+    fn encrypted_storage() -> crate::arch::engine::StoragePlan {
+        use crate::arch::engine::{
+            DiskPath, EncryptionPassword, EncryptionPlan, FilesystemPlan, StoragePlan,
+        };
+        StoragePlan::Automatic {
+            disk: DiskPath::parse("/dev/test-disk").unwrap(),
+            filesystem: FilesystemPlan::Ext4,
+            encryption: Some(EncryptionPlan {
+                password: EncryptionPassword::parse("test-secret").unwrap(),
+            }),
+        }
+    }
 
     #[test]
     fn console_configuration_persists_font_and_keymap_and_plans_font_package() {
@@ -780,7 +1063,7 @@ mod tests {
         // test fixture, so this exercises the real code path: any identity
         // left in the target is cleared and a fresh one generated.
         let mock = MockRunner::new();
-        super::configure_machine_identity(&mock).unwrap();
+        super::configure_machine_identity(&mock, ArchLinuxVariant::Arch).unwrap();
 
         let log = mock.command_log();
         assert!(
@@ -795,6 +1078,239 @@ mod tests {
                 path.display()
             );
         }
+    }
+
+    #[test]
+    fn artix_machine_identity_uses_dbus_uuidgen_and_links_the_dbus_file() {
+        let mock = MockRunner::new();
+        super::configure_machine_identity(&mock, ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC))
+            .unwrap();
+
+        let log = mock.command_log();
+        assert!(
+            log.iter()
+                .any(|command| command.starts_with("dbus-uuidgen --ensure=")),
+            "dbus-uuidgen must generate the identity: {log:?}"
+        );
+        let dbus_id = super::target_root().join("var/lib/dbus/machine-id");
+        assert_eq!(
+            std::fs::read_link(&dbus_id).unwrap(),
+            std::path::Path::new("/etc/machine-id")
+        );
+    }
+
+    #[test]
+    fn artix_machine_identity_falls_back_to_a_random_uuid() {
+        let runner = FailingRunner;
+        super::configure_machine_identity(
+            &runner,
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+        )
+        .unwrap();
+
+        let machine_id = std::fs::read_to_string(super::target_root().join("etc/machine-id"))
+            .expect("the fallback writes /etc/machine-id");
+        let machine_id = machine_id.trim();
+        assert_eq!(machine_id.len(), 32, "{machine_id:?}");
+        assert!(
+            machine_id
+                .chars()
+                .all(|character| character.is_ascii_hexdigit()),
+            "{machine_id:?}"
+        );
+        assert_eq!(
+            std::fs::read_link(super::target_root().join("var/lib/dbus/machine-id")).unwrap(),
+            std::path::Path::new("/etc/machine-id")
+        );
+    }
+
+    #[test]
+    fn artix_console_configuration_writes_openrc_files_and_enables_consolefont() {
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.console_font = crate::common::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        let mock = MockRunner::new();
+
+        super::configure_vconsole(&plan, &mock).unwrap();
+
+        let root = super::target_root();
+        assert_eq!(
+            std::fs::read_to_string(root.join("etc/vconsole.conf")).unwrap(),
+            "KEYMAP=us\nFONT=ter-v32n\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("etc/conf.d/keymaps")).unwrap(),
+            "keymap=\"us\"\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("etc/conf.d/consolefont")).unwrap(),
+            "consolefont=\"ter-v32n\"\n"
+        );
+        assert!(
+            mock.command_log()
+                .contains(&"rc-update add consolefont boot".to_string()),
+            "{:?}",
+            mock.command_log()
+        );
+    }
+
+    #[test]
+    fn artix_default_font_does_not_enable_the_consolefont_service() {
+        let plan = artix_plan(ArtixInitSystem::OpenRC);
+        let mock = MockRunner::new();
+
+        super::configure_vconsole(&plan, &mock).unwrap();
+
+        assert!(
+            !mock
+                .command_log()
+                .iter()
+                .any(|command| command.contains("consolefont")),
+            "{:?}",
+            mock.command_log()
+        );
+    }
+
+    #[test]
+    fn artix_openrc_hostname_is_written_to_conf_d() {
+        let plan = artix_plan(ArtixInitSystem::OpenRC);
+
+        super::configure_network(&plan, &MockRunner::new()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(super::target_root().join("etc/conf.d/hostname")).unwrap(),
+            "hostname=\"test-host\"\n"
+        );
+    }
+
+    #[test]
+    fn artix_timezone_uses_zoneinfo_and_hwclock() {
+        let plan = artix_plan(ArtixInitSystem::OpenRC);
+        let mock = MockRunner::new();
+
+        super::configure_timezone(&plan, &mock).unwrap();
+
+        assert_eq!(
+            std::fs::read_link(super::target_root().join("etc/localtime")).unwrap(),
+            std::path::Path::new("/usr/share/zoneinfo/UTC")
+        );
+        assert_eq!(mock.command_log(), vec!["hwclock --systohc"]);
+    }
+
+    #[test]
+    fn artix_locale_is_written_to_locale_conf_and_env_d() {
+        let root = super::target_root();
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        std::fs::write(root.join("etc/locale.gen"), "#en_US.UTF-8 UTF-8\n").unwrap();
+        let plan = artix_plan(ArtixInitSystem::OpenRC);
+
+        super::configure_locale(&plan, &MockRunner::new()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("etc/locale.conf")).unwrap(),
+            "LANG=en_US.UTF-8\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("etc/env.d/02locale")).unwrap(),
+            "LANG=en_US.UTF-8\n"
+        );
+    }
+
+    #[test]
+    fn artix_encryption_adds_init_service_packages() {
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.storage = encrypted_storage();
+
+        let packages = super::config_package_list(&plan);
+
+        assert!(packages.contains(&"lvm2".to_string()));
+        assert!(packages.contains(&"cryptsetup".to_string()));
+        assert!(packages.contains(&"lvm2-openrc".to_string()));
+        assert!(packages.contains(&"cryptsetup-openrc".to_string()));
+    }
+
+    #[test]
+    fn artix_never_plans_plymouth() {
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.use_plymouth = true;
+
+        assert!(!super::config_package_list(&plan).contains(&"plymouth".to_string()));
+    }
+
+    #[test]
+    fn artix_initramfs_uses_busybox_encryption_hooks() {
+        use crate::arch::mkinitcpio::MkinitcpioConfig;
+
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.storage = encrypted_storage();
+        let mut config = MkinitcpioConfig::parse(
+            "HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck)",
+        )
+        .unwrap();
+
+        super::apply_initramfs_hooks(&plan, &mut config);
+
+        assert!(config.contains_hook("udev"));
+        assert!(config.contains_hook("keymap"));
+        assert!(config.contains_hook("consolefont"));
+        assert!(config.contains_hook("encrypt"));
+        assert!(config.contains_hook("lvm2"));
+        assert!(config.contains_hook("resume"));
+        assert!(!config.contains_hook("systemd"));
+        assert!(!config.contains_hook("sd-encrypt"));
+        assert!(!config.contains_hook("sd-vconsole"));
+    }
+
+    #[test]
+    fn artix_initramfs_removes_systemd_hooks_from_a_copied_configuration() {
+        use crate::arch::mkinitcpio::MkinitcpioConfig;
+
+        let mut plan = artix_plan(ArtixInitSystem::S6);
+        plan.storage = encrypted_storage();
+        let mut config = MkinitcpioConfig::parse(
+            "HOOKS=(base systemd sd-vconsole block sd-encrypt filesystems)",
+        )
+        .unwrap();
+
+        super::apply_initramfs_hooks(&plan, &mut config);
+
+        assert!(config.contains_hook("udev"));
+        assert!(config.contains_hook("encrypt"));
+        assert!(!config.contains_hook("systemd"));
+        assert!(!config.contains_hook("sd-encrypt"));
+        assert!(!config.contains_hook("sd-vconsole"));
+    }
+
+    #[test]
+    fn arch_initramfs_keeps_the_systemd_hooks() {
+        use crate::arch::mkinitcpio::MkinitcpioConfig;
+
+        let mut plan = crate::arch::engine::test_install_plan();
+        plan.storage = encrypted_storage();
+        let mut config = MkinitcpioConfig::parse(
+            "HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck)",
+        )
+        .unwrap();
+
+        super::apply_initramfs_hooks(&plan, &mut config);
+
+        assert!(config.contains_hook("systemd"));
+        assert!(config.contains_hook("sd-vconsole"));
+        assert!(config.contains_hook("sd-encrypt"));
+        assert!(!config.contains_hook("encrypt"));
+        assert!(!config.contains_hook("consolefont"));
+    }
+
+    #[test]
+    fn artix_plymouth_configuration_is_a_no_op() {
+        let mock = MockRunner::new();
+        super::configure_plymouth(
+            true,
+            false,
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+            &mock,
+        )
+        .unwrap();
+        assert!(mock.command_log().is_empty());
     }
 
     #[test]

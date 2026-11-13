@@ -21,7 +21,7 @@ impl WizardStep for ResizeWorkflowStep {
         Some("Resize your partition for dual boot")
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         let is_dualboot = context.partitioning_method()
             == Some(crate::arch::engine::PartitioningMethod::DualBoot);
 

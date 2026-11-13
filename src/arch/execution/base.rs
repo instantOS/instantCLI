@@ -11,12 +11,12 @@ pub async fn install_base(plan: &InstallPlan, executor: &dyn CommandRunner) -> R
     setup_mirrors(plan, executor).await?;
 
     println!("Configuring pacman settings...");
-    PackageSource::resolve()
-        .configure_host_pacman(executor.dry_run())
+    PackageSource::resolve(plan.linux_variant)
+        .configure_bootstrap_pacman(plan.linux_variant, executor.dry_run())
         .await?;
 
     println!("Installing base system...");
-    run_pacstrap(plan, executor)?;
+    bootstrap_base_system(plan, executor)?;
 
     Ok(())
 }
@@ -37,9 +37,19 @@ fn offline_region_list(region_name: Option<&String>) -> Option<String> {
 }
 
 async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    // Artix has no archlinux.org mirror regions. The live ISO already ships
+    // the right Artix mirrorlist, so keep it and never fetch an Arch one.
+    if plan.linux_variant.is_artix() {
+        println!(
+            "Keeping the Artix mirrorlist; Arch mirror regions do not apply to {}.",
+            plan.linux_variant.label()
+        );
+        return Ok(());
+    }
+
     // Check if a region was selected (question may have been skipped if fetch failed)
     let region_name = plan.mirror_region.as_ref();
-    let source = PackageSource::resolve();
+    let source = PackageSource::resolve(plan.linux_variant);
 
     match crate::arch::offline::arch_mirrorlist_action(crate::arch::offline::mode()) {
         crate::arch::offline::MirrorlistAction::Fetch => {}
@@ -114,7 +124,7 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
     };
 
     // Write to the run's own mirrorlist. On a live ISO that is the host's
-    // file, which `pacstrap` copies into the target; on a running system it
+    // file, which the bootstrap command copies into the target; on a running system it
     // is the installer's private copy, and the host is left alone.
     source.apply_mirrorlist(&mirrorlist, false)?;
     println!("Mirrors updated.");
@@ -209,12 +219,12 @@ fn firmware_packages(plan: &InstallPlan) -> Vec<String> {
     packages
 }
 
-fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let kernel = plan.kernel;
-    let use_encryption = plan.storage.encryption().is_some();
-    let use_plymouth = plan.use_plymouth;
-    let minimal_mode = plan.minimal_mode;
-
+/// Packages installed by the base bootstrap.
+///
+/// Artix adds the selected init, its elogind integration, and `artix-mirrorlist`,
+/// which `basestrap` does not necessarily carry into the target. Arch's
+/// list is unchanged.
+fn base_packages(plan: &InstallPlan) -> Vec<String> {
     let mut packages: Vec<String> = vec!["base".to_string()];
     packages.extend(firmware_packages(plan));
 
@@ -223,7 +233,7 @@ fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> 
     }
 
     // Add kernel (headers are installed later alongside extra packages)
-    packages.push(kernel.label().to_string());
+    packages.push(plan.kernel.label().to_string());
 
     if plan.system_info.has_amd_cpu {
         println!("Detected AMD CPU, adding amd-ucode");
@@ -234,8 +244,27 @@ fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> 
         packages.push("intel-ucode".to_string());
     }
 
-    // GPU drivers are installed later in setup.rs after multilib is enabled,
+    if plan.linux_variant.is_artix() {
+        packages.extend(
+            plan.linux_variant
+                .bootstrap_init_packages()
+                .iter()
+                .map(|p| p.to_string()),
+        );
+        packages.push("artix-mirrorlist".to_string());
+    }
+
+    // GPU drivers are installed later after the native 32-bit repository is enabled,
     // allowing lib32-* packages to be installed properly.
+    packages
+}
+
+fn bootstrap_base_system(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+    let use_encryption = plan.storage.encryption().is_some();
+    let use_plymouth = plan.use_plymouth;
+    let minimal_mode = plan.minimal_mode;
+
+    let packages = base_packages(plan);
 
     if use_encryption {
         println!("Encryption enabled; required packages will be installed inside chroot.");
@@ -249,7 +278,7 @@ fn run_pacstrap(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> 
 
     let packages_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
 
-    super::pacman::pacstrap("/mnt", &packages_refs, executor)?;
+    super::pacman::bootstrap_packages("/mnt", &packages_refs, executor, plan.linux_variant)?;
 
     Ok(())
 }
@@ -309,7 +338,7 @@ mod firmware_tests {
     }
 
     #[test]
-    fn amd_gpu_without_amd_cpu_skips_platform_firmware() {
+    fn amd_gpu_without_amd_cpu_skips_variant_firmware() {
         // Discrete AMD GPU + Intel CPU is a common combo. We must not pull
         // linux-firmware-amd, which is CPU/APU platform firmware.
         let mut system_info = SystemInfo::default();
@@ -328,5 +357,48 @@ mod firmware_tests {
         let plan = plan_with(system_info);
 
         assert!(firmware_packages(&plan).contains(&"linux-firmware-nvidia".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod base_package_tests {
+    use super::base_packages;
+    use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
+    use crate::arch::engine::test_install_plan;
+
+    #[test]
+    fn arch_base_packages_are_unchanged() {
+        let plan = test_install_plan();
+        assert_eq!(plan.linux_variant, ArchLinuxVariant::Arch);
+
+        let packages = base_packages(&plan);
+        assert!(packages.contains(&"base".to_string()));
+        assert!(
+            !packages
+                .iter()
+                .any(|package| package.starts_with("elogind-")
+                    || package.as_str() == "artix-mirrorlist"),
+            "Arch must not receive Artix packages: {packages:?}"
+        );
+    }
+
+    #[test]
+    fn artix_base_packages_add_the_init_and_artix_mirrorlist() {
+        let mut plan = test_install_plan();
+        plan.linux_variant = ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC);
+
+        let packages = base_packages(&plan);
+        assert!(packages.contains(&"base".to_string()));
+        assert!(packages.contains(&"elogind-openrc".to_string()));
+        assert!(packages.contains(&"artix-mirrorlist".to_string()));
+        assert!(!packages.contains(&"elogind-dinit".to_string()));
+        assert_eq!(
+            packages
+                .iter()
+                .filter(|package| package.as_str() == "artix-mirrorlist")
+                .count(),
+            1,
+            "artix-mirrorlist must be added once: {packages:?}"
+        );
     }
 }

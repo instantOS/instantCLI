@@ -34,7 +34,7 @@ pub fn install_package_names(manager: PackageManager, packages: &[&str]) -> Resu
     match manager {
         // Bootstrap the throwaway ISO before any interactive UI needs fzf.
         PackageManager::Pacman if crate::common::distro::is_live_iso() => {
-            crate::arch::execution::pacman::Pacman::current().install_live_dependencies(
+            crate::arch::execution::pacman::Pacman::current()?.install_live_dependencies(
                 packages,
                 crate::arch::offline::mode(),
                 &crate::arch::execution::CommandExecutor::new(false, None),

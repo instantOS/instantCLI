@@ -52,8 +52,22 @@ See [Alpine packaging](apk/README.md) for local build instructions.
 - game save management
 - notification center
 - [password and OTP management](https://instantos.io/docs/pass) via `ins pass`
-- Arch Linux Installer
+- Arch Linux and Artix Linux installer
 - video editing (yes, I know it's random)
+
+### Artix Linux support
+
+`ins arch install` supports Artix Linux with OpenRC, runit, s6 and dinit. You can install
+from the Artix live ISO or from a running Artix system onto a different disk; the running
+system's pacman configuration is never rewritten. `ins arch setup` works on an existing
+Artix system.
+
+s6 installations require the current `s6-frontend` tooling. Legacy s6 service wrappers
+are not supported.
+
+Minimal mode installs vanilla Artix. The full instantOS profile uses
+`artix-archlinux-support` with the Arch `extra` and `multilib` repositories. The installer does
+not configure Plymouth on Artix.
 
 ### Reviewing possible non-speech in video transcripts
 

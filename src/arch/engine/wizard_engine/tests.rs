@@ -130,7 +130,7 @@ impl WizardStep for StrictAnswerStep {
         Ok(StepOutcome::Answer(self.accepted.to_string()))
     }
 
-    fn should_ask(&self, _context: &InstallContext) -> bool {
+    fn is_relevant(&self, _context: &InstallContext) -> bool {
         self.relevant
     }
 
@@ -422,7 +422,7 @@ impl WizardStep for ProviderRelevanceQuestion {
         vec![KeyId::of::<RelevanceFlagKey>()]
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         !context.get::<RelevanceFlagKey>().unwrap_or(false)
     }
 
@@ -553,7 +553,7 @@ async fn provider_can_make_a_selected_question_irrelevant() {
     assert_eq!(engine.find_next_step_index(), Some(0));
     assert!(matches!(
         engine.wait_until_ready(0, &mut providers).await.unwrap(),
-        super::StepReadiness::Irrelevant
+        super::StepReadiness::Skipped
     ));
     assert_eq!(engine.find_next_step_index(), None);
 }
@@ -1493,14 +1493,83 @@ fn imported_context_does_not_demand_missing_answers() {
 }
 
 #[test]
-fn imported_context_accepts_completed_info_step_even_when_should_ask_is_false() {
+fn imported_context_accepts_completed_info_step_even_when_is_relevant_is_false() {
     let steps: Vec<Box<dyn WizardStep>> = vec![Box::new(
         crate::arch::questions::warnings::DualBootEspWarning,
     )];
     let mut context = InstallContext::new();
     context.completed_steps.insert(StepId::DualBootEspWarning);
 
-    // Even without providers running (so DualBootDisksKey is absent and should_ask is false),
+    // Even without providers running (so DualBootDisksKey is absent and is_relevant is false),
     // validate_imported_context must not reject the completed warning.
     validate_imported_context(&steps, &context).unwrap();
+}
+
+#[test]
+fn saved_mirror_region_survives_import_without_provider_data() {
+    use crate::arch::mirrors::MirrorRegionsKey;
+    use crate::arch::questions::MirrorRegionQuestion;
+
+    let mut context = InstallContext::new();
+    context.set::<MirrorRegionsKey>(vec!["Germany".to_string()]);
+    context.set_answer(StepId::MirrorRegion, "Germany".to_string());
+    let saved = toml::to_string(&context).unwrap();
+    let restored: InstallContext = toml::from_str(&saved).unwrap();
+    assert!(restored.get::<MirrorRegionsKey>().is_none());
+    let steps: Vec<Box<dyn WizardStep>> = vec![Box::new(MirrorRegionQuestion)];
+    validate_imported_context(&steps, &restored).unwrap();
+
+    let mut engine = WizardEngine::new(steps).unwrap().with_context(restored);
+    engine.normalize_context();
+    assert_eq!(
+        engine.context.get_answer(&StepId::MirrorRegion).unwrap(),
+        "Germany"
+    );
+    // A later fetch failure hides the question without invalidating its answer.
+    engine.context.set::<MirrorRegionsKey>(Vec::new());
+    engine.normalize_context();
+    assert!(engine.find_next_step_index().is_none());
+    validate_imported_context(&engine.steps, &engine.context).unwrap();
+    assert_eq!(
+        engine.context.get_answer(&StepId::MirrorRegion).unwrap(),
+        "Germany"
+    );
+
+    engine
+        .context
+        .set_answer(StepId::MirrorRegion, String::new());
+    assert!(validate_imported_context(&engine.steps, &engine.context).is_err());
+}
+
+#[tokio::test]
+async fn mirror_availability_is_checked_after_its_provider_finishes() {
+    use crate::arch::mirrors::MirrorRegionsKey;
+    use crate::arch::questions::MirrorRegionQuestion;
+
+    for regions in [Vec::new(), vec!["Germany".to_string()]] {
+        let available = !regions.is_empty();
+        let mut engine = WizardEngine::new(vec![Box::new(MirrorRegionQuestion)]).unwrap();
+        assert_eq!(engine.find_next_step_index(), Some(0));
+        let context = engine.context.clone();
+        let mut providers = super::ProviderRuntime {
+            tasks: vec![super::ProviderTask {
+                publishes: vec![KeyId::of::<MirrorRegionsKey>()],
+                handle: tokio::spawn(async move {
+                    context.set::<MirrorRegionsKey>(regions);
+                    Ok(())
+                }),
+            }],
+            failures_by_key: Default::default(),
+        };
+        let readiness = engine.wait_until_ready(0, &mut providers).await.unwrap();
+        assert_eq!(
+            readiness,
+            if available {
+                super::StepReadiness::Ready
+            } else {
+                super::StepReadiness::Skipped
+            }
+        );
+        assert_eq!(engine.find_next_step_index(), available.then_some(0));
+    }
 }

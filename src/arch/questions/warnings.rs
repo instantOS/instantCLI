@@ -20,7 +20,7 @@ impl WizardStep for LowRamWarning {
         true
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         // Show warning if RAM is detected and less than 1GB
         context.system_info.total_ram_gb.is_some_and(|ram| ram < 1)
     }
@@ -55,7 +55,7 @@ impl WizardStep for VirtualBoxWarning {
         true
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         if let Some(vm_type) = &context.system_info.vm_type {
             let vm = vm_type.to_lowercase();
             vm.contains("oracle") || vm.contains("virtualbox")
@@ -91,7 +91,7 @@ impl WizardStep for WeakPasswordWarning {
         true
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         if !context.get_answer_bool(StepId::UseEncryption) {
             return false;
         }
@@ -133,7 +133,7 @@ impl WizardStep for DualBootEspWarning {
         true
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         let is_dualboot = context.partitioning_method()
             == Some(crate::arch::engine::PartitioningMethod::DualBoot);
 

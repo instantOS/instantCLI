@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum InstallStep {
     /// Prepare disk (partition, format, mount)
     Disk,
-    /// Install base system (pacstrap)
+    /// Bootstrap the base system
     Base,
     /// Generate fstab
     Fstab,

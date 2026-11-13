@@ -1,21 +1,20 @@
 //! How the installer reaches the selected package mirrors.
 //!
-//! `pacstrap` normally reads the host's pacman configuration and copies its
-//! mirrorlist into the target. That is safe on a disposable live ISO but would
-//! reconfigure a running host. [`PackageSource::Isolated`] instead uses files
-//! under the installer's temporary state directory (`pacstrap -C -M`) and
-//! writes the selected mirrorlist into the target. Inside the chroot, `/etc`
-//! belongs to the target, so in-place writes are safe.
+//! The bootstrap command (the bootstrap command/`basestrap`) normally reads the host's
+//! pacman configuration and copies its mirrorlist into the target. That is
+//! safe on a disposable live ISO but would reconfigure a running host.
+//! [`PackageSource::Isolated`] instead uses files under the installer's
+//! temporary state directory (`-C -M`) and writes the selected mirrorlist into
+//! the target. Inside the chroot, `/etc` belongs to the target, so in-place
+//! writes are safe.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use super::pacman::Pacman;
 use super::paths;
-
-/// The official repositories a fresh Arch target needs, and the only ones the
-/// base install may consult.
-const OFFICIAL_REPOSITORIES: &[&str] = &["core", "extra", "multilib"];
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 
 /// Host pacman configuration, used in place.
 const HOST_PACMAN_CONF: &str = "/etc/pacman.conf";
@@ -48,7 +47,7 @@ impl HostPacman {
 /// host's `/etc`, plus the host files they are derived from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageSourceFiles {
-    /// The pacstrap configuration this run derives. Ours to write.
+    /// The bootstrap pacman configuration this run derives. Ours to write.
     own_config: PathBuf,
     /// The mirrorlist this run installs from. Ours to write.
     own_mirrorlist: PathBuf,
@@ -57,6 +56,9 @@ pub struct PackageSourceFiles {
     /// The source system's own pacman files. Read-only inputs to the
     /// derivation — never written, and the reason this type exists.
     host: HostPacman,
+    /// The target variant whose repository set the derived configuration
+    /// carries.
+    linux_variant: ArchLinuxVariant,
 }
 
 impl PackageSourceFiles {
@@ -64,26 +66,28 @@ impl PackageSourceFiles {
     /// files from `host`. Production uses [`Self::new`]; tests use this to
     /// point the whole flow at a temporary directory.
     #[cfg(test)]
-    fn in_directory(dir: PathBuf, host: HostPacman) -> Self {
+    fn in_directory(dir: PathBuf, host: HostPacman, linux_variant: ArchLinuxVariant) -> Self {
         Self {
-            own_config: dir.join("pacstrap.conf"),
-            own_mirrorlist: dir.join("pacstrap-mirrorlist"),
+            own_config: dir.join("bootstrap-pacman.conf"),
+            own_mirrorlist: dir.join("bootstrap-mirrorlist"),
             target_mirrorlist: dir.join("mnt/etc/pacman.d/mirrorlist"),
             host,
+            linux_variant,
         }
     }
 
-    fn new() -> Self {
+    fn new(linux_variant: ArchLinuxVariant) -> Self {
         let dir = paths::host_state_dir();
         Self {
-            own_config: dir.join("pacstrap.conf"),
-            own_mirrorlist: dir.join("pacstrap-mirrorlist"),
+            own_config: dir.join("bootstrap-pacman.conf"),
+            own_mirrorlist: dir.join("bootstrap-mirrorlist"),
             target_mirrorlist: paths::chroot_path(HOST_MIRRORLIST),
             host: HostPacman::detect(),
+            linux_variant,
         }
     }
 
-    /// The pacstrap configuration this run derived from its own mirrorlist.
+    /// The bootstrap pacman configuration this run derived from its own mirrorlist.
     pub fn own_config(&self) -> &Path {
         &self.own_config
     }
@@ -108,7 +112,7 @@ impl PackageSourceFiles {
 /// How this run reaches the selected package mirrors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageSource {
-    /// Use the host's pacman configuration where it is, and let `pacstrap`
+    /// Use the host's pacman configuration where it is, and let the bootstrap command
     /// carry the mirrorlist into the target.
     InPlace,
     /// Keep the host's pacman configuration untouched.
@@ -119,19 +123,20 @@ impl PackageSource {
     /// The package source appropriate for this machine.
     ///
     /// A live ISO keeps the in-place behaviour, byte for byte, and so does a
-    /// re-entry inside the chroot.
-    pub fn resolve() -> Self {
+    /// re-entry inside the chroot. A running system gets an isolated
+    /// configuration so its own pacman files are never rewritten.
+    pub fn resolve(linux_variant: ArchLinuxVariant) -> Self {
         if paths::host_etc_is_ephemeral() {
             Self::InPlace
         } else {
-            Self::Isolated(PackageSourceFiles::new())
+            Self::Isolated(PackageSourceFiles::new(linux_variant))
         }
     }
 
     /// Whether this run keeps the host's pacman configuration untouched.
     ///
     /// True exactly when [`Self::derived_pacman`] is `Some`, which is also
-    /// when `pacstrap` must be told to skip copying the host's mirrorlist:
+    /// when the bootstrap command must be told to skip copying the host's mirrorlist:
     /// otherwise the target would end up with the source system's mirrors.
     pub fn is_isolated(&self) -> bool {
         matches!(self, Self::Isolated(_))
@@ -146,7 +151,7 @@ impl PackageSource {
 
     /// Install the selected mirrorlist for this run.
     ///
-    /// In place, this writes the host's mirrorlist, which `pacstrap` then
+    /// In place, this writes the host's mirrorlist, which the bootstrap command then
     /// copies into the target. Isolated, it writes the installer's own copy
     /// and regenerates the derived pacman configuration from it.
     pub fn apply_mirrorlist(&self, content: &str, dry_run: bool) -> Result<()> {
@@ -163,7 +168,7 @@ impl PackageSource {
     fn write_isolated(&self, files: &PackageSourceFiles, content: &str) -> Result<()> {
         if server_lines(content).is_empty() {
             bail!(
-                "the selected mirrorlist has no active `Server =` entries, so pacstrap would have no mirror to install from"
+                "the selected mirrorlist has no active `Server =` entries, so the bootstrap command would have no mirror to install from"
             );
         }
         paths::write_host_file(files.own_mirrorlist(), content)
@@ -171,7 +176,7 @@ impl PackageSource {
 
         let source_config = std::fs::read_to_string(&files.host.config)
             .with_context(|| format!("Failed to read {}", files.host.config.display()))?;
-        let derived = derive_pacstrap_config(&source_config, content);
+        let derived = derive_bootstrap_pacman_config(&source_config, content, files.linux_variant);
         paths::write_host_file(files.own_config(), &derived)
             .with_context(|| format!("Failed to write {}", files.own_config().display()))
     }
@@ -179,30 +184,34 @@ impl PackageSource {
     /// The pacman belonging to the system being installed.
     ///
     /// Always available, unlike [`Self::derived_pacman`]: the isolation
-    /// decision is about where `pacstrap` *reads* its configuration from, but
-    /// the target has its own pacman either way, and that is the one whose
-    /// package cache the install wants to reclaim.
-    pub fn target_pacman(&self) -> crate::arch::execution::pacman::Pacman {
-        crate::arch::execution::pacman::Pacman::for_target(
-            crate::arch::execution::paths::CHROOT_MOUNT,
+    /// decision is about where the bootstrap command *reads* its configuration
+    /// from, but the target has its own pacman either way, and that is the one
+    /// whose package cache the install wants to reclaim.
+    pub fn target_pacman(&self, linux_variant: ArchLinuxVariant) -> Pacman {
+        Pacman::for_target_variant(
+            paths::CHROOT_MOUNT,
             paths::chroot_path(HOST_PACMAN_CONF),
             paths::chroot_path(HOST_MIRRORLIST),
+            linux_variant,
         )
     }
 
     /// The pacman this run derives and installs from, if not the host's own.
     ///
-    /// `None` means in-place: `pacstrap` then uses the host's configuration and
-    /// carries the host's mirrorlist into the target, which is how the selected
-    /// region reaches the target on a live ISO. Isolated, this carries both
-    /// files `pacstrap` needs — the `-C` configuration and the mirrorlist its
-    /// retry loop reorders — neither of which may be the source system's.
-    pub fn derived_pacman(&self) -> Option<crate::arch::execution::pacman::Pacman> {
+    /// `None` means in-place: the bootstrap command then uses the host's
+    /// configuration and carries the host's mirrorlist into the target, which
+    /// is how the selected region reaches the target on a live ISO. Isolated,
+    /// this carries both files the bootstrap command needs — the `-C` configuration and
+    /// the mirrorlist its retry loop reorders — neither of which may be the
+    /// source system's. The derived pacman carries the target variant's
+    /// repository set.
+    pub fn derived_pacman(&self) -> Option<Pacman> {
         self.files().map(|files| {
-            crate::arch::execution::pacman::Pacman::for_target(
-                crate::arch::execution::paths::CHROOT_MOUNT,
+            Pacman::for_target_variant(
+                paths::CHROOT_MOUNT,
                 files.own_config(),
                 files.own_mirrorlist(),
+                files.linux_variant,
             )
         })
     }
@@ -214,10 +223,14 @@ impl PackageSource {
     /// carries the tuning, and rewriting the host's file is the bug being
     /// avoided; it is regenerated from the mirrorlist already installed, so
     /// the two cannot drift apart.
-    pub async fn configure_host_pacman(&self, dry_run: bool) -> Result<()> {
+    pub async fn configure_bootstrap_pacman(
+        &self,
+        linux_variant: ArchLinuxVariant,
+        dry_run: bool,
+    ) -> Result<()> {
         let files = match self {
             Self::InPlace => {
-                crate::arch::execution::pacman::Pacman::current()
+                crate::arch::execution::pacman::Pacman::for_variant(linux_variant)
                     .configure_settings(dry_run)
                     .await?;
                 return Ok(());
@@ -275,7 +288,7 @@ impl PackageSource {
 
     /// Put the selected mirrorlist in the target.
     ///
-    /// A no-op in place: `pacstrap` has already copied the host's list, which
+    /// A no-op in place: the bootstrap command has already copied the host's list, which
     /// is the list that was selected. In dry-run there is nothing installed
     /// and nothing to read, so the run's own mirrorlist is reported instead.
     pub fn install_target_mirrorlist(&self, dry_run: bool) -> Result<()> {
@@ -380,7 +393,7 @@ fn global_block(host_config: &str) -> String {
     joined
 }
 
-/// Build the pacman configuration `pacstrap` uses on a running host.
+/// Build the pacman configuration the bootstrap command uses on a running host.
 ///
 /// Derived from the host's `pacman.conf`, which is only read: its global
 /// `[options]` block is carried over verbatim so signature policy,
@@ -392,11 +405,15 @@ fn global_block(host_config: &str) -> String {
 /// It is not needed to build the base system, and a repository that is
 /// unreachable (or signed with keys the target does not have) would fail the
 /// whole `-Sy` and take the install down with it.
-pub fn derive_pacstrap_config(host_config: &str, mirrorlist: &str) -> String {
+pub fn derive_bootstrap_pacman_config(
+    host_config: &str,
+    mirrorlist: &str,
+    linux_variant: ArchLinuxVariant,
+) -> String {
     let servers = server_lines(mirrorlist);
     let mut derived = global_block(host_config);
 
-    for repository in OFFICIAL_REPOSITORIES {
+    for repository in linux_variant.native_repositories() {
         if !derived.is_empty() {
             derived.push('\n');
         }
@@ -445,7 +462,7 @@ Server = https://mirror2.de/$repo/os/$arch
 
     #[test]
     fn derived_config_keeps_options_and_replaces_repositories() {
-        let derived = derive_pacstrap_config(HOST_CONF, MIRRORLIST);
+        let derived = derive_bootstrap_pacman_config(HOST_CONF, MIRRORLIST, ArchLinuxVariant::Arch);
 
         // Global options survive, so the target inherits the running
         // system's signature and architecture policy.
@@ -454,7 +471,7 @@ Server = https://mirror2.de/$repo/os/$arch
         assert!(derived.contains("CheckSpace"));
 
         // The selected servers serve the official repositories.
-        for repository in OFFICIAL_REPOSITORIES {
+        for repository in ArchLinuxVariant::Arch.native_repositories() {
             assert!(derived.contains(&format!("[{repository}]")));
         }
         assert!(derived.contains("https://mirror.de/$repo/os/$arch"));
@@ -469,11 +486,33 @@ Server = https://mirror2.de/$repo/os/$arch
     }
 
     #[test]
+    fn artix_derived_config_uses_artix_repositories() {
+        use crate::arch::arch_linux_variant::ArtixInitSystem;
+
+        let linux_variant = ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC);
+        let derived = derive_bootstrap_pacman_config(HOST_CONF, MIRRORLIST, linux_variant);
+
+        for repository in linux_variant.native_repositories() {
+            assert!(
+                derived.contains(&format!("[{repository}]")),
+                "missing [{repository}]: {derived}"
+            );
+        }
+        for arch_only in ["[core]", "[extra]", "[multilib]"] {
+            assert!(
+                !derived.contains(arch_only),
+                "Artix config leaked {arch_only}: {derived}"
+            );
+        }
+        assert!(derived.contains("https://mirror.de/$repo/os/$arch"));
+    }
+
+    #[test]
     fn the_inherited_block_stops_at_the_first_repository() {
         // `#[multilib]` is a *commented-out* section, and the shipped
         // pacman.conf carries one for exactly this kind of tool. Inheriting
         // past it would take its commented-out `Include` with it.
-        let derived = derive_pacstrap_config(HOST_CONF, MIRRORLIST);
+        let derived = derive_bootstrap_pacman_config(HOST_CONF, MIRRORLIST, ArchLinuxVariant::Arch);
         let options_end = derived.find("[core]").expect("repositories follow");
         let inherited = &derived[..options_end];
 
@@ -487,8 +526,8 @@ Server = https://mirror2.de/$repo/os/$arch
 
     #[test]
     fn each_official_repository_appears_exactly_once() {
-        let derived = derive_pacstrap_config(HOST_CONF, MIRRORLIST);
-        for repository in OFFICIAL_REPOSITORIES {
+        let derived = derive_bootstrap_pacman_config(HOST_CONF, MIRRORLIST, ArchLinuxVariant::Arch);
+        for repository in ArchLinuxVariant::Arch.native_repositories() {
             assert_eq!(
                 derived.matches(&format!("[{repository}]")).count(),
                 1,
@@ -501,8 +540,11 @@ Server = https://mirror2.de/$repo/os/$arch
     fn a_host_config_without_an_options_section_still_yields_a_usable_config() {
         // A minimal or hand-edited pacman.conf must not produce a leading
         // blank line pacman would read as part of the first section.
-        let derived =
-            derive_pacstrap_config("[core]\nServer = https://old/$repo/os/$arch\n", MIRRORLIST);
+        let derived = derive_bootstrap_pacman_config(
+            "[core]\nServer = https://old/$repo/os/$arch\n",
+            MIRRORLIST,
+            ArchLinuxVariant::Arch,
+        );
         assert!(derived.starts_with("[core]"), "{derived}");
         assert!(!derived.contains("old"));
     }
@@ -514,6 +556,7 @@ Server = https://mirror2.de/$repo/os/$arch
         let source = PackageSource::Isolated(PackageSourceFiles::in_directory(
             PathBuf::from("/nonexistent"),
             HostPacman::detect(),
+            ArchLinuxVariant::Arch,
         ));
         let error = source
             .apply_mirrorlist("## no servers here\n", false)
@@ -522,8 +565,8 @@ Server = https://mirror2.de/$repo/os/$arch
     }
 
     #[test]
-    fn the_live_iso_keeps_pacstraps_own_mirrorlist_handling() {
-        // The e2e suite runs on the live ISO, where `pacstrap` copying the
+    fn the_live_iso_keeps_bootstraps_own_mirrorlist_handling() {
+        // The e2e suite runs on the live ISO, where the bootstrap command copying the
         // host mirrorlist is how the target gets the selected region. That
         // path must not gain a `-C` or a `-M`.
         let source = PackageSource::InPlace;
@@ -534,7 +577,7 @@ Server = https://mirror2.de/$repo/os/$arch
             source.effective_mirrorlist(),
             PathBuf::from(HOST_MIRRORLIST)
         );
-        // The mirrorlist is already in the target after `pacstrap`.
+        // The mirrorlist is already in the target after the bootstrap command.
         source.install_target_mirrorlist(false).unwrap();
     }
 
@@ -546,13 +589,14 @@ Server = https://mirror2.de/$repo/os/$arch
         let source = PackageSource::Isolated(PackageSourceFiles::in_directory(
             PathBuf::from("/nonexistent"),
             HostPacman::detect(),
+            ArchLinuxVariant::Arch,
         ));
         source.install_target_mirrorlist(true).unwrap();
     }
 
     #[test]
     fn the_isolated_source_never_names_a_host_pacman_path() {
-        let source = PackageSource::Isolated(PackageSourceFiles::new());
+        let source = PackageSource::Isolated(PackageSourceFiles::new(ArchLinuxVariant::Arch));
         let derived = source
             .derived_pacman()
             .expect("isolated source has a pacman");
@@ -561,7 +605,7 @@ Server = https://mirror2.de/$repo/os/$arch
         assert!(source.is_isolated());
         assert_eq!(
             source.effective_mirrorlist(),
-            paths::host_state_dir().join("pacstrap-mirrorlist")
+            paths::host_state_dir().join("bootstrap-mirrorlist")
         );
         assert_eq!(
             source
@@ -578,21 +622,22 @@ Server = https://mirror2.de/$repo/os/$arch
         let source = PackageSource::Isolated(PackageSourceFiles::in_directory(
             PathBuf::from("/nonexistent"),
             HostPacman::detect(),
+            ArchLinuxVariant::Arch,
         ));
         source.apply_mirrorlist(MIRRORLIST, true).unwrap();
     }
 
     #[test]
     fn retry_paths_use_the_run_s_own_mirrorlist() {
-        // The pacstrap retry loop shuffles whichever path the run installs
+        // The bootstrap retry loop shuffles whichever path the run installs
         // from, so both variants must resolve to a real, writable location
-        // and the in-place one must be the host file `pacstrap` copies.
+        // and the in-place one must be the host file the bootstrap command copies.
         let in_place = PackageSource::InPlace;
         assert_eq!(
             in_place.effective_mirrorlist(),
             PathBuf::from("/etc/pacman.d/mirrorlist")
         );
-        let isolated = PackageSource::Isolated(PackageSourceFiles::new());
+        let isolated = PackageSource::Isolated(PackageSourceFiles::new(ArchLinuxVariant::Arch));
         assert_eq!(
             isolated.effective_mirrorlist(),
             isolated
@@ -607,9 +652,9 @@ Server = https://mirror2.de/$repo/os/$arch
         // On this test host (not a live ISO) the isolated variant must be
         // chosen, which is the whole point of the change.
         if crate::common::distro::is_live_iso() {
-            assert!(!PackageSource::resolve().is_isolated());
+            assert!(!PackageSource::resolve(ArchLinuxVariant::Arch).is_isolated());
         } else {
-            assert!(PackageSource::resolve().is_isolated());
+            assert!(PackageSource::resolve(ArchLinuxVariant::Arch).is_isolated());
         }
     }
 }
@@ -623,7 +668,7 @@ mod host_write_allowlist {
 
     /// Known installer-state write paths outside `/mnt`.
     fn allowed_host_writes() -> Vec<String> {
-        let files = PackageSourceFiles::new();
+        let files = PackageSourceFiles::new(ArchLinuxVariant::Arch);
         let mut allowed = vec![
             paths::host_questions_file().display().to_string(),
             paths::host_state_file().display().to_string(),
@@ -644,7 +689,7 @@ mod host_write_allowlist {
     #[tokio::test]
     async fn the_offline_keep_path_still_produces_a_usable_configuration() {
         // An offline bundle can leave the run's own mirrorlist unwritten: the
-        // ISO's shipped list is already correct. `configure_host_pacman` must
+        // ISO's shipped list is already correct. `configure_bootstrap_pacman` must
         // still produce a pacstrap config in that case, or the base install
         // would read one that does not exist yet.
         //
@@ -664,14 +709,18 @@ mod host_write_allowlist {
                 config: host_config,
                 mirrorlist: host_mirrorlist,
             },
+            ArchLinuxVariant::Arch,
         ));
 
         // The precondition: the run's own mirrorlist was never written.
         assert!(!source.effective_mirrorlist().exists());
 
-        source.configure_host_pacman(false).await.unwrap();
+        source
+            .configure_bootstrap_pacman(ArchLinuxVariant::Arch, false)
+            .await
+            .unwrap();
 
-        // So the host's list seeded a config `pacstrap -C` can read, and it
+        // So the host's list seeded a config the bootstrap command with `-C` can read, and it
         // lives in the installer's own state rather than the host's `/etc`.
         let config = std::fs::read_to_string(source.files().unwrap().own_config()).unwrap();
         assert!(
@@ -699,6 +748,7 @@ mod host_write_allowlist {
                 config: root.join("host-etc-pacman.conf"),
                 mirrorlist: missing.clone(),
             },
+            ArchLinuxVariant::Arch,
         ));
 
         let error = source.installed_mirrorlist().unwrap_err().to_string();
@@ -711,8 +761,11 @@ mod host_write_allowlist {
     #[test]
     fn an_installed_mirrorlist_is_read_back_rather_than_regenerated() {
         let dir = tempfile::tempdir().unwrap();
-        let files =
-            PackageSourceFiles::in_directory(dir.path().to_path_buf(), HostPacman::detect());
+        let files = PackageSourceFiles::in_directory(
+            dir.path().to_path_buf(),
+            HostPacman::detect(),
+            ArchLinuxVariant::Arch,
+        );
         std::fs::write(files.own_mirrorlist(), MIRRORLIST).unwrap();
         let source = PackageSource::Isolated(files);
 
@@ -739,6 +792,7 @@ mod host_write_allowlist {
                 config: host_config.clone(),
                 mirrorlist: host_mirrorlist.clone(),
             },
+            ArchLinuxVariant::Arch,
         ));
 
         source.apply_mirrorlist(mirrorlist, false).unwrap();
@@ -773,6 +827,7 @@ mod host_write_allowlist {
                 config: host_config,
                 mirrorlist: host_mirrorlist,
             },
+            ArchLinuxVariant::Arch,
         ));
         let selected = "Server = https://chosen.example/$repo/os/$arch\n";
 
@@ -801,7 +856,7 @@ mod host_write_allowlist {
             std::fs::read_to_string(root.join("state/mnt/etc/pacman.d/mirrorlist")).unwrap();
         assert_eq!(target, selected);
 
-        let config = std::fs::read_to_string(root.join("state/pacstrap.conf")).unwrap();
+        let config = std::fs::read_to_string(root.join("state/bootstrap-pacman.conf")).unwrap();
         assert!(config.contains("chosen.example"));
         assert!(!config.contains("mirror.de"));
     }
@@ -826,9 +881,9 @@ mod host_write_allowlist {
     #[test]
     fn the_installer_owned_configuration_never_names_a_pacman_path() {
         // The single most important invariant here: the derived config is
-        // what `pacstrap -C` reads, so any absolute host path inside it would
+        // what the bootstrap command with `-C` reads, so any absolute host path inside it would
         // make the base install depend on the source system's configuration.
-        let source = PackageSource::Isolated(PackageSourceFiles::new());
+        let source = PackageSource::Isolated(PackageSourceFiles::new(ArchLinuxVariant::Arch));
         let derived = source
             .derived_pacman()
             .expect("isolated source has a pacman");
@@ -839,9 +894,10 @@ mod host_write_allowlist {
             paths::host_state_dir().display()
         );
 
-        let derived = derive_pacstrap_config(
+        let derived = derive_bootstrap_pacman_config(
             "[options]\nInclude = /etc/pacman.d/mirrorlist\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n",
             "Server = https://mirror.example/$repo/os/$arch\n",
+            ArchLinuxVariant::Arch,
         );
         for line in derived.lines() {
             assert!(
@@ -854,12 +910,12 @@ mod host_write_allowlist {
     #[test]
     fn no_host_pacman_file_is_a_write_destination_off_a_live_iso() {
         // The bug being fixed, stated as a property: on a running system the
-        // mirrorlist write and the pacstrap configuration must not be any of
+        // mirrorlist write and the bootstrap pacman configuration must not be any of
         // the source system's pacman files.
         if paths::host_etc_is_ephemeral() {
             return;
         }
-        let source = PackageSource::resolve();
+        let source = PackageSource::resolve(ArchLinuxVariant::Arch);
         assert!(source.is_isolated(), "a running host must be isolated");
 
         let mut destinations = allowed_host_writes();

@@ -1,4 +1,5 @@
-use crate::arch::engine::{GpuKind, InstallPlan};
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
+use crate::arch::engine::{GpuKind, InstallPlan, Kernel};
 use anyhow::Result;
 use std::collections::HashSet;
 
@@ -99,6 +100,7 @@ fn collect_language_packages(plan: &InstallPlan) -> Vec<String> {
 fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
     let minimal_mode = plan.minimal_mode;
     let kernel = plan.kernel;
+    let linux_variant = plan.linux_variant;
 
     let mut packages: Vec<String> = strings(&[
         "openssh",
@@ -116,6 +118,20 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
         "xdg-user-dirs",
     ]);
 
+    packages.extend(super::services::artix_init_service_packages(
+        linux_variant,
+        plan.desktop,
+        plan.display_manager,
+        minimal_mode,
+        plan.system_info.vm_type.as_deref(),
+    ));
+    if linux_variant.is_artix() {
+        packages.push("chrony".to_string());
+        if !minimal_mode {
+            packages.push("artix-archlinux-support".to_string());
+        }
+    }
+
     // Kernel headers are only needed to build out-of-tree modules. Whether a
     // GPU/driver pair needs them is decided next to the driver-package list
     // in GpuKind, so this site stays oblivious to which kernels require
@@ -124,7 +140,7 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
         .system_info
         .gpus
         .iter()
-        .filter_map(|gpu| gpu.get_kernel_headers(kernel))
+        .filter_map(|gpu| gpu_kernel_headers(gpu, kernel, linux_variant))
         .next()
     {
         packages.push(headers);
@@ -176,26 +192,24 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
             }
         }
 
-        packages.extend(
-            gpu.get_driver_packages(Some(kernel))
-                .into_iter()
-                .map(String::from),
-        );
+        packages.extend(gpu_packages(gpu, kernel, linux_variant));
     }
 
     if let Some(vm_type) = &plan.system_info.vm_type {
         println!("Detected VM: {}, adding guest tools", vm_type);
         match vm_type.as_str() {
-            "kvm" | "qemu" | "bochs" => packages.push("qemu-guest-agent".to_owned()),
+            "kvm" | "qemu" | "bochs" => {
+                packages.push("qemu-guest-agent".to_owned());
+            }
+            "vmware" if linux_variant.is_artix() => {
+                println!(
+                    "Warning: open-vm-tools has no Artix init integration; skipping VMware guest tools."
+                );
+            }
             "vmware" => packages.push("open-vm-tools".to_owned()),
             "oracle" => packages.push("virtualbox-guest-utils".to_owned()),
             _ => println!("No specific guest tools for VM type: {}", vm_type),
         }
-    }
-
-    if plan.use_plymouth && !minimal_mode {
-        println!("Plymouth enabled, adding plymouth package");
-        packages.push("plymouth".to_owned());
     }
 
     if !minimal_mode {
@@ -208,14 +222,57 @@ fn collect_extended_packages(plan: &InstallPlan) -> Result<Vec<String>> {
     Ok(packages)
 }
 
+/// Driver packages for `gpu` on `kernel` and `linux_variant`.
+///
+/// Artix does not package `nvidia-open-lts`, so the LTS kernel uses the DKMS
+/// module there. Arch keeps its prebuilt LTS module.
+fn gpu_packages(gpu: &GpuKind, kernel: Kernel, linux_variant: ArchLinuxVariant) -> Vec<String> {
+    if linux_variant.is_artix() && matches!(gpu, GpuKind::Nvidia) && kernel == Kernel::Lts {
+        return strings(&[
+            "nvidia-open-dkms",
+            "dkms",
+            "nvidia-utils",
+            "nvidia-settings",
+        ]);
+    }
+
+    gpu.get_driver_packages(Some(kernel))
+        .into_iter()
+        .map(String::from)
+        .collect()
+}
+
+/// Kernel headers required by the driver selected for `gpu`.
+///
+/// The DKMS fallback used for Nvidia on Artix's LTS kernel needs the LTS
+/// headers, which the Arch-oriented `GpuKind` helper does not ask for.
+fn gpu_kernel_headers(
+    gpu: &GpuKind,
+    kernel: Kernel,
+    linux_variant: ArchLinuxVariant,
+) -> Option<String> {
+    if linux_variant.is_artix() && matches!(gpu, GpuKind::Nvidia) && kernel == Kernel::Lts {
+        return Some(format!("{}-headers", kernel.label()));
+    }
+
+    gpu.get_kernel_headers(kernel)
+}
+
 #[cfg(test)]
 mod tests {
     use super::build_standard_package_plan;
+    use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
     use crate::arch::config::{DesktopEnvironment, DisplayManager};
-    use crate::arch::engine::InstallPlan;
+    use crate::arch::engine::{GpuKind, InstallPlan, Kernel};
 
     fn base_plan() -> InstallPlan {
         crate::arch::engine::test_install_plan()
+    }
+
+    fn artix_plan(init: ArtixInitSystem) -> InstallPlan {
+        let mut plan = base_plan();
+        plan.linux_variant = ArchLinuxVariant::Artix(init);
+        plan
     }
 
     #[test]
@@ -320,5 +377,127 @@ mod tests {
 
         let packages = build_standard_package_plan(&plan).unwrap();
         assert!(packages.iter().any(|pkg| pkg == "firefox-i18n-de"));
+    }
+
+    #[test]
+    fn artix_plans_include_init_service_packages() {
+        let plan = artix_plan(ArtixInitSystem::OpenRC);
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        for required in [
+            "networkmanager-openrc",
+            "openssh-openrc",
+            "chrony",
+            "chrony-openrc",
+            "artix-archlinux-support",
+        ] {
+            assert!(
+                packages.iter().any(|pkg| pkg == required),
+                "Missing {required}: {packages:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn artix_minimal_mode_skips_arch_repository_support() {
+        let mut plan = artix_plan(ArtixInitSystem::Runit);
+        plan.minimal_mode = true;
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(!packages.iter().any(|pkg| pkg == "artix-archlinux-support"));
+        assert!(packages.iter().any(|pkg| pkg == "networkmanager-runit"));
+    }
+
+    #[test]
+    fn artix_display_manager_gets_its_init_package() {
+        let mut plan = artix_plan(ArtixInitSystem::S6);
+        plan.desktop = DesktopEnvironment::Hyprland;
+        plan.display_manager = DisplayManager::Gdm;
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "gdm"));
+        assert!(packages.iter().any(|pkg| pkg == "gdm-s6"));
+    }
+
+    #[test]
+    fn artix_lightdm_gets_its_init_package() {
+        let mut plan = artix_plan(ArtixInitSystem::Dinit);
+        plan.desktop = DesktopEnvironment::Sway;
+        plan.display_manager = DisplayManager::Lightdm;
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "lightdm"));
+        assert!(packages.iter().any(|pkg| pkg == "lightdm-dinit"));
+    }
+
+    #[test]
+    fn artix_vm_guest_agent_gets_its_init_package() {
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.system_info.vm_type = Some("kvm".to_owned());
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "qemu-guest-agent"));
+        assert!(packages.iter().any(|pkg| pkg == "qemu-guest-agent-openrc"));
+    }
+
+    #[test]
+    fn artix_encryption_gets_lvm_and_cryptsetup_init_packages() {
+        use crate::arch::engine::{
+            DiskPath, EncryptionPassword, EncryptionPlan, FilesystemPlan, StoragePlan,
+        };
+
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.storage = StoragePlan::Automatic {
+            disk: DiskPath::parse("/dev/test-disk").unwrap(),
+            filesystem: FilesystemPlan::Ext4,
+            encryption: Some(EncryptionPlan {
+                password: EncryptionPassword::parse("test-secret").unwrap(),
+            }),
+        };
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "lvm2-openrc"));
+        assert!(packages.iter().any(|pkg| pkg == "cryptsetup-openrc"));
+    }
+
+    #[test]
+    fn artix_lts_nvidia_uses_dkms_instead_of_the_missing_lts_module() {
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.kernel = Kernel::Lts;
+        plan.system_info.gpus = vec![GpuKind::Nvidia];
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "nvidia-open-dkms"));
+        assert!(packages.iter().any(|pkg| pkg == "dkms"));
+        assert!(packages.iter().any(|pkg| pkg == "linux-lts-headers"));
+        assert!(!packages.iter().any(|pkg| pkg == "nvidia-open-lts"));
+    }
+
+    #[test]
+    fn arch_lts_nvidia_keeps_the_prebuilt_module() {
+        let mut plan = base_plan();
+        plan.kernel = Kernel::Lts;
+        plan.system_info.gpus = vec![GpuKind::Nvidia];
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(packages.iter().any(|pkg| pkg == "nvidia-open-lts"));
+        assert!(!packages.iter().any(|pkg| pkg == "nvidia-open-dkms"));
+        assert!(!packages.iter().any(|pkg| pkg == "linux-lts-headers"));
+    }
+
+    #[test]
+    fn artix_never_plans_plymouth() {
+        let mut plan = artix_plan(ArtixInitSystem::OpenRC);
+        plan.use_plymouth = true;
+
+        let packages = build_standard_package_plan(&plan).unwrap();
+
+        assert!(!packages.iter().any(|pkg| pkg == "plymouth"));
     }
 }

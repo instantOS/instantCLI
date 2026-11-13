@@ -1,4 +1,5 @@
 use super::CommandRunner;
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::engine::{BootMode, InstallPlan};
 use crate::common::config_edit::set_keys;
 use anyhow::{Context, Result};
@@ -85,7 +86,10 @@ fn configure_grub(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()
         configure_grub_encryption(plan, executor)?;
     }
 
-    if plan.use_plymouth && !plan.minimal_mode {
+    if plan.use_plymouth
+        && !plan.minimal_mode
+        && plan.linux_variant.supports_plymouth_configuration()
+    {
         configure_grub_plymouth(executor)?;
     }
 
@@ -124,7 +128,10 @@ fn generate_grub_config(executor: &dyn CommandRunner) -> Result<()> {
 
 fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     if executor.dry_run() {
-        println!("[DRY RUN] Adding 'rd.luks.name=...=cryptlvm' to GRUB_CMDLINE_LINUX");
+        println!(
+            "[DRY RUN] Adding '{}' to GRUB_CMDLINE_LINUX",
+            plan.linux_variant.encryption_kernel_param("...")
+        );
         println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=n in /etc/default/grub");
         return Ok(());
     }
@@ -135,12 +142,15 @@ fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -
 
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
-    std::fs::write(grub_default, encrypted_grub_defaults(&content, &uuid))?;
+    std::fs::write(
+        grub_default,
+        encrypted_grub_defaults(&content, &uuid, plan.linux_variant),
+    )?;
     Ok(())
 }
 
-fn encrypted_grub_defaults(content: &str, uuid: &str) -> String {
-    let param = build_grub_encryption_param(uuid);
+fn encrypted_grub_defaults(content: &str, uuid: &str, linux_variant: ArchLinuxVariant) -> String {
+    let param = linux_variant.encryption_kernel_param(uuid);
     let with_param = add_grub_kernel_param(content, &param);
     // The automatic encrypted layout has a separate, unencrypted /boot.
     // Only the Linux initramfs unlocks root; GRUB must not decrypt it.
@@ -170,13 +180,6 @@ fn read_luks_uuid(luks_part: &str) -> Result<String> {
     }
 
     Ok(uuid)
-}
-
-fn build_grub_encryption_param(uuid: &str) -> String {
-    format!(
-        "rd.luks.name={}=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
-        uuid
-    )
 }
 
 fn configure_grub_plymouth(executor: &dyn CommandRunner) -> Result<()> {
@@ -351,15 +354,34 @@ fn add_grub_kernel_param(content: &str, param: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arch::arch_linux_variant::ArtixInitSystem;
 
     #[test]
     fn encrypted_root_is_unlocked_by_linux_not_grub() {
         let content = "GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"\"\n";
-        let updated = encrypted_grub_defaults(content, "test-uuid");
+        let updated = encrypted_grub_defaults(content, "test-uuid", ArchLinuxVariant::Arch);
         assert!(updated.contains("GRUB_ENABLE_CRYPTODISK=n"));
         assert!(updated.contains("rd.luks.name=test-uuid=cryptlvm"));
         assert!(updated.contains("root=/dev/mapper/instantOS-root"));
-        assert_eq!(encrypted_grub_defaults(&updated, "test-uuid"), updated);
+        assert_eq!(
+            encrypted_grub_defaults(&updated, "test-uuid", ArchLinuxVariant::Arch),
+            updated
+        );
+    }
+
+    #[test]
+    fn artix_encrypted_root_uses_the_cryptdevice_parameter() {
+        let content = "GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"\"\n";
+        let updated = encrypted_grub_defaults(
+            content,
+            "test-uuid",
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+        );
+        assert!(updated.contains("cryptdevice=UUID=test-uuid:cryptlvm"));
+        assert!(updated.contains("root=/dev/mapper/instantOS-root"));
+        assert!(updated.contains("resume=/dev/mapper/instantOS-swap"));
+        assert!(!updated.contains("rd.luks.name"));
+        assert!(updated.contains("GRUB_ENABLE_CRYPTODISK=n"));
     }
 
     #[test]

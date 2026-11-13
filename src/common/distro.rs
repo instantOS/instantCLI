@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 /// Represents a detected operating system with methods for family checks
@@ -11,6 +11,8 @@ pub enum OperatingSystem {
     InstantOS,
     /// Vanilla Arch Linux
     Arch,
+    /// Artix Linux (Arch-based, non-systemd)
+    Artix,
     /// Manjaro Linux
     Manjaro,
     /// EndeavourOS
@@ -46,16 +48,19 @@ pub enum OperatingSystem {
 impl OperatingSystem {
     pub fn detect() -> Self {
         static DETECTED_OS: LazyLock<OperatingSystem> =
-            LazyLock::new(OperatingSystem::detect_uncached);
+            LazyLock::new(|| OperatingSystem::detect_from_root(Path::new("/")));
         DETECTED_OS.clone()
     }
 
-    fn detect_uncached() -> Self {
-        let os_release_path = Path::new("/etc/os-release");
+    /// Detect the operating system below `root` without consulting the running
+    /// kernel. Production detection uses `/`; tests and target inspection can
+    /// point at a mounted root.
+    pub fn detect_from_root(root: &Path) -> Self {
+        let os_release_path = root.join("etc/os-release");
         if os_release_path.exists() {
-            return match fs::read_to_string(os_release_path) {
+            return match fs::read_to_string(&os_release_path) {
                 Ok(content) => Self::parse_os_release(&content),
-                Err(_) => Self::Unknown("Failed to read /etc/os-release".to_string()),
+                Err(_) => Self::Unknown(format!("Failed to read {}", os_release_path.display())),
             };
         }
 
@@ -84,6 +89,7 @@ impl OperatingSystem {
             "postmarketos" => Self::PostmarketOS,
             "instantos" => Self::InstantOS,
             "arch" => Self::Arch,
+            "artix" => Self::Artix,
             "manjaro" => Self::Manjaro,
             "endeavouros" => Self::EndeavourOS,
             "steamos" => Self::SteamOS,
@@ -124,7 +130,9 @@ impl OperatingSystem {
     pub fn based_on(&self) -> Option<Self> {
         match self {
             // Arch-based
-            Self::InstantOS | Self::Manjaro | Self::EndeavourOS | Self::SteamOS => Some(Self::Arch),
+            Self::InstantOS | Self::Artix | Self::Manjaro | Self::EndeavourOS | Self::SteamOS => {
+                Some(Self::Arch)
+            }
             // Fedora-based
             Self::Bazzite => Some(Self::Fedora),
             // Ubuntu-based (Ubuntu itself is Debian-based)
@@ -238,6 +246,7 @@ impl OperatingSystem {
         match self {
             Self::InstantOS => "instantOS",
             Self::Arch => "Arch Linux",
+            Self::Artix => "Artix Linux",
             Self::Manjaro => "Manjaro",
             Self::EndeavourOS => "EndeavourOS",
             Self::SteamOS => "SteamOS",
@@ -266,15 +275,26 @@ impl std::fmt::Display for OperatingSystem {
     }
 }
 
+/// The live-ISO cowspace below `root`, if this is a live session.
+///
+/// Arch ISOs mount their writable overlay at `/run/archiso/cowspace`; Artix
+/// ISOs use `/run/artix/cowspace`.
+fn cowspace_path(root: &Path) -> Option<PathBuf> {
+    ["run/archiso/cowspace", "run/artix/cowspace"]
+        .into_iter()
+        .map(|relative| root.join(relative))
+        .find(|path| path.exists())
+}
+
 pub fn is_live_iso() -> bool {
-    Path::new("/run/archiso/cowspace").exists()
+    cowspace_path(Path::new("/")).is_some()
 }
 
 /// Increase the cowspace size on live ISO
 pub fn increase_cowspace() -> Result<()> {
-    if !is_live_iso() {
+    let Some(cowspace) = cowspace_path(Path::new("/")) else {
         return Ok(());
-    }
+    };
 
     let total_ram_mb = get_total_ram_mb().unwrap_or(4096); // Default to 4GB if detection fails
 
@@ -295,7 +315,7 @@ pub fn increase_cowspace() -> Result<()> {
     let status = std::process::Command::new("mount")
         .arg("-o")
         .arg(format!("remount,size={}", size_str))
-        .arg("/run/archiso/cowspace")
+        .arg(&cowspace)
         .status()
         .context("Failed to execute mount command")?;
 
@@ -409,6 +429,58 @@ ID_LIKE="arch""#;
         let os = OperatingSystem::parse_os_release(content);
         assert_eq!(os, OperatingSystem::InstantOS);
         assert!(os.in_family(&OperatingSystem::Arch));
+    }
+
+    #[test]
+    fn test_parse_artix() {
+        use crate::common::package::PackageManager;
+
+        let content = r#"NAME="Artix Linux"
+PRETTY_NAME="Artix Linux"
+ID=artix
+ID_LIKE=arch
+BUILD_ID=rolling
+HOME_URL="https://artixlinux.org/"
+LOGO=artixlinux-logo"#;
+        let os = OperatingSystem::parse_os_release(content);
+        assert_eq!(os, OperatingSystem::Artix);
+        assert_eq!(os.name(), "Artix Linux");
+        assert_eq!(os.based_on(), Some(OperatingSystem::Arch));
+        assert!(os.in_family(&OperatingSystem::Arch));
+        assert_eq!(os.native_package_manager(), Some(PackageManager::Pacman));
+        assert!(!os.is_immutable());
+    }
+
+    #[test]
+    fn detect_from_root_reads_the_fixture() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("etc")).unwrap();
+        std::fs::write(root.path().join("etc/os-release"), "ID=artix\n").unwrap();
+
+        assert_eq!(
+            OperatingSystem::detect_from_root(root.path()),
+            OperatingSystem::Artix
+        );
+    }
+
+    #[test]
+    fn live_iso_cowspace_is_found_for_arch_and_artix() {
+        let arch = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(arch.path().join("run/archiso/cowspace")).unwrap();
+        assert_eq!(
+            cowspace_path(arch.path()),
+            Some(arch.path().join("run/archiso/cowspace"))
+        );
+
+        let artix = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(artix.path().join("run/artix/cowspace")).unwrap();
+        assert_eq!(
+            cowspace_path(artix.path()),
+            Some(artix.path().join("run/artix/cowspace"))
+        );
+
+        let neither = tempfile::tempdir().unwrap();
+        assert_eq!(cowspace_path(neither.path()), None);
     }
 
     #[test]

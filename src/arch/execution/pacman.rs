@@ -16,8 +16,12 @@ use tokio::io::AsyncWriteExt;
 
 use super::CommandRunner;
 use super::package_source::PackageSource;
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 
 pub const INSTANT_MIRRORLIST: &str = include_str!("../instantmirrorlist");
+
+/// The Arch mirrorlist the `artix-archlinux-support` package installs.
+const ARCH_MIRRORLIST: &str = "/etc/pacman.d/mirrorlist-arch";
 
 /// Concurrent pacman download streams for the install. Upstream Arch ships a
 /// commented `#ParallelDownloads = 5`; we set 10 because package downloads
@@ -34,20 +38,33 @@ pub struct Pacman {
     conf: PathBuf,
     mirrorlist: PathBuf,
     instant_mirrorlist: PathBuf,
+    linux_variant: ArchLinuxVariant,
 }
 
 impl Pacman {
     /// The pacman this process would talk to: the running system's own.
-    pub fn current() -> Self {
-        Self::for_target("/", "/etc/pacman.conf", "/etc/pacman.d/mirrorlist")
+    pub fn current() -> Result<Self> {
+        Ok(Self::for_variant(ArchLinuxVariant::detect()?))
     }
 
-    /// Pacman for `sysroot`, using `conf` and `mirrorlist`. The `[instant]`
-    /// mirrorlist is placed beside `conf` for its relative `Include` path.
-    pub fn for_target(
+    pub fn for_variant(linux_variant: ArchLinuxVariant) -> Self {
+        Self::for_target_variant(
+            "/",
+            "/etc/pacman.conf",
+            "/etc/pacman.d/mirrorlist",
+            linux_variant,
+        )
+    }
+
+    /// Pacman for `sysroot` on an explicitly known variant.
+    ///
+    /// Used where the caller already resolved the variant (the install plan)
+    /// and where a test must not depend on the machine running it.
+    pub fn for_target_variant(
         sysroot: impl Into<PathBuf>,
         conf: impl Into<PathBuf>,
         mirrorlist: impl Into<PathBuf>,
+        linux_variant: ArchLinuxVariant,
     ) -> Self {
         let conf = conf.into();
         let instant_mirrorlist = conf
@@ -59,6 +76,7 @@ impl Pacman {
             conf,
             mirrorlist: mirrorlist.into(),
             instant_mirrorlist,
+            linux_variant,
         }
     }
 
@@ -68,6 +86,12 @@ impl Pacman {
 
     pub fn mirrorlist(&self) -> &Path {
         &self.mirrorlist
+    }
+
+    /// The Arch repository support mirrorlist inside this pacman's system, if the
+    /// `artix-archlinux-support` package installed one.
+    fn arch_mirrorlist(&self) -> PathBuf {
+        self.sysroot.join(ARCH_MIRRORLIST.trim_start_matches('/'))
     }
 
     /// The package cache this pacman owns.
@@ -98,15 +122,17 @@ impl Pacman {
         }
 
         println!("Preparing live ISO package dependencies...");
+        let keyring_name = self.linux_variant.keyring_name();
+        let keyring_package = self.linux_variant.keyring_package();
         for args in [
             ["--init"].as_slice(),
-            ["--populate", "archlinux"].as_slice(),
+            ["--populate", keyring_name].as_slice(),
         ] {
             let mut command = Command::new("pacman-key");
             command.args(args);
             executor
                 .run(&mut command)
-                .context("Failed to initialize the Arch Linux keyring")?;
+                .with_context(|| format!("Failed to initialize the {keyring_name} keyring"))?;
         }
 
         if !mode.is_offline() {
@@ -115,11 +141,13 @@ impl Pacman {
                 "-Sy",
                 "--needed",
                 "--noconfirm",
-                "archlinux-keyring",
+                keyring_package,
             ]);
-            executor.run(&mut command).context(
-                "Failed to synchronize live ISO repositories and update the Arch Linux keyring",
-            )?;
+            executor.run(&mut command).with_context(|| {
+                format!(
+                    "Failed to synchronize live ISO repositories and update the {keyring_name} keyring"
+                )
+            })?;
             return self.install(packages, executor);
         }
 
@@ -144,8 +172,20 @@ impl Pacman {
         let offline = crate::arch::offline::mode().is_offline();
 
         let mut attempt = 0;
-        // Remember keyring refreshes across retries.
-        let keyring_refreshed_path = Path::new("/tmp/instant_arch_keyring_refreshed");
+        // Keep refresh markers separate for each distribution/init variant.
+        let keyring_refreshed_path = PathBuf::from(format!(
+            "/tmp/ins-{}-keyring-refreshed",
+            self.linux_variant.id()
+        ));
+
+        // Artix uses its own keyring. When the `artix-archlinux-support`
+        // repository support is configured, packages from Arch repositories also need the
+        // Arch keyring.
+        let linux_variant = self.linux_variant;
+        let mut keyrings = vec![linux_variant.keyring_package()];
+        if linux_variant.is_artix() && self.arch_mirrorlist().exists() {
+            keyrings.push("archlinux-keyring");
+        }
 
         loop {
             attempt += 1;
@@ -182,21 +222,30 @@ impl Pacman {
                         println!("Ensure you are connected to the internet.");
                     }
 
-                    // Check if we should refresh keyring
-                    // Don't refresh if we are currently trying to install the keyring itself
-                    let installing_keyring = packages.contains(&"archlinux-keyring");
+                    // Check if we should refresh keyring.
+                    // Don't refresh a keyring we are currently trying to install.
+                    let installing_keyring =
+                        keyrings.iter().any(|keyring| packages.contains(keyring));
                     let keyring_already_refreshed = keyring_refreshed_path.exists();
 
                     if !keyring_already_refreshed && !installing_keyring {
-                        println!("Attempting to refresh archlinux-keyring...");
-                        let mut key_cmd = Command::new("pacman");
-                        key_cmd.args(["--config", &self.conf().to_string_lossy()]);
-                        key_cmd.args(["-Sy", "archlinux-keyring", "--noconfirm"]);
+                        let mut refreshed = false;
+                        for &keyring in &keyrings {
+                            println!("Attempting to refresh {keyring}...");
+                            let mut key_cmd = Command::new("pacman");
+                            key_cmd.args(["--config", &self.conf().to_string_lossy()]);
+                            key_cmd.args(["-Sy", keyring, "--noconfirm"]);
 
-                        if let Err(e) = executor.run(&mut key_cmd) {
-                            println!("Warning: Failed to refresh keyring: {e}");
-                        } else {
-                            if let Err(e) = std::fs::File::create(keyring_refreshed_path) {
+                            match executor.run(&mut key_cmd) {
+                                Ok(()) => refreshed = true,
+                                Err(e) => {
+                                    println!("Warning: Failed to refresh {keyring}: {e}");
+                                }
+                            }
+                        }
+
+                        if refreshed {
+                            if let Err(e) = std::fs::File::create(&keyring_refreshed_path) {
                                 println!("Warning: Failed to create lock file: {e}");
                             }
                             // Continue immediately after keyring refresh to try original packages again
@@ -215,26 +264,14 @@ impl Pacman {
                     }
 
                     println!("Updating mirrors...");
-                    if which::which("reflector").is_ok() {
-                        let mut ref_cmd = Command::new("reflector");
-                        ref_cmd.args([
-                            "--latest",
-                            "40",
-                            "--protocol",
-                            "http,https",
-                            "--sort",
-                            "rate",
-                            "--save",
-                            &self.mirrorlist().to_string_lossy(),
-                        ]);
+                    if let Some(mut ref_cmd) =
+                        self.reflector_command(which::which("reflector").is_ok())
+                    {
                         if let Err(e) = executor.run(&mut ref_cmd) {
                             println!("Warning: Reflector failed: {e}");
                         }
                     } else {
-                        // Fallback or other mirror tools?
-                        // The bash script used pacman-mirrors (Manjaro specific usually)
-                        // We'll stick to reflector or just skip if not present.
-                        println!("Reflector not found, skipping mirror optimization.");
+                        println!("Keeping the variant mirrorlist; skipping mirror optimization.");
                     }
 
                     if let Err(e) = self.shuffle_mirrors() {
@@ -254,6 +291,27 @@ impl Pacman {
                 }
             }
         }
+    }
+
+    /// Reflector serves Arch repositories only. Never let recovery replace
+    /// an Artix mirrorlist, even if the user has installed reflector there.
+    fn reflector_command(&self, available: bool) -> Option<Command> {
+        if self.linux_variant.is_artix() || !available {
+            return None;
+        }
+        let mut command = Command::new("reflector");
+        command
+            .args([
+                "--latest",
+                "40",
+                "--protocol",
+                "http,https",
+                "--sort",
+                "rate",
+                "--save",
+            ])
+            .arg(self.mirrorlist());
+        Some(command)
     }
 
     /// Append the `[instant]` repository to `pacman.conf` and write its
@@ -333,23 +391,106 @@ impl Pacman {
         Ok(())
     }
 
-    pub async fn enable_multilib(&self, dry_run: bool) -> Result<()> {
+    /// Enable 32-bit packages: `[multilib]` on Arch, `[lib32]` on Artix.
+    pub async fn enable_32bit_repositories(&self, dry_run: bool) -> Result<()> {
+        let repository = if self.linux_variant.is_artix() {
+            "lib32"
+        } else {
+            "multilib"
+        };
+
         if dry_run {
-            println!("[DRY RUN] Enabling [multilib] in {}", self.conf.display());
+            println!(
+                "[DRY RUN] Enabling [{repository}] in {}",
+                self.conf.display()
+            );
             return Ok(());
         }
 
         let content = tokio::fs::read_to_string(&self.conf).await?;
 
-        if let Some(new_content) = enable_multilib_in_string(&content) {
+        if let Some(new_content) = uncomment_repository(&content, repository) {
             tokio::fs::write(&self.conf, new_content).await?;
-            println!("Enabled [multilib] repository in {}", self.conf.display());
+            println!(
+                "Enabled [{repository}] repository in {}",
+                self.conf.display()
+            );
         } else {
             println!(
-                "[multilib] already enabled or not found in {}",
+                "[{repository}] already enabled or not found in {}",
                 self.conf.display()
             );
         }
+
+        Ok(())
+    }
+
+    /// Add the Arch repositories Artix needs for instantOS packages.
+    ///
+    /// Only meaningful on Artix, where `artix-archlinux-support` provides
+    /// `/etc/pacman.d/mirrorlist-arch`. Existing `[extra]` or `[multilib]`
+    /// sections are left untouched, so this is safe to run repeatedly. On
+    /// Arch it is a no-op.
+    pub async fn enable_additional_arch_repositories(&self, dry_run: bool) -> Result<()> {
+        if !self.linux_variant.is_artix() {
+            return Ok(());
+        }
+
+        let repositories = self.linux_variant.additional_arch_repositories();
+        if dry_run {
+            println!(
+                "[DRY RUN] Enabling Arch repositories {} in {}",
+                format_repository_names(repositories),
+                self.conf.display()
+            );
+            return Ok(());
+        }
+
+        let content = tokio::fs::read_to_string(&self.conf).await?;
+        if let Some(new_content) = append_missing_arch_repositories(&content, repositories) {
+            tokio::fs::write(&self.conf, new_content).await?;
+            println!(
+                "Enabled Arch repositories {} in {}",
+                format_repository_names(repositories),
+                self.conf.display()
+            );
+        } else {
+            println!(
+                "Arch repositories {} already enabled in {}",
+                format_repository_names(repositories),
+                self.conf.display()
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Make the Arch repositories usable on Artix.
+    ///
+    /// Installs `artix-archlinux-support`, enables `[extra]`/`[multilib]`,
+    /// populates the Arch keyring and refreshes the databases. Idempotent, so
+    /// the Config step and the instantOS setup step can both call it.
+    pub async fn enable_arch_repository_support(&self, executor: &dyn CommandRunner) -> Result<()> {
+        if !self.linux_variant.is_artix() {
+            return Ok(());
+        }
+
+        println!("Enabling Arch repository support on Artix...");
+        self.install(&["artix-archlinux-support"], executor)?;
+        self.enable_additional_arch_repositories(executor.dry_run())
+            .await?;
+
+        println!("Populating the Arch Linux keyring...");
+        let mut populate = Command::new("pacman-key");
+        populate.args(["--populate", "archlinux"]);
+        executor
+            .run(&mut populate)
+            .context("Failed to populate the Arch Linux keyring")?;
+
+        println!("Synchronizing package databases...");
+        let mut sync = Command::new("pacman");
+        sync.arg("-Sy");
+        executor.run(&mut sync)?;
 
         Ok(())
     }
@@ -427,14 +568,21 @@ impl Pacman {
     }
 }
 
-/// Wrapper for pacstrap with retry logic
-pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunner) -> Result<()> {
+/// Wrapper for the variant's bootstrap command (`pacstrap`/`basestrap`) with
+/// retry logic.
+pub fn bootstrap_packages(
+    mount_point: &str,
+    packages: &[&str],
+    executor: &dyn CommandRunner,
+    linux_variant: ArchLinuxVariant,
+) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
     }
 
     let offline = crate::arch::offline::mode().is_offline();
-    let source = PackageSource::resolve();
+    let source = PackageSource::resolve(linux_variant);
+    let bootstrap = linux_variant.bootstrap_command();
 
     let mut attempt = 0;
 
@@ -442,20 +590,22 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
         attempt += 1;
         if attempt > 10 {
             anyhow::bail!(
-                "Pacstrap failed after 10 attempts. Please check your internet connection."
+                "{bootstrap} failed after 10 attempts. Please check your internet connection."
             );
         }
         if attempt > 1 {
-            println!("Retry attempt {attempt}/10 for pacstrap");
+            println!("Retry attempt {attempt}/10 for {bootstrap}");
         }
 
-        let mut cmd = Command::new("pacstrap");
-        // On a live ISO `pacstrap` uses the host's own configuration and copies
-        // the host's mirrorlist into the target, which is how the selected
-        // region reaches the target. On a running system that would reconfigure
-        // the source OS, so it is pointed at the installer's own configuration
-        // and told not to copy the host list; the selected mirrorlist is written
-        // into the target afterwards.
+        let mut cmd = Command::new(bootstrap);
+        // On a live ISO the bootstrap command uses the host's own
+        // configuration and copies the host's mirrorlist into the target,
+        // which is how the selected region reaches the target. On a running
+        // system that would reconfigure the source OS, so it is pointed at the
+        // installer's own configuration and told not to copy the host list;
+        // the selected mirrorlist is written into the target afterwards.
+        // `-C`/`-M` are supported by both pacstrap and basestrap; only an
+        // isolated source uses them.
         if let Some(derived) = source.derived_pacman() {
             cmd.arg("-C").arg(derived.conf());
             cmd.arg("-M");
@@ -469,11 +619,11 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
                 // target: `pacstrap -M` deliberately skipped copying it.
                 source.install_target_mirrorlist(executor.dry_run())?;
 
-                // The shell bootstrap ran this inside `arch-chroot`, where it
+                // The shell bootstrap ran this inside the chroot, where it
                 // meant the *target's* cache; ported here it ran host-side and
                 // emptied the source system's cache instead while leaving the
                 // installed one full. Ask the target's pacman, by sysroot.
-                let target = source.target_pacman();
+                let target = source.target_pacman(linux_variant);
                 let mut clean_cmd = target.clean_cache_command();
                 // `pacman -Scc` still prompts on some versions; answer twice.
                 if let Err(error) = executor.run_with_input(&mut clean_cmd, "y\ny\n") {
@@ -485,14 +635,14 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
                 return Ok(());
             }
             Err(e) => {
-                println!("Pacstrap failed: {e}");
+                println!("{bootstrap} failed: {e}");
 
                 if offline {
                     // The bundle is static: no mirror shuffle or refresh can
                     // change the outcome, so fail with the real cause instead
                     // of retrying identical work.
                     anyhow::bail!(
-                        "Pacstrap failed. The offline bundle does not contain every required package."
+                        "{bootstrap} failed. The offline bundle does not contain every required package."
                     );
                 }
 
@@ -513,20 +663,24 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &dyn CommandRunn
     }
 }
 
-fn enable_multilib_in_string(content: &str) -> Option<String> {
-    // We look for #[multilib] and the following #Include
-    // Pattern:
-    // #[multilib]
-    // #Include = ...
-
+/// Uncomment a commented-out repository section and its following `Include`.
+///
+/// The shipped pacman.conf carries these for exactly this kind of tool:
+///
+/// ```text
+/// #[multilib]
+/// #Include = /etc/pacman.d/mirrorlist
+/// ```
+fn uncomment_repository(content: &str, repository: &str) -> Option<String> {
+    let header = format!("#[{repository}]");
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     let mut changed = false;
     let mut i = 0;
 
     while i < lines.len() {
         let line = lines[i].trim();
-        if line == "#[multilib]" {
-            lines[i] = "[multilib]".to_string();
+        if line == header.as_str() {
+            lines[i] = format!("[{repository}]");
             changed = true;
 
             if i + 1 < lines.len() {
@@ -544,6 +698,42 @@ fn enable_multilib_in_string(content: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Append the Arch repositories Artix needs, unless they are already active.
+///
+/// Both sections point at the Arch mirrorlist installed by
+/// `artix-archlinux-support`, not at the Artix mirrorlist.
+fn format_repository_names(repositories: &[&str]) -> String {
+    repositories
+        .iter()
+        .map(|repository| format!("[{repository}]"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn append_missing_arch_repositories(content: &str, repositories: &[&str]) -> Option<String> {
+    let mut result = content.to_string();
+    let mut changed = false;
+
+    for repository in repositories {
+        if has_active_section(&result, repository) {
+            continue;
+        }
+
+        if !result.ends_with('\n') {
+            result.push('\n');
+        }
+        result.push_str(&format!("\n[{repository}]\nInclude = {ARCH_MIRRORLIST}\n"));
+        changed = true;
+    }
+
+    changed.then_some(result)
+}
+
+fn has_active_section(content: &str, repository: &str) -> bool {
+    let header = format!("[{repository}]");
+    content.lines().any(|line| line.trim() == header.as_str())
 }
 
 fn process_pacman_settings(content: &str) -> Option<String> {
@@ -608,7 +798,27 @@ fn process_pacman_settings(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arch::arch_linux_variant::ArtixInitSystem;
     use crate::arch::execution::mock::MockRunner;
+
+    #[test]
+    fn artix_recovery_never_generates_an_arch_mirrorlist() {
+        for init in [
+            ArtixInitSystem::OpenRC,
+            ArtixInitSystem::Runit,
+            ArtixInitSystem::S6,
+            ArtixInitSystem::Dinit,
+        ] {
+            assert!(
+                Pacman::for_variant(ArchLinuxVariant::Artix(init))
+                    .reflector_command(true)
+                    .is_none()
+            );
+        }
+        let arch = Pacman::for_variant(ArchLinuxVariant::Arch);
+        assert!(arch.reflector_command(true).is_some());
+        assert!(arch.reflector_command(false).is_none());
+    }
 
     fn command_text(command: &Command) -> String {
         std::iter::once(command.get_program().to_string_lossy().into_owned())
@@ -621,10 +831,11 @@ mod tests {
     fn the_instant_list_sits_beside_the_configuration() {
         // pacman resolves `Include = /etc/pacman.d/…` relative to pacman.conf,
         // so the [instant] list must follow the conf, not a hardcoded /etc.
-        let derived = Pacman::for_target(
+        let derived = Pacman::for_target_variant(
             "/mnt",
-            "/run/ins-install/pacstrap.conf",
-            "/run/ins-install/pacstrap-mirrorlist",
+            "/run/ins-install/bootstrap-pacman.conf",
+            "/run/ins-install/bootstrap-mirrorlist",
+            ArchLinuxVariant::Arch,
         );
         assert_eq!(
             derived.instant_mirrorlist,
@@ -632,7 +843,7 @@ mod tests {
         );
 
         assert_eq!(
-            Pacman::current().instant_mirrorlist,
+            Pacman::for_variant(ArchLinuxVariant::Arch).instant_mirrorlist,
             Path::new("/etc/pacman.d/instantmirrorlist")
         );
     }
@@ -643,7 +854,7 @@ mod tests {
         // the *source* system's package cache while leaving the installed one
         // full. The target's pacman must be named by sysroot instead.
         let runner = MockRunner::new();
-        let target = PackageSource::InPlace.target_pacman();
+        let target = PackageSource::InPlace.target_pacman(ArchLinuxVariant::Arch);
 
         let mut cmd = target.clean_cache_command();
         runner.run_with_input(&mut cmd, "y\ny\n").unwrap();
@@ -681,9 +892,14 @@ Server = https://three.example/$repo/os/$arch
 ";
         std::fs::write(&path, input).unwrap();
 
-        Pacman::for_target(dir.path(), dir.path().join("pacman.conf"), &path)
-            .shuffle_mirrors()
-            .unwrap();
+        Pacman::for_target_variant(
+            dir.path(),
+            dir.path().join("pacman.conf"),
+            &path,
+            ArchLinuxVariant::Arch,
+        )
+        .shuffle_mirrors()
+        .unwrap();
         let shuffled = std::fs::read_to_string(&path).unwrap();
 
         // Comments and section headings survive; no server is lost.
@@ -708,17 +924,18 @@ Server = https://three.example/$repo/os/$arch
         // An offline bundle may never have written one, and there is nothing
         // to reorder.
         let dir = tempfile::tempdir().unwrap();
-        Pacman::for_target(
+        Pacman::for_target_variant(
             dir.path(),
             dir.path().join("pacman.conf"),
             dir.path().join("absent"),
+            ArchLinuxVariant::Arch,
         )
         .shuffle_mirrors()
         .unwrap();
     }
 
     #[test]
-    fn test_enable_multilib() {
+    fn arch_enables_the_multilib_section() {
         let input = r#"
 # Some comments
 #[multilib]
@@ -735,17 +952,248 @@ Include = /etc/pacman.d/mirrorlist
 #[custom]
 #Include = ...
 "#;
-        let processed = enable_multilib_in_string(input).unwrap();
+        let processed = uncomment_repository(input, "multilib").unwrap();
         assert_eq!(processed.trim(), expected.trim());
     }
 
     #[test]
-    fn test_already_enabled() {
+    fn artix_enables_the_lib32_section() {
+        let input = r#"
+[options]
+#[lib32]
+#Include = /etc/pacman.d/mirrorlist
+"#;
+        let processed = uncomment_repository(input, "lib32").unwrap();
+        assert!(processed.contains("[lib32]"), "{processed}");
+        assert!(processed.contains("Include = /etc/pacman.d/mirrorlist"));
+        assert!(!processed.contains("#[lib32]"));
+        assert!(!processed.contains("[multilib]"));
+    }
+
+    #[test]
+    fn an_already_enabled_repository_is_left_alone() {
         let input = r#"
 [multilib]
 Include = /etc/pacman.d/mirrorlist
 "#;
-        assert_eq!(enable_multilib_in_string(input), None);
+        assert_eq!(uncomment_repository(input, "multilib"), None);
+    }
+
+    #[test]
+    fn arch_repositories_are_appended_once() {
+        let input = "\
+[options]
+Architecture = auto
+
+[system]
+Include = /etc/pacman.d/mirrorlist
+";
+        let processed = append_missing_arch_repositories(
+            input,
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC).additional_arch_repositories(),
+        )
+        .unwrap();
+
+        assert_eq!(processed.matches("[extra]").count(), 1, "{processed}");
+        assert_eq!(processed.matches("[multilib]").count(), 1, "{processed}");
+        assert_eq!(
+            processed
+                .matches("Include = /etc/pacman.d/mirrorlist-arch")
+                .count(),
+            2,
+            "{processed}"
+        );
+        assert!(processed.contains("[system]"));
+        assert!(processed.ends_with('\n'));
+    }
+
+    #[test]
+    fn existing_arch_repositories_are_not_duplicated() {
+        let input = "\
+[extra]
+Include = /etc/pacman.d/mirrorlist-arch
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist-arch
+";
+        assert_eq!(
+            append_missing_arch_repositories(
+                input,
+                ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC).additional_arch_repositories(),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn only_the_missing_arch_repository_is_appended() {
+        let input = "[extra]\nInclude = /etc/pacman.d/mirrorlist-arch\n";
+        let processed = append_missing_arch_repositories(
+            input,
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC).additional_arch_repositories(),
+        )
+        .unwrap();
+
+        assert_eq!(processed.matches("[extra]").count(), 1, "{processed}");
+        assert_eq!(processed.matches("[multilib]").count(), 1, "{processed}");
+    }
+
+    #[test]
+    fn the_pacman_carries_its_variant() {
+        let pacman = Pacman::for_target_variant(
+            "/mnt",
+            "/mnt/etc/pacman.conf",
+            "/mnt/etc/pacman.d/mirrorlist",
+            ArchLinuxVariant::Artix(ArtixInitSystem::Dinit),
+        );
+        assert_eq!(
+            pacman.linux_variant,
+            ArchLinuxVariant::Artix(ArtixInitSystem::Dinit)
+        );
+    }
+
+    #[test]
+    fn live_iso_keyring_commands_follow_the_variant() {
+        for (linux_variant, keyring_name, keyring_package) in [
+            (ArchLinuxVariant::Arch, "archlinux", "archlinux-keyring"),
+            (
+                ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+                "artix",
+                "artix-keyring",
+            ),
+        ] {
+            let runner = MockRunner::new();
+            Pacman::for_target_variant(
+                "/",
+                "/etc/pacman.conf",
+                "/etc/pacman.d/mirrorlist",
+                linux_variant,
+            )
+            .install_live_dependencies(&["fzf"], crate::arch::offline::Mode::Online, &runner)
+            .unwrap();
+
+            let commands = runner.command_log();
+            assert!(
+                commands
+                    .iter()
+                    .any(|command| command == &format!("pacman-key --populate {keyring_name}")),
+                "{linux_variant:?} must populate its own keyring: {commands:?}"
+            );
+            assert!(
+                commands
+                    .iter()
+                    .any(|command| command.contains(keyring_package)),
+                "{linux_variant:?} must install its own keyring package: {commands:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn enable_32bit_repositories_uses_lib32_on_artix() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf = dir.path().join("pacman.conf");
+        std::fs::write(
+            &conf,
+            "[options]\n#[lib32]\n#Include = /etc/pacman.d/mirrorlist\n",
+        )
+        .unwrap();
+
+        Pacman::for_target_variant(
+            dir.path(),
+            &conf,
+            dir.path().join("mirrorlist"),
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+        )
+        .enable_32bit_repositories(false)
+        .await
+        .unwrap();
+
+        let content = std::fs::read_to_string(&conf).unwrap();
+        assert!(content.contains("[lib32]"), "{content}");
+        assert!(content.contains("Include = /etc/pacman.d/mirrorlist"));
+        assert!(!content.contains("[multilib]"));
+    }
+
+    #[tokio::test]
+    async fn artix_repository_support_populates_the_arch_keyring() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf = dir.path().join("pacman.conf");
+        std::fs::write(
+            &conf,
+            "[options]\nArchitecture = auto\n\n[system]\nInclude = /etc/pacman.d/mirrorlist\n",
+        )
+        .unwrap();
+        let pacman = Pacman::for_target_variant(
+            dir.path(),
+            &conf,
+            dir.path().join("mirrorlist"),
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+        );
+        let runner = MockRunner::new();
+
+        pacman
+            .enable_arch_repository_support(&runner)
+            .await
+            .unwrap();
+
+        let log = runner.command_log();
+        let install = format!(
+            "pacman --config {} -S --noconfirm --needed artix-archlinux-support",
+            conf.display()
+        );
+        assert!(log.iter().any(|command| command == &install), "{log:?}");
+        assert!(
+            log.iter()
+                .any(|command| command == "pacman-key --populate archlinux"),
+            "{log:?}"
+        );
+        assert!(log.iter().any(|command| command == "pacman -Sy"), "{log:?}");
+
+        let conf = std::fs::read_to_string(&conf).unwrap();
+        assert!(conf.contains("[extra]"), "{conf}");
+        assert!(conf.contains("[multilib]"), "{conf}");
+    }
+
+    #[tokio::test]
+    async fn enable_arch_repos_is_a_no_op_on_arch() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf = dir.path().join("pacman.conf");
+        let original = "[options]\nArchitecture = auto\n";
+        std::fs::write(&conf, original).unwrap();
+
+        Pacman::for_target_variant(
+            dir.path(),
+            &conf,
+            dir.path().join("mirrorlist"),
+            ArchLinuxVariant::Arch,
+        )
+        .enable_additional_arch_repositories(false)
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&conf).unwrap(), original);
+    }
+
+    #[tokio::test]
+    async fn enable_additional_arch_repositories_on_artix() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf = dir.path().join("pacman.conf");
+        std::fs::write(&conf, "[options]\nArchitecture = auto\n").unwrap();
+
+        Pacman::for_target_variant(
+            dir.path(),
+            &conf,
+            dir.path().join("mirrorlist"),
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+        )
+        .enable_additional_arch_repositories(false)
+        .await
+        .unwrap();
+
+        let content = std::fs::read_to_string(&conf).unwrap();
+        assert!(content.contains("[extra]"), "{content}");
+        assert!(content.contains("[multilib]"), "{content}");
+        assert!(content.contains("Include = /etc/pacman.d/mirrorlist-arch"));
     }
 
     #[test]

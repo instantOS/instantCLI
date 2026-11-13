@@ -4,6 +4,7 @@ use std::path::{Component, Path};
 use anyhow::{Context, Result, bail};
 
 use super::{BootMode, InstallContext, Kernel, PartitioningMethod, StepId, SystemInfo};
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::config::{BtrfsCompression, DesktopEnvironment, DisplayManager, RootFilesystem};
 use crate::arch::host::InstallEnvironment;
 
@@ -480,7 +481,11 @@ pub struct SessionAnswers {
 }
 
 impl SessionAnswers {
-    pub fn from_context(context: &InstallContext, autologin_default: bool) -> Result<Self> {
+    pub fn from_context(
+        context: &InstallContext,
+        autologin_default: bool,
+        linux_variant: ArchLinuxVariant,
+    ) -> Result<Self> {
         let desktop = context
             .get_answer(&StepId::DesktopEnvironment)
             .map(|answer| {
@@ -501,7 +506,8 @@ impl SessionAnswers {
         Ok(Self {
             desktop,
             display_manager,
-            use_plymouth: context.bool_answer(StepId::UsePlymouth)?.unwrap_or(true),
+            use_plymouth: context.bool_answer(StepId::UsePlymouth)?.unwrap_or(true)
+                && linux_variant.supports_plymouth_configuration(),
             autologin: context
                 .bool_answer(StepId::Autologin)?
                 .unwrap_or(autologin_default),
@@ -524,6 +530,9 @@ pub struct InstallPlan {
     /// from the machine, not from an answer: the execution layer's guards
     /// must not be steerable by a hand-edited configuration.
     pub environment: InstallEnvironment,
+    /// The distribution and init system the plan targets. Resolved from the
+    /// machine for the same reason as `environment`.
+    pub linux_variant: ArchLinuxVariant,
     pub storage: StoragePlan,
     pub hostname: Hostname,
     pub username: Username,
@@ -546,6 +555,14 @@ impl TryFrom<&InstallContext> for InstallPlan {
     type Error = anyhow::Error;
 
     fn try_from(context: &InstallContext) -> Result<Self> {
+        let linux_variant =
+            ArchLinuxVariant::detect().context("could not detect the installation variant")?;
+        Self::from_context(context, linux_variant)
+    }
+}
+
+impl InstallPlan {
+    fn from_context(context: &InstallContext, linux_variant: ArchLinuxVariant) -> Result<Self> {
         let required = |id| {
             context
                 .get_answer(&id)
@@ -572,7 +589,6 @@ impl TryFrom<&InstallContext> for InstallPlan {
 
         // Resolved before `disk` moves into the storage plan below.
         let environment = InstallEnvironment::detect(&disk);
-
         let partitioning = context.require_partitioning_method()?;
         let storage = match partitioning {
             PartitioningMethod::Automatic => {
@@ -655,11 +671,13 @@ impl TryFrom<&InstallContext> for InstallPlan {
                 ..
             }
         );
-        let session = SessionAnswers::from_context(context, encryption_implies_autologin)?;
+        let session =
+            SessionAnswers::from_context(context, encryption_implies_autologin, linux_variant)?;
 
         Ok(Self {
             system_info: context.system_info.clone(),
             environment,
+            linux_variant,
             storage,
             hostname: Hostname::parse(required(StepId::Hostname)?)?,
             username: Username::parse(required(StepId::Username)?)?,
@@ -673,7 +691,10 @@ impl TryFrom<&InstallContext> for InstallPlan {
             )?,
             timezone: Timezone::parse(required(StepId::Timezone)?)?,
             locale: LocaleName::parse(required(StepId::Locale)?)?,
-            mirror_region: context.get_answer(&StepId::MirrorRegion).cloned(),
+            mirror_region: context
+                .get_answer(&StepId::MirrorRegion)
+                .filter(|_| !linux_variant.is_artix())
+                .cloned(),
             kernel,
             desktop: session.desktop,
             display_manager: session.display_manager,
@@ -699,6 +720,7 @@ pub(crate) fn test_install_plan() -> InstallPlan {
             ..SystemInfo::default()
         },
         environment: InstallEnvironment::new(crate::arch::host::HostProfile::LiveIso, None),
+        linux_variant: ArchLinuxVariant::Arch,
         storage: StoragePlan::Automatic {
             disk: DiskPath("/dev/test-disk".to_owned()),
             filesystem: FilesystemPlan::Ext4,
@@ -748,16 +770,22 @@ mod tests {
     fn console_font_defaults_for_old_answers_and_validates_new_answers() {
         let mut context = required_context("automatic");
         assert_eq!(
-            InstallPlan::try_from(&context).unwrap().console_font.name(),
+            InstallPlan::from_context(&context, ArchLinuxVariant::Arch)
+                .unwrap()
+                .console_font
+                .name(),
             "default8x16"
         );
         context.set_answer(StepId::ConsoleFont, "sun12x22".to_string());
         assert_eq!(
-            InstallPlan::try_from(&context).unwrap().console_font.name(),
+            InstallPlan::from_context(&context, ArchLinuxVariant::Arch)
+                .unwrap()
+                .console_font
+                .name(),
             "sun12x22"
         );
         context.set_answer(StepId::ConsoleFont, "../font".to_string());
-        assert!(InstallPlan::try_from(&context).is_err());
+        assert!(InstallPlan::from_context(&context, ArchLinuxVariant::Arch).is_err());
     }
 
     #[test]
@@ -766,7 +794,7 @@ mod tests {
         context.set_answer(StepId::RootFilesystem, "btrfs".to_owned());
         context.set_answer(StepId::BtrfsCompression, "lzo".to_owned());
 
-        let plan = InstallPlan::try_from(&context).unwrap();
+        let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
 
         assert_eq!(
             plan.storage.filesystem(),
@@ -782,7 +810,7 @@ mod tests {
         context.set_answer(StepId::RootFilesystem, "ext4".to_owned());
         context.set_answer(StepId::BtrfsCompression, "zlib".to_owned());
 
-        let plan = InstallPlan::try_from(&context).unwrap();
+        let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
 
         assert_eq!(plan.storage.filesystem(), FilesystemPlan::Ext4);
     }
@@ -790,20 +818,20 @@ mod tests {
     #[test]
     fn manual_plan_requires_structurally_complete_partitions() {
         let context = required_context("manual");
-        let error = InstallPlan::try_from(&context).unwrap_err();
+        let error = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap_err();
         assert!(error.to_string().contains("RootPartition"));
 
         let mut context = context;
         context.set_answer(StepId::RootPartition, "/dev/sda2".to_owned());
         context.set_answer(StepId::BootPartition, "/dev/sda1".to_owned());
-        let plan = InstallPlan::try_from(&context).unwrap();
+        let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
         assert!(matches!(plan.storage, StoragePlan::Manual { .. }));
     }
 
     #[test]
     fn display_labels_are_not_accepted_as_partitioning_values() {
         let context = required_context("Automatic (Erase Disk)");
-        let error = InstallPlan::try_from(&context).unwrap_err();
+        let error = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap_err();
         assert!(error.to_string().contains("invalid partitioning method"));
     }
 
@@ -814,7 +842,7 @@ mod tests {
         context.set_answer(StepId::EncryptionPassword, "secret".to_owned());
         context.set_answer(StepId::DualBootPartition, FREE_SPACE_ANSWER.to_owned());
 
-        let error = InstallPlan::try_from(&context).unwrap_err();
+        let error = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap_err();
         assert!(error.to_string().contains("dual-boot"));
     }
 
@@ -823,7 +851,7 @@ mod tests {
         let mut context = required_context("automatic");
         context.answers.remove(&StepId::UseEncryption);
 
-        let error = InstallPlan::try_from(&context).unwrap_err();
+        let error = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap_err();
         assert!(error.to_string().contains("UseEncryption"));
     }
 
@@ -917,12 +945,30 @@ mod tests {
     fn the_plan_carries_the_resolved_environment_not_an_answer() {
         // No `INS_HOST_ENV` here, so this resolves from the machine running
         // the tests; the point is that the plan always has a value.
-        let plan = InstallPlan::try_from(&required_context("automatic")).unwrap();
+        let plan =
+            InstallPlan::from_context(&required_context("automatic"), ArchLinuxVariant::Arch)
+                .unwrap();
         assert!(
             plan.environment.target().is_some()
                 || plan.environment.may_probe_for_existing_install()
         );
         assert!(!plan.environment.host().label().is_empty());
+    }
+
+    #[test]
+    fn plan_normalization_discards_unsupported_answers() {
+        use crate::arch::arch_linux_variant::ArtixInitSystem;
+        let mut context = required_context("automatic");
+        context.set_answer(StepId::UsePlymouth, "yes".to_string());
+        context.set_answer(StepId::MirrorRegion, "Europe/Berlin".to_string());
+        let artix =
+            InstallPlan::from_context(&context, ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC))
+                .unwrap();
+        assert!(!artix.use_plymouth);
+        assert!(artix.mirror_region.is_none());
+        let arch = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
+        assert!(arch.use_plymouth);
+        assert_eq!(arch.mirror_region.as_deref(), Some("Europe/Berlin"));
     }
 
     #[test]
@@ -933,7 +979,7 @@ mod tests {
         // disk from the running system".
         let mut context = required_context("automatic");
         context.set_answer(StepId::Disk, "/dev/sdb".to_string());
-        let plan = InstallPlan::try_from(&context).unwrap();
+        let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
         assert_eq!(plan.storage.disk().as_str(), "/dev/sdb");
         assert_eq!(
             plan.environment,

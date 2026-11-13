@@ -1,3 +1,4 @@
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::config::{
     BTRFS_HOME_SUBVOLUME, BTRFS_ROOT_SUBVOLUME, BtrfsCompression, DesktopEnvironment,
     DisplayManager, RootFilesystem,
@@ -75,6 +76,8 @@ struct SecurityFacts {
 }
 
 struct SystemFacts {
+    linux_variant: &'static str,
+    init: &'static str,
     kernel: String,
     profile: &'static str,
     desktop: String,
@@ -87,7 +90,7 @@ struct SystemFacts {
 }
 
 impl SummaryFacts {
-    fn from_context(context: &InstallContext) -> Self {
+    fn from_context(context: &InstallContext, linux_variant: Option<ArchLinuxVariant>) -> Self {
         let minimal_mode = context.get_answer_bool(StepId::MinimalMode);
         let desktop = DesktopEnvironment::selected_or_default(context);
         let use_encryption = context.get_answer_bool(StepId::UseEncryption);
@@ -123,9 +126,15 @@ impl SummaryFacts {
                     .then(|| password_status(context, StepId::EncryptionPassword)),
             },
             system: SystemFacts {
+                linux_variant: linux_variant.map_or("Unknown", ArchLinuxVariant::label),
+                init: linux_variant.map_or("Unknown", |variant| variant.init_system().label()),
                 kernel: answer_or(context, StepId::Kernel, "linux (default)"),
                 profile: if minimal_mode {
-                    "Minimal (vanilla Arch)"
+                    match linux_variant {
+                        Some(ArchLinuxVariant::Artix(_)) => "Minimal (vanilla Artix)",
+                        Some(ArchLinuxVariant::Arch) => "Minimal (vanilla Arch)",
+                        None => "Minimal (unknown distribution)",
+                    }
                 } else {
                     "instantOS (full)"
                 },
@@ -135,11 +144,17 @@ impl SummaryFacts {
                     desktop.label().to_string()
                 },
                 display_manager: format_display_manager_label(context, desktop, minimal_mode),
-                plymouth: optional_feature_label(
-                    context.get_answer_bool(StepId::UsePlymouth),
-                    minimal_mode,
-                    true,
-                ),
+                plymouth: match linux_variant {
+                    Some(variant) if variant.supports_plymouth_configuration() => {
+                        optional_feature_label(
+                            context.get_answer_bool(StepId::UsePlymouth),
+                            minimal_mode,
+                            true,
+                        )
+                    }
+                    Some(_) => "Not configured by installer",
+                    None => "Unknown",
+                },
                 xorg: optional_feature_label(
                     context.get_answer_bool(StepId::UseXorg),
                     minimal_mode,
@@ -433,6 +448,8 @@ fn render_system(writer: &mut PreviewWriter, facts: &SystemFacts) {
     writer
         .blank()
         .line(colors::TEAL, Some(NerdFont::Sliders), "System Options")
+        .field_indented("Arch Linux variant", facts.linux_variant)
+        .field_indented("Init system", facts.init)
         .field_indented("Kernel", &facts.kernel)
         .field_indented("Desktop", &facts.desktop)
         .field_indented("Display manager", &facts.display_manager)
@@ -445,7 +462,7 @@ fn render_system(writer: &mut PreviewWriter, facts: &SystemFacts) {
 }
 
 pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary {
-    let facts = SummaryFacts::from_context(context);
+    let facts = SummaryFacts::from_context(context, ArchLinuxVariant::detect().ok());
 
     let mut writer = PreviewWriter::collect();
     render_identity(&mut writer, &facts.identity);
@@ -465,6 +482,14 @@ pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary 
 /// Unlike the install summary, there is no partitioning or package plan to
 /// describe: `ins arch setup` only converts an existing system to instantOS.
 pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
+    let linux_variant = ArchLinuxVariant::detect().ok();
+    build_setup_summary_with_variant(context, linux_variant)
+}
+
+fn build_setup_summary_with_variant(
+    context: &InstallContext,
+    linux_variant: Option<ArchLinuxVariant>,
+) -> String {
     let username = answer_or(context, StepId::Username, NOT_SET);
 
     let desktop = DesktopEnvironment::selected_or_default(context);
@@ -473,6 +498,14 @@ pub(crate) fn build_setup_summary(context: &InstallContext) -> String {
     let mut writer = PreviewWriter::collect();
     writer
         .line(colors::TEAL, Some(NerdFont::User), "Setup")
+        .field_indented(
+            "Arch Linux variant",
+            linux_variant.map_or("Unknown", ArchLinuxVariant::label),
+        )
+        .field_indented(
+            "Init system",
+            linux_variant.map_or("Unknown", |variant| variant.init_system().label()),
+        )
         .field_indented("User", &username)
         .field_indented("Desktop", desktop.label())
         .field_indented("Display manager", display_manager_label(context, desktop))
@@ -520,6 +553,14 @@ mod tests {
     }
 
     #[test]
+    fn an_undetected_variant_is_not_presented_as_arch() {
+        let facts = SummaryFacts::from_context(&InstallContext::new(), None);
+        assert_eq!(facts.system.linux_variant, "Unknown");
+        assert_eq!(facts.system.init, "Unknown");
+        assert_eq!(facts.system.plymouth, "Unknown");
+    }
+
+    #[test]
     fn minimal_mode_overrides_optional_features() {
         let context = context_with(&[
             (StepId::MinimalMode, "yes"),
@@ -529,7 +570,7 @@ mod tests {
             (StepId::Autologin, "yes"),
         ]);
 
-        let facts = SummaryFacts::from_context(&context);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
 
         assert_eq!(facts.system.profile, "Minimal (vanilla Arch)");
         assert_eq!(facts.system.desktop, "Skipped (minimal mode)");
@@ -540,6 +581,42 @@ mod tests {
     }
 
     #[test]
+    fn artix_variant_labels_the_system_and_plymouth() {
+        use crate::arch::arch_linux_variant::ArtixInitSystem;
+
+        let context = context_with(&[(StepId::MinimalMode, "yes"), (StepId::UsePlymouth, "yes")]);
+
+        let facts = SummaryFacts::from_context(
+            &context,
+            Some(ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)),
+        );
+
+        assert_eq!(facts.system.linux_variant, "Artix Linux (OpenRC)");
+        assert_eq!(facts.system.init, "OpenRC");
+        assert_eq!(facts.system.profile, "Minimal (vanilla Artix)");
+        assert_eq!(facts.system.plymouth, "Not configured by installer");
+    }
+
+    #[test]
+    fn the_system_section_shows_variant_and_init() {
+        use crate::arch::arch_linux_variant::ArtixInitSystem;
+
+        let facts = SummaryFacts::from_context(
+            &InstallContext::new(),
+            Some(ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)),
+        );
+        let mut writer = PreviewWriter::collect();
+        render_system(&mut writer, &facts.system);
+        let text = crate::ui::text::strip_ansi(&writer.build_string());
+
+        assert!(
+            text.contains("Arch Linux variant: Artix Linux (OpenRC)"),
+            "{text}"
+        );
+        assert!(text.contains("Init system: OpenRC"), "{text}");
+    }
+
+    #[test]
     fn tty_desktop_marks_display_manager_features_not_required() {
         let context = context_with(&[
             (StepId::DesktopEnvironment, "none/tty"),
@@ -547,7 +624,7 @@ mod tests {
             (StepId::UseXorg, "yes"),
         ]);
 
-        let facts = SummaryFacts::from_context(&context);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
 
         assert_eq!(facts.system.desktop, "None / TTY");
         assert_eq!(facts.system.display_manager, "Not required");
@@ -562,7 +639,7 @@ mod tests {
             (StepId::DualBootPartition, FREE_SPACE_ANSWER),
         ]);
 
-        let facts = SummaryFacts::from_context(&context);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
         let (target, _, method) = dualboot_details(&facts);
 
         assert_eq!(target, "Use existing free space");
@@ -578,7 +655,7 @@ mod tests {
             (StepId::DualBootSize, "1073741824"),
         ]);
 
-        let facts = SummaryFacts::from_context(&context);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
         let (target, size, method) = dualboot_details(&facts);
 
         assert_eq!(target, "/dev/sda3");
@@ -590,14 +667,14 @@ mod tests {
     fn btrfs_home_subvolume_is_listed_only_without_a_home_partition() {
         let mut context = context_with(&[(StepId::RootFilesystem, "btrfs")]);
 
-        let without_home = SummaryFacts::from_context(&context);
+        let without_home = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
         assert_eq!(
             without_home.storage.root_filesystem,
             "btrfs (@, @home; zstd (recommended))"
         );
 
         context.set_answer(StepId::HomePartition, "/dev/sda4".to_string());
-        let with_home = SummaryFacts::from_context(&context);
+        let with_home = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
         assert_eq!(
             with_home.storage.root_filesystem,
             "btrfs (@; zstd (recommended))"
@@ -606,7 +683,8 @@ mod tests {
 
     #[test]
     fn unanswered_answers_use_placeholders() {
-        let facts = SummaryFacts::from_context(&InstallContext::new());
+        let facts =
+            SummaryFacts::from_context(&InstallContext::new(), Some(ArchLinuxVariant::Arch));
 
         assert_eq!(facts.identity.hostname, NOT_SET);
         assert_eq!(facts.storage.disk, NOT_SET);
@@ -625,7 +703,7 @@ mod tests {
             (StepId::EncryptionPassword, "secret"),
         ]);
 
-        let facts = SummaryFacts::from_context(&context);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
 
         assert_eq!(facts.security.encryption, "Enabled (LUKS)");
         assert_eq!(facts.security.luks_passphrase, Some("Set"));
@@ -636,7 +714,7 @@ mod tests {
         let mut context = context_with(&[(StepId::PartitioningMethod, "automatic")]);
         context.system_info.boot_mode = BootMode::UEFI64;
 
-        let facts = SummaryFacts::from_context(&context);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
 
         match &facts.storage.details {
             Some(StorageDetails::Automatic { layout }) => {
