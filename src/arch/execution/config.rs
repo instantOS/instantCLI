@@ -533,7 +533,8 @@ fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
 /// other setting the package shipped.
 fn set_conf_d_value(path: &Path, key: &str, value: &str) -> Result<()> {
     let content = std::fs::read_to_string(path).unwrap_or_default();
-    let quoted = format!("\"{value}\"");
+    // OpenRC sources these files as shell code. Values must remain literal.
+    let quoted = crate::common::shell::shell_quote(value);
     let edit = set_keys(&content, &[(key, &quoted)]);
     std::fs::write(path, edit.content).with_context(|| format!("Writing {}", path.display()))
 }
@@ -869,6 +870,33 @@ mod tests {
     use crate::arch::execution::mock::MockRunner;
     use std::process::{Command, Output};
 
+    #[test]
+    fn openrc_configuration_preserves_literal_shell_values() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("keymaps");
+        for value in [
+            "us",
+            "$(printf${IFS}injected)",
+            "`printf injected`",
+            "a'\"b\\c",
+        ] {
+            std::fs::write(&path, "# Keep package settings\nother=yes\nkeymap=old\n").unwrap();
+            super::set_conf_d_value(&path, "keymap", value).unwrap();
+            let content = std::fs::read_to_string(&path).unwrap();
+            assert!(content.contains("# Keep package settings\nother=yes\n"));
+            super::set_conf_d_value(&path, "keymap", value).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+
+            let output = Command::new("sh")
+                .args(["-c", ". \"$1\"; printf '%s' \"$keymap\"", "sh"])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), value);
+        }
+    }
+
     /// A runner whose commands always fail, used to exercise fallbacks.
     struct FailingRunner;
 
@@ -1091,11 +1119,11 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_to_string(root.join("etc/conf.d/keymaps")).unwrap(),
-            "keymap=\"us\"\n"
+            "keymap=us\n"
         );
         assert_eq!(
             std::fs::read_to_string(root.join("etc/conf.d/consolefont")).unwrap(),
-            "consolefont=\"ter-v32n\"\n"
+            "consolefont=ter-v32n\n"
         );
         assert!(
             mock.command_log()

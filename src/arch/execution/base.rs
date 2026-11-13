@@ -112,7 +112,11 @@ async fn setup_mirrors(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resu
     let mirrorlist = match region_name {
         Some(region) => {
             println!("Selected region: {}", region);
-            fetch_mirrorlist_for_region(region).await?
+            mirrorlist_with_fallback(
+                fetch_mirrorlist_for_region(region).await,
+                fetch_fallback_mirrorlist(),
+            )
+            .await?
         }
         None => {
             // Fallback path: region selection was skipped (fetch failed)
@@ -145,6 +149,24 @@ async fn fetch_fallback_mirrorlist() -> Result<String> {
     crate::arch::mirrors::fetch_mirrorlist("").await
 }
 
+/// A saved region is a preference, even when its provider is unavailable.
+async fn mirrorlist_with_fallback(
+    selected: Result<String>,
+    fallback: impl std::future::Future<Output = Result<String>>,
+) -> Result<String> {
+    match selected {
+        Ok(mirrorlist) => Ok(mirrorlist),
+        Err(error) => {
+            println!(
+                "Warning: Could not fetch selected mirrors: {error:#}; using fallback mirrors."
+            );
+            fallback
+                .await
+                .context("Failed to fetch fallback mirrorlist")
+        }
+    }
+}
+
 fn bootstrap_base_system(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     let use_encryption = plan.storage().encryption().is_some();
     let use_plymouth = plan.initramfs().plymouth().is_some();
@@ -166,4 +188,36 @@ fn bootstrap_base_system(plan: &InstallPlan, executor: &dyn CommandRunner) -> Re
     super::pacman::bootstrap_packages("/mnt", &packages_refs, executor, plan.linux_variant())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn saved_region_failure_uses_fallback_and_propagates_total_failure() {
+        let selected = || anyhow::anyhow!("region provider unavailable");
+        assert_eq!(
+            mirrorlist_with_fallback(Err(selected()), async { Ok("fallback mirrors".to_owned()) })
+                .await
+                .unwrap(),
+            "fallback mirrors"
+        );
+        let error = mirrorlist_with_fallback(Err(selected()), async {
+            anyhow::bail!("fallback unavailable")
+        })
+        .await
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("fallback unavailable"));
+    }
+
+    #[tokio::test]
+    async fn selected_mirrors_do_not_poll_fallback() {
+        let mirrors = mirrorlist_with_fallback(Ok("selected mirrors".to_owned()), async {
+            panic!("successful region lookup must not fetch fallback mirrors")
+        })
+        .await
+        .unwrap();
+        assert_eq!(mirrors, "selected mirrors");
+    }
 }

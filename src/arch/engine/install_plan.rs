@@ -105,6 +105,11 @@ pub struct ConsoleKeymap(String);
 impl ConsoleKeymap {
     pub fn parse(value: &str) -> Result<Self> {
         validate_relative_resource_name("console keymap", value)?;
+        anyhow::ensure!(
+            value.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'-' | b'.' | b'+' | b'/')),
+            "invalid console keymap {value:?}"
+        );
         Ok(Self(value.to_owned()))
     }
 }
@@ -909,6 +914,30 @@ pub(crate) fn test_install_plan() -> InstallPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn console_keymaps_accept_names_and_reject_shell_syntax() {
+        for name in [
+            "us",
+            "de-latin1",
+            "mac-fr_CH-latin1",
+            "i386/qwerty/us",
+            "foo+bar",
+        ] {
+            assert!(ConsoleKeymap::parse(name).is_ok(), "{name}");
+        }
+        for name in [
+            "$(printf${IFS}injected)",
+            "`id`",
+            "us\"",
+            "us;id",
+            "us\\",
+            "../us",
+            "/us",
+        ] {
+            assert!(ConsoleKeymap::parse(name).is_err(), "{name}");
+        }
+    }
 
     fn required_context(partitioning: &str) -> InstallContext {
         let mut context = InstallContext::new();
