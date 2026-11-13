@@ -10,95 +10,6 @@ use anyhow::{Context, Result};
 use super::CommandRunner;
 use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
 
-/// A daemon and its separately packaged Artix init integration.
-#[derive(Clone, Copy)]
-pub struct SystemService {
-    pub service_name: &'static str,
-    daemon_package: &'static str,
-}
-
-pub fn required_system_services(linux_variant: ArchLinuxVariant) -> [SystemService; 3] {
-    [
-        SystemService {
-            service_name: "NetworkManager",
-            daemon_package: "networkmanager",
-        },
-        SystemService {
-            service_name: "sshd",
-            daemon_package: "openssh",
-        },
-        if linux_variant.is_systemd() {
-            SystemService {
-                service_name: "systemd-timesyncd",
-                daemon_package: "systemd",
-            }
-        } else {
-            SystemService {
-                service_name: "chrony",
-                daemon_package: "chrony",
-            }
-        },
-    ]
-}
-
-pub fn display_manager_service(dm: crate::arch::config::DisplayManager) -> Option<SystemService> {
-    use crate::arch::config::DisplayManager;
-    match dm {
-        DisplayManager::Gdm => Some(SystemService {
-            service_name: "gdm",
-            daemon_package: "gdm",
-        }),
-        DisplayManager::Lightdm => Some(SystemService {
-            service_name: "lightdm",
-            daemon_package: "lightdm",
-        }),
-        DisplayManager::None => None,
-    }
-}
-
-pub fn vm_guest_service(
-    linux_variant: ArchLinuxVariant,
-    vm: Option<&str>,
-) -> Option<SystemService> {
-    match vm {
-        Some("kvm" | "qemu" | "bochs") => Some(SystemService {
-            service_name: "qemu-guest-agent",
-            daemon_package: "qemu-guest-agent",
-        }),
-        Some("vmware") if linux_variant.is_systemd() => Some(SystemService {
-            service_name: "vmtoolsd",
-            daemon_package: "open-vm-tools",
-        }),
-        Some("oracle") if linux_variant.is_systemd() => Some(SystemService {
-            service_name: "vboxservice",
-            daemon_package: "virtualbox-guest-utils",
-        }),
-        _ => None,
-    }
-}
-
-/// Shared by fresh installation planning and conversion of an existing system.
-pub fn artix_init_service_packages(
-    linux_variant: ArchLinuxVariant,
-    desktop: crate::arch::config::DesktopEnvironment,
-    dm: crate::arch::config::DisplayManager,
-    minimal: bool,
-    vm: Option<&str>,
-) -> Vec<String> {
-    if !linux_variant.is_artix() {
-        return Vec::new();
-    }
-    let mut services = required_system_services(linux_variant).to_vec();
-    if !minimal && desktop.requires_display_manager() {
-        services.extend(display_manager_service(dm));
-    }
-    services.extend(vm_guest_service(linux_variant, vm));
-    services
-        .into_iter()
-        .filter_map(|service| linux_variant.init_service_package(service.daemon_package))
-        .collect()
-}
-
 /// Query the init's configured boot state, including inside a target chroot.
 pub fn service_enabled(linux_variant: ArchLinuxVariant, service: &str) -> Result<bool> {
     match linux_variant {
@@ -230,7 +141,6 @@ mod tests {
 
     #[test]
     fn networkmanager_is_selected_for_every_supported_variant() {
-        use crate::arch::config::{DesktopEnvironment, DisplayManager};
         for (variant, suffix) in [
             (ArchLinuxVariant::Arch, None),
             (
@@ -247,20 +157,18 @@ mod tests {
                 Some("dinit"),
             ),
         ] {
-            let services = required_system_services(variant);
+            let plan = crate::arch::engine::test_install_plan().with_test_inputs(|inputs| {
+                inputs.linux_variant = variant;
+                inputs.minimal_mode = true;
+            });
+            let services = plan.setup().services();
             assert!(
                 services
+                    .required()
                     .iter()
-                    .any(|service| service.service_name == "NetworkManager"
-                        && service.daemon_package == "networkmanager")
+                    .any(|service| service.service_name == "NetworkManager")
             );
-            let packages = artix_init_service_packages(
-                variant,
-                DesktopEnvironment::Tty,
-                DisplayManager::None,
-                true,
-                None,
-            );
+            let packages = services.init_packages();
             if let Some(suffix) = suffix {
                 for daemon in ["networkmanager", "openssh", "chrony"] {
                     assert!(packages.contains(&format!("{daemon}-{suffix}")));

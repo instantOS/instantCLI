@@ -89,7 +89,7 @@ pub fn find_matching_installation(
     plan: &InstallPlan,
     intent_sha256: &str,
 ) -> Result<Option<MatchingInstallation>> {
-    let disk_path = plan.storage.disk().as_str();
+    let disk_path = plan.storage().disk().as_str();
     let tree = load_lsblk(&[disk_path])?;
 
     for device in tree.blockdevices.iter().flat_map(linux_filesystems) {
@@ -101,7 +101,7 @@ pub fn find_matching_installation(
     if let StoragePlan::Automatic {
         encryption: Some(encryption),
         ..
-    } = &plan.storage
+    } = &plan.storage()
     {
         return probe_encrypted_installation(plan, encryption.password.expose(), intent_sha256);
     }
@@ -201,7 +201,7 @@ fn probe_encrypted_installation(
     password: &str,
     intent_sha256: &str,
 ) -> Result<Option<MatchingInstallation>> {
-    let disk = plan.storage.disk().as_str();
+    let disk = plan.storage().disk().as_str();
     let luks_partition = crate::arch::execution::disk::get_part_path(disk, 2);
     if !Path::new(&luks_partition).exists() {
         return Ok(None);

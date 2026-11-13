@@ -17,7 +17,15 @@ CPU architecture, distribution/init variant, installation profile, and installat
 - Summaries show Unknown when detection cannot establish a variant.
 - Before chroot re-entry, verify that the mounted target matches the plan.
 
-The variant owns native/additional repository names, bootstrap/chroot/fstab commands, signing keyring selection, bootstrap init packages, init service package names, installer capabilities, and encrypted-root kernel parameters.
+The variant owns native/additional repository names, bootstrap/chroot/fstab commands, signing keyring selection, bootstrap init packages, init service package names, and installer capabilities.
+
+## Planning boundary
+
+`InstallPlan` is the single immutable installation plan. Parsed inputs are consumed during construction; there is no retained request object or second execution-plan aggregate. Its private fields and read-only accessors prevent callers from mutating choices after compatibility decisions have been resolved. Tests changing inputs rebuild a complete plan.
+
+`SystemConfiguration` resolves repositories, services and their init integration packages, instantOS packages, and optional Plymouth configuration. Fresh installation and conversion share this resolver. `InitramfsConfiguration` selects the systemd or busybox alternative; GRUB derives the matching encrypted-root kernel parameters directly from that selection. The busybox alternative cannot carry a Plymouth configuration. Package planning lives in the engine and materializes the bootstrap and standard package batches before execution.
+
+Executors consume these decisions. They retain checks for mutable external state, such as enabled display managers, installed theme files, and the mounted target variant. They do not re-evaluate Plymouth compatibility or independently choose repository/service requirements.
 
 ## Package sources and bootstrap
 

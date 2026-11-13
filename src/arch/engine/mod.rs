@@ -1,8 +1,11 @@
 mod context;
 mod install_plan;
+pub(crate) mod packages;
 pub(crate) mod read_audit;
+pub(crate) mod services;
 mod step;
 mod summary;
+pub(crate) mod system_configuration;
 mod system_info;
 mod types;
 mod wizard_engine;
@@ -17,7 +20,7 @@ pub use install_plan::{
     EncryptionPassword, EncryptionPlan, FilesystemPlan, Hostname, InstallPlan, LocaleName,
     LoginPassword, ManualPartitions, PartitionPath, StoragePlan, Timezone, Username,
 };
-pub(crate) use install_plan::{FREE_SPACE_ANSWER, SessionAnswers};
+pub(crate) use install_plan::{FREE_SPACE_ANSWER, InstallInputs, SessionAnswers};
 pub use step::{AskPolicy, AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};
 pub use types::{AnswerPrivacy, BootMode, GpuKind, Kernel, PartitioningMethod, StepId, SystemInfo};

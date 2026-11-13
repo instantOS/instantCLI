@@ -17,7 +17,7 @@ pub fn prepare_disk(
     context: &InstallContext,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
-    let disk = plan.storage.disk();
+    let disk = plan.storage().disk();
 
     // Last line of defence before partitioning. The wizard's disk question
     // refuses the running disk, and `crate::arch::disks::prepare_disk` refuses
@@ -30,7 +30,7 @@ pub fn prepare_disk(
     // devices at that moment. A device appearing or changing since then is not
     // re-read here, so this is a guard against a bad plan rather than a fresh
     // check of the machine.
-    if let Some(conflict) = plan.environment.target() {
+    if let Some(conflict) = plan.environment().target() {
         anyhow::bail!(
             "{}",
             crate::arch::host::running_disk_message(disk.as_str(), conflict)
@@ -52,7 +52,7 @@ pub fn prepare_disk(
     // Dispatch on the structural storage plan. There is deliberately no
     // default: adding a storage strategy requires handling it here, and an
     // incomplete or unrecognized wizard answer cannot reach this layer.
-    match &plan.storage {
+    match &plan.storage() {
         StoragePlan::DualBoot {
             filesystem, target, ..
         } => {

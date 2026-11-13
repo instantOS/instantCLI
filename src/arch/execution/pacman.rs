@@ -17,6 +17,7 @@ use tokio::io::AsyncWriteExt;
 use super::CommandRunner;
 use super::package_source::PackageSource;
 use crate::arch::arch_linux_variant::ArchLinuxVariant;
+use crate::arch::engine::system_configuration::RepositoryConfiguration;
 
 pub const INSTANT_MIRRORLIST: &str = include_str!("../instantmirrorlist");
 
@@ -391,14 +392,25 @@ impl Pacman {
         Ok(())
     }
 
-    /// Enable 32-bit packages: `[multilib]` on Arch, `[lib32]` on Artix.
-    pub async fn enable_32bit_repositories(&self, dry_run: bool) -> Result<()> {
-        let repository = if self.linux_variant.is_artix() {
-            "lib32"
-        } else {
-            "multilib"
-        };
+    /// Apply the selected repository configuration.
+    pub async fn prepare_repositories(
+        &self,
+        repositories: &RepositoryConfiguration,
+        executor: &dyn CommandRunner,
+    ) -> Result<()> {
+        self.enable_repository(repositories.native_32bit(), executor.dry_run())
+            .await?;
+        let mut sync = Command::new("pacman");
+        sync.args(["--config", &self.conf.to_string_lossy(), "-Sy"]);
+        executor.run(&mut sync)?;
+        if repositories.arch_support() {
+            self.enable_arch_repository_support(repositories.additional_arch(), executor)
+                .await?;
+        }
+        Ok(())
+    }
 
+    async fn enable_repository(&self, repository: &str, dry_run: bool) -> Result<()> {
         if dry_run {
             println!(
                 "[DRY RUN] Enabling [{repository}] in {}",
@@ -429,14 +441,13 @@ impl Pacman {
     ///
     /// Only meaningful on Artix, where `artix-archlinux-support` provides
     /// `/etc/pacman.d/mirrorlist-arch`. Existing `[extra]` or `[multilib]`
-    /// sections are left untouched, so this is safe to run repeatedly. On
-    /// Arch it is a no-op.
-    pub async fn enable_additional_arch_repositories(&self, dry_run: bool) -> Result<()> {
-        if !self.linux_variant.is_artix() {
-            return Ok(());
-        }
-
-        let repositories = self.linux_variant.additional_arch_repositories();
+    /// sections are left untouched, so this is safe to run repeatedly.
+    /// An empty repository list leaves the configuration unchanged.
+    async fn enable_additional_arch_repositories(
+        &self,
+        repositories: &[&str],
+        dry_run: bool,
+    ) -> Result<()> {
         if dry_run {
             println!(
                 "[DRY RUN] Enabling Arch repositories {} in {}",
@@ -470,14 +481,14 @@ impl Pacman {
     /// Installs `artix-archlinux-support`, enables `[extra]`/`[multilib]`,
     /// populates the Arch keyring and refreshes the databases. Idempotent, so
     /// the Config step and the instantOS setup step can both call it.
-    pub async fn enable_arch_repository_support(&self, executor: &dyn CommandRunner) -> Result<()> {
-        if !self.linux_variant.is_artix() {
-            return Ok(());
-        }
-
+    async fn enable_arch_repository_support(
+        &self,
+        repositories: &[&str],
+        executor: &dyn CommandRunner,
+    ) -> Result<()> {
         println!("Enabling Arch repository support on Artix...");
         self.install(&["artix-archlinux-support"], executor)?;
-        self.enable_additional_arch_repositories(executor.dry_run())
+        self.enable_additional_arch_repositories(repositories, executor.dry_run())
             .await?;
 
         println!("Populating the Arch Linux keyring...");
@@ -1104,7 +1115,7 @@ Include = /etc/pacman.d/mirrorlist-arch
             dir.path().join("mirrorlist"),
             ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
         )
-        .enable_32bit_repositories(false)
+        .enable_repository("lib32", false)
         .await
         .unwrap();
 
@@ -1132,7 +1143,7 @@ Include = /etc/pacman.d/mirrorlist-arch
         let runner = MockRunner::new();
 
         pacman
-            .enable_arch_repository_support(&runner)
+            .enable_arch_repository_support(&["extra", "multilib"], &runner)
             .await
             .unwrap();
 
@@ -1167,7 +1178,7 @@ Include = /etc/pacman.d/mirrorlist-arch
             dir.path().join("mirrorlist"),
             ArchLinuxVariant::Arch,
         )
-        .enable_additional_arch_repositories(false)
+        .enable_additional_arch_repositories(&[], false)
         .await
         .unwrap();
 
@@ -1186,7 +1197,7 @@ Include = /etc/pacman.d/mirrorlist-arch
             dir.path().join("mirrorlist"),
             ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
         )
-        .enable_additional_arch_repositories(false)
+        .enable_additional_arch_repositories(&["extra", "multilib"], false)
         .await
         .unwrap();
 

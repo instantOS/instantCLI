@@ -334,17 +334,6 @@ impl ArchLinuxVariant {
     pub fn uses_systemd_initramfs(self) -> bool {
         self.is_systemd()
     }
-
-    pub fn encryption_kernel_param(self, uuid: &str) -> String {
-        match self {
-            Self::Arch => format!(
-                "rd.luks.name={uuid}=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap"
-            ),
-            Self::Artix(_) => format!(
-                "cryptdevice=UUID={uuid}:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap"
-            ),
-        }
-    }
 }
 
 impl InitSystem {
@@ -543,19 +532,6 @@ mod tests {
         );
         assert_eq!(ArchLinuxVariant::parse_override("").unwrap(), None);
         assert!(ArchLinuxVariant::parse_override("systemd").is_err());
-    }
-
-    #[test]
-    fn artix_and_arch_use_different_encryption_parameters() {
-        let uuid = "1234-abcd";
-        assert_eq!(
-            ArchLinuxVariant::Arch.encryption_kernel_param(uuid),
-            "rd.luks.name=1234-abcd=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap"
-        );
-        assert_eq!(
-            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC).encryption_kernel_param(uuid),
-            "cryptdevice=UUID=1234-abcd:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap"
-        );
     }
 
     #[test]

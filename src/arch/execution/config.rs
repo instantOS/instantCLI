@@ -1,6 +1,7 @@
 use super::CommandRunner;
 use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
 use crate::arch::engine::InstallPlan;
+use crate::arch::engine::system_configuration::{InitramfsConfiguration, PlymouthTheme};
 use crate::arch::execution::pacman::Pacman;
 use crate::arch::mkinitcpio::MkinitcpioConfig;
 use crate::common::config_edit::set_keys;
@@ -57,32 +58,15 @@ pub fn add_user_to_groups(username: &str, executor: &dyn CommandRunner) -> Resul
 pub async fn install_config(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
-    // Enable the native 32-bit repository (needed for lib32-vulkan-* GPU drivers)
-    // This runs before package installation so lib32 packages can be installed.
-    println!("Enabling the native 32-bit repository...");
-    Pacman::for_variant(plan.linux_variant)
-        .enable_32bit_repositories(executor.dry_run())
+    Pacman::for_variant(plan.linux_variant())
+        .prepare_repositories(plan.setup().repositories(), executor)
         .await?;
-
-    // Refresh databases after enabling 32-bit packages
-    sync_repos(executor)?;
-
-    println!("Configuring target pacman settings...");
-    Pacman::for_variant(plan.linux_variant)
+    Pacman::for_variant(plan.linux_variant())
         .configure_settings(executor.dry_run())
         .await?;
 
-    // Full instantOS needs packages that only live in Arch's extra/multilib
-    // repositories. Enable Arch repository support before the standard package batch so
-    // packages such as inter-font resolve on Artix too.
-    if plan.linux_variant.is_artix() && !plan.minimal_mode {
-        Pacman::for_variant(plan.linux_variant)
-            .enable_arch_repository_support(executor)
-            .await?;
-    }
-
     install_standard_packages(plan, executor)?;
-    configure_machine_identity(executor, plan.linux_variant)?;
+    configure_machine_identity(executor, plan.linux_variant())?;
     configure_timezone(plan, executor)?;
     configure_locale(plan, executor)?;
     configure_network(plan, executor)?;
@@ -341,79 +325,38 @@ export _JAVA_AWT_WM_NONREPARENTING=1
     Ok(())
 }
 
-fn sync_repos(executor: &dyn CommandRunner) -> Result<()> {
-    println!("Updating package databases...");
-    let mut cmd = Command::new("pacman");
-    cmd.arg("-Sy");
-    executor.run(&mut cmd)?;
-    Ok(())
-}
-
 fn install_standard_packages(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Installing standard packages...");
-    let packages = crate::arch::execution::packages::build_standard_package_plan(plan)?;
+    let packages = plan.standard_packages();
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-    Pacman::for_variant(plan.linux_variant).install(&package_refs, executor)?;
+    Pacman::for_variant(plan.linux_variant()).install(&package_refs, executor)?;
     Ok(())
-}
-
-/// Packages required for configuration steps (installed in a single batch elsewhere)
-pub fn config_package_list(plan: &InstallPlan) -> Vec<String> {
-    let mut packages = vec!["kbd".to_string()];
-    if let Some(package) = plan.console_font.legacy_package() {
-        packages.push(package.to_string());
-    }
-
-    if plan.storage.encryption().is_some() {
-        packages.push("lvm2".to_string());
-        packages.push("cryptsetup".to_string());
-        // Artix packages the init scripts separately from the tools.
-        for base in ["lvm2", "cryptsetup"] {
-            if let Some(package) = plan.linux_variant.init_service_package(base) {
-                packages.push(package);
-            }
-        }
-    }
-
-    if plan.use_plymouth
-        && !plan.minimal_mode
-        && plan.linux_variant.supports_plymouth_configuration()
-    {
-        packages.push("plymouth".to_string());
-    }
-
-    packages
 }
 
 fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let use_encryption = plan.storage.encryption().is_some();
-    let use_plymouth = plan.use_plymouth && plan.linux_variant.supports_plymouth_configuration();
-    let use_btrfs = plan.storage.filesystem().is_btrfs();
-
-    if !use_encryption && !use_plymouth && !use_btrfs {
+    let initramfs = plan.initramfs();
+    if matches!(initramfs, InitramfsConfiguration::Unchanged) {
         return Ok(());
     }
-
-    if use_encryption {
-        println!("Configuring mkinitcpio for encryption...");
-    }
-    if use_plymouth && !plan.minimal_mode {
-        println!("Configuring mkinitcpio for Plymouth...");
-    }
-
+    println!("Configuring initramfs...");
     if executor.dry_run() {
-        if use_btrfs {
-            println!("[DRY RUN] Adding 'btrfs' to MODULES in /etc/mkinitcpio.conf");
-        }
-        if use_plymouth && !plan.minimal_mode {
-            println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
-        }
-        if use_encryption {
-            if plan.linux_variant.uses_systemd_initramfs() {
-                println!("[DRY RUN] Adding 'encrypt lvm2' to HOOKS in /etc/mkinitcpio.conf");
-            } else {
-                println!("[DRY RUN] Adding 'encrypt lvm2 resume' to HOOKS in /etc/mkinitcpio.conf");
+        match initramfs {
+            InitramfsConfiguration::Systemd {
+                encryption,
+                btrfs,
+                plymouth,
+            } => {
+                println!(
+                    "[DRY RUN] Configure systemd initramfs: encryption={encryption}, btrfs={btrfs}, Plymouth={}",
+                    plymouth.is_some()
+                );
             }
+            InitramfsConfiguration::Busybox { encryption, btrfs } => {
+                println!(
+                    "[DRY RUN] Configure busybox initramfs: encryption={encryption}, btrfs={btrfs}"
+                );
+            }
+            InitramfsConfiguration::Unchanged => return Ok(()),
         }
         println!("[DRY RUN] mkinitcpio -P");
         return Ok(());
@@ -423,7 +366,7 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
     let content = std::fs::read_to_string(conf_path).context("Failed to read mkinitcpio.conf")?;
 
     let mut config = MkinitcpioConfig::parse(&content)?;
-    apply_initramfs_hooks(plan, &mut config);
+    apply_initramfs_hooks(plan.initramfs(), &mut config);
 
     std::fs::write(conf_path, config.to_string())?;
 
@@ -438,15 +381,22 @@ fn configure_mkinitcpio(plan: &InstallPlan, executor: &dyn CommandRunner) -> Res
 /// systemd targets boot with systemd hooks; Artix targets keep the busybox
 /// hooks and must never gain an `sd-*` hook, which would wait for a systemd
 /// that is not PID 1.
-fn apply_initramfs_hooks(plan: &InstallPlan, config: &mut MkinitcpioConfig) {
-    let use_encryption = plan.storage.encryption().is_some();
-    let use_plymouth = plan.use_plymouth && plan.linux_variant.supports_plymouth_configuration();
+fn apply_initramfs_hooks(initramfs: &InitramfsConfiguration, config: &mut MkinitcpioConfig) {
+    let (use_encryption, use_btrfs, use_plymouth) = match initramfs {
+        InitramfsConfiguration::Unchanged => return,
+        InitramfsConfiguration::Systemd {
+            encryption,
+            btrfs,
+            plymouth,
+        } => (*encryption, *btrfs, plymouth.is_some()),
+        InitramfsConfiguration::Busybox { encryption, btrfs } => (*encryption, *btrfs, false),
+    };
 
-    if plan.storage.filesystem().is_btrfs() {
+    if use_btrfs {
         config.ensure_module("btrfs");
     }
 
-    if plan.linux_variant.uses_systemd_initramfs() {
+    if matches!(initramfs, InitramfsConfiguration::Systemd { .. }) {
         // Switch to systemd hooks
         if config.contains_hook("base") && config.contains_hook("udev") {
             config.replace_hook("udev", "systemd");
@@ -454,7 +404,7 @@ fn apply_initramfs_hooks(plan: &InstallPlan, config: &mut MkinitcpioConfig) {
 
         // Plymouth should be after systemd but before encrypt/sd-encrypt
         // And definitely before sd-encrypt to show password prompt
-        if use_plymouth && !plan.minimal_mode {
+        if use_plymouth {
             config.ensure_hook_position(
                 "plymouth",
                 &["base", "systemd", "udev"],       // After these
@@ -516,10 +466,6 @@ fn apply_initramfs_hooks(plan: &InstallPlan, config: &mut MkinitcpioConfig) {
         );
     }
 
-    if use_plymouth && !plan.minimal_mode {
-        config.ensure_hook_position("plymouth", &["base", "udev"], &["encrypt", "lvm2"]);
-    }
-
     if use_encryption && config.contains_hook("block") && config.contains_hook("filesystems") {
         config.ensure_hook("encrypt");
         config.ensure_hook_position("encrypt", &["block"], &["filesystems"]);
@@ -529,23 +475,23 @@ fn apply_initramfs_hooks(plan: &InstallPlan, config: &mut MkinitcpioConfig) {
 }
 
 fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let keymap = plan.keymap.as_str();
-    let font = plan.console_font.installed_name();
+    let keymap = plan.keymap().as_str();
+    let font = plan.console_font().installed_name();
     let openrc = matches!(
-        plan.linux_variant,
+        plan.linux_variant(),
         ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)
     );
-    let non_default_font = plan.console_font.name() != crate::common::console_font::DEFAULT_NAME;
+    let non_default_font = plan.console_font().name() != crate::common::console_font::DEFAULT_NAME;
 
     let contents = format!("KEYMAP={}\nFONT={}\n", keymap, font);
     println!(
         "Setting console keymap to {} and font to {}",
         keymap,
-        plan.console_font.name()
+        plan.console_font().name()
     );
 
     if executor.dry_run() {
-        if plan.console_font.data().is_some() {
+        if plan.console_font().data().is_some() {
             println!(
                 "[DRY RUN] Install selected font as /usr/share/kbd/consolefonts/ins-selected.psf"
             );
@@ -562,7 +508,7 @@ fn configure_vconsole(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
     }
 
     let root = target_root();
-    crate::common::console_font::install_snapshot(&root, &plan.console_font)?;
+    crate::common::console_font::install_snapshot(&root, plan.console_font())?;
     std::fs::write(root.join("etc/vconsole.conf"), contents)
         .context("Writing console keyboard and font configuration")?;
 
@@ -593,7 +539,7 @@ fn set_conf_d_value(path: &Path, key: &str, value: &str) -> Result<()> {
 }
 
 fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let timezone = plan.timezone.as_str();
+    let timezone = plan.timezone().as_str();
 
     println!("Setting timezone to {}", timezone);
 
@@ -603,7 +549,7 @@ fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
     // does not provide; the call only stalls there before failing. Go
     // straight to the manual configuration in that case, and on Artix where
     // systemd is not present at all.
-    if plan.linux_variant.is_systemd() && !super::is_chroot() {
+    if plan.linux_variant().is_systemd() && !super::is_chroot() {
         let mut cmd = Command::new("timedatectl");
         cmd.arg("set-timezone").arg(timezone);
 
@@ -646,7 +592,7 @@ fn configure_timezone(plan: &InstallPlan, executor: &dyn CommandRunner) -> Resul
 }
 
 fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let locale = plan.locale.as_str();
+    let locale = plan.locale().as_str();
 
     println!("Setting locale to {}", locale);
 
@@ -654,7 +600,7 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
     // the installer's chroot provides. Extract just the LANG part, e.g.
     // "en_US.UTF-8" from "en_US.UTF-8 UTF-8".
     let lang = locale.split_whitespace().next().unwrap_or(locale);
-    let use_localectl = plan.linux_variant.is_systemd() && !super::is_chroot();
+    let use_localectl = plan.linux_variant().is_systemd() && !super::is_chroot();
 
     if executor.dry_run() {
         println!("[DRY RUN] Uncommenting {} in /etc/locale.gen", locale);
@@ -663,7 +609,7 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
             println!("[DRY RUN] localectl set-locale LANG={}", lang);
         } else {
             println!("[DRY RUN] Write /etc/locale.conf: LANG={}", lang);
-            if plan.linux_variant.is_artix() {
+            if plan.linux_variant().is_artix() {
                 println!("[DRY RUN] Write /etc/env.d/02locale: LANG={}", lang);
             }
         }
@@ -699,7 +645,7 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
         std::fs::write(root.join("etc/locale.conf"), format!("LANG={}\n", lang))
             .context("Writing /etc/locale.conf")?;
 
-        if plan.linux_variant.is_artix() {
+        if plan.linux_variant().is_artix() {
             // Artix's OpenRC profile scripts read /etc/env.d before
             // /etc/locale.conf exists on a fresh boot.
             let env_d = root.join("etc/env.d");
@@ -714,9 +660,9 @@ fn configure_locale(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<
 }
 
 fn configure_network(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let hostname = plan.hostname.as_str();
+    let hostname = plan.hostname().as_str();
     let openrc = matches!(
-        plan.linux_variant,
+        plan.linux_variant(),
         ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)
     );
 
@@ -759,8 +705,8 @@ fn configure_network(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result
 }
 
 fn configure_users(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
-    let username = plan.username.as_str();
-    let password = plan.password.expose();
+    let username = plan.username().as_str();
+    let password = plan.password().expose();
 
     println!("Configuring user: {}", username);
 
@@ -865,33 +811,16 @@ pub fn configure_sudo(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-pub fn configure_plymouth(
-    use_plymouth: bool,
-    minimal_mode: bool,
-    linux_variant: ArchLinuxVariant,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
-    if !linux_variant.supports_plymouth_configuration() {
-        println!(
-            "The installer does not configure Plymouth on {}; skipping it.",
-            linux_variant.label()
-        );
-        return Ok(());
-    }
-
-    if !use_plymouth || minimal_mode {
-        return Ok(());
-    }
-
+pub fn configure_plymouth(plymouth: &PlymouthTheme, executor: &dyn CommandRunner) -> Result<()> {
+    let theme = plymouth.theme();
     println!("Configuring Plymouth...");
 
     if executor.dry_run() {
-        println!("[DRY RUN] Setting Plymouth theme to instantos");
-        println!("[DRY RUN] plymouth-set-default-theme -R instantos");
+        println!("[DRY RUN] Setting Plymouth theme to {theme}");
+        println!("[DRY RUN] plymouth-set-default-theme -R {theme}");
         return Ok(());
     }
 
-    let theme = "instantos";
     let theme_dir = format!("/usr/share/plymouth/themes/{}", theme);
     if !std::path::Path::new(&theme_dir).exists() {
         println!(
@@ -965,7 +894,9 @@ mod tests {
 
     fn artix_plan(init: ArtixInitSystem) -> crate::arch::engine::InstallPlan {
         let mut plan = crate::arch::engine::test_install_plan();
-        plan.linux_variant = ArchLinuxVariant::Artix(init);
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.linux_variant = ArchLinuxVariant::Artix(init);
+        });
         plan
     }
 
@@ -985,14 +916,27 @@ mod tests {
     #[test]
     fn console_configuration_persists_font_and_keymap_and_plans_font_package() {
         let mut plan = crate::arch::engine::test_install_plan();
-        plan.console_font = crate::common::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.console_font =
+                crate::common::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        });
         super::configure_vconsole(&plan, &MockRunner::new()).unwrap();
         let contents =
             std::fs::read_to_string(super::target_root().join("etc/vconsole.conf")).unwrap();
         assert_eq!(contents, "KEYMAP=us\nFONT=ter-v32n\n");
-        assert!(super::config_package_list(&plan).contains(&"terminus-font".to_string()));
-        plan.console_font = crate::common::console_font::ConsoleFont::default();
-        assert!(super::config_package_list(&plan).contains(&"kbd".to_string()));
+        assert!(
+            plan.standard_packages()
+                .to_vec()
+                .contains(&"terminus-font".to_string())
+        );
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.console_font = crate::common::console_font::ConsoleFont::default();
+        });
+        assert!(
+            plan.standard_packages()
+                .to_vec()
+                .contains(&"kbd".to_string())
+        );
     }
 
     #[test]
@@ -1001,14 +945,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let data = crate::common::console_font::tests::psf1();
         std::fs::write(directory.path().join("custom.psf"), &data).unwrap();
-        plan.console_font = crate::common::console_font::discover(directory.path())
-            .unwrap()
-            .into_iter()
-            .find(|font| font.name() == "custom")
-            .unwrap();
-        let answer = plan.console_font.to_answer().unwrap();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.console_font = crate::common::console_font::discover(directory.path())
+                .unwrap()
+                .into_iter()
+                .find(|font| font.name() == "custom")
+                .unwrap();
+        });
+        let answer = plan.console_font().to_answer().unwrap();
         drop(directory);
-        plan.console_font = crate::common::console_font::ConsoleFont::parse(&answer).unwrap();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.console_font = crate::common::console_font::ConsoleFont::parse(&answer).unwrap();
+        });
         super::configure_vconsole(&plan, &MockRunner::new()).unwrap();
         let root = super::target_root();
         assert_eq!(
@@ -1019,7 +967,8 @@ mod tests {
             std::fs::read_to_string(root.join("etc/vconsole.conf")).unwrap(),
             "KEYMAP=us\nFONT=ins-selected\n"
         );
-        assert_eq!(super::config_package_list(&plan), ["kbd"]);
+        assert!(plan.standard_packages().iter().any(|p| p == "kbd"));
+        assert!(plan.console_font().legacy_package().is_none());
     }
 
     #[test]
@@ -1127,7 +1076,10 @@ mod tests {
     #[test]
     fn artix_console_configuration_writes_openrc_files_and_enables_consolefont() {
         let mut plan = artix_plan(ArtixInitSystem::OpenRC);
-        plan.console_font = crate::common::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.console_font =
+                crate::common::console_font::ConsoleFont::parse("ter-v32n").unwrap();
+        });
         let mock = MockRunner::new();
 
         super::configure_vconsole(&plan, &mock).unwrap();
@@ -1218,9 +1170,11 @@ mod tests {
     #[test]
     fn artix_encryption_adds_init_service_packages() {
         let mut plan = artix_plan(ArtixInitSystem::OpenRC);
-        plan.storage = encrypted_storage();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.storage = encrypted_storage();
+        });
 
-        let packages = super::config_package_list(&plan);
+        let packages = plan.standard_packages().to_vec();
 
         assert!(packages.contains(&"lvm2".to_string()));
         assert!(packages.contains(&"cryptsetup".to_string()));
@@ -1231,9 +1185,16 @@ mod tests {
     #[test]
     fn artix_never_plans_plymouth() {
         let mut plan = artix_plan(ArtixInitSystem::OpenRC);
-        plan.use_plymouth = true;
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.use_plymouth = true;
+        });
 
-        assert!(!super::config_package_list(&plan).contains(&"plymouth".to_string()));
+        assert!(
+            !plan
+                .standard_packages()
+                .to_vec()
+                .contains(&"plymouth".to_string())
+        );
     }
 
     #[test]
@@ -1241,13 +1202,15 @@ mod tests {
         use crate::arch::mkinitcpio::MkinitcpioConfig;
 
         let mut plan = artix_plan(ArtixInitSystem::OpenRC);
-        plan.storage = encrypted_storage();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.storage = encrypted_storage();
+        });
         let mut config = MkinitcpioConfig::parse(
             "HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck)",
         )
         .unwrap();
 
-        super::apply_initramfs_hooks(&plan, &mut config);
+        super::apply_initramfs_hooks(plan.initramfs(), &mut config);
 
         assert!(config.contains_hook("udev"));
         assert!(config.contains_hook("keymap"));
@@ -1265,13 +1228,15 @@ mod tests {
         use crate::arch::mkinitcpio::MkinitcpioConfig;
 
         let mut plan = artix_plan(ArtixInitSystem::S6);
-        plan.storage = encrypted_storage();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.storage = encrypted_storage();
+        });
         let mut config = MkinitcpioConfig::parse(
             "HOOKS=(base systemd sd-vconsole block sd-encrypt filesystems)",
         )
         .unwrap();
 
-        super::apply_initramfs_hooks(&plan, &mut config);
+        super::apply_initramfs_hooks(plan.initramfs(), &mut config);
 
         assert!(config.contains_hook("udev"));
         assert!(config.contains_hook("encrypt"));
@@ -1285,32 +1250,21 @@ mod tests {
         use crate::arch::mkinitcpio::MkinitcpioConfig;
 
         let mut plan = crate::arch::engine::test_install_plan();
-        plan.storage = encrypted_storage();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.storage = encrypted_storage();
+        });
         let mut config = MkinitcpioConfig::parse(
             "HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck)",
         )
         .unwrap();
 
-        super::apply_initramfs_hooks(&plan, &mut config);
+        super::apply_initramfs_hooks(plan.initramfs(), &mut config);
 
         assert!(config.contains_hook("systemd"));
         assert!(config.contains_hook("sd-vconsole"));
         assert!(config.contains_hook("sd-encrypt"));
         assert!(!config.contains_hook("encrypt"));
         assert!(!config.contains_hook("consolefont"));
-    }
-
-    #[test]
-    fn artix_plymouth_configuration_is_a_no_op() {
-        let mock = MockRunner::new();
-        super::configure_plymouth(
-            true,
-            false,
-            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
-            &mock,
-        )
-        .unwrap();
-        assert!(mock.command_log().is_empty());
     }
 
     #[test]

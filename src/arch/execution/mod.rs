@@ -12,7 +12,6 @@ pub mod config;
 pub mod disk;
 pub mod fstab;
 pub mod package_source;
-pub mod packages;
 pub mod pacman;
 pub mod paths;
 pub mod post;
@@ -421,23 +420,28 @@ pub async fn execute_installation(
         .context("Refusing to execute an invalid configuration")?;
     let plan = crate::arch::engine::InstallPlan::try_from(&context)
         .context("Refusing to execute an incomplete or inconsistent installation plan")?;
-    let configuration_sha256 =
-        crate::arch::installation_identity::configuration_fingerprint(&content, plan.linux_variant);
+    let configuration_sha256 = crate::arch::installation_identity::configuration_fingerprint(
+        &content,
+        plan.linux_variant(),
+    );
     let intent_sha256 =
-        crate::arch::installation_identity::fingerprint(&context, plan.linux_variant)?;
+        crate::arch::installation_identity::fingerprint(&context, plan.linux_variant())?;
 
-    println!("Loaded configuration for user: {}", plan.username.as_str());
+    println!(
+        "Loaded configuration for user: {}",
+        plan.username().as_str()
+    );
     println!(
         "Install environment: {}; target is {}.",
-        plan.environment.host().label(),
-        plan.environment.target_label()
+        plan.environment().host().label(),
+        plan.environment().target_label()
     );
 
-    if !plan.linux_variant.supports_offline_installation() && install_mode.is_offline() {
+    if !plan.linux_variant().supports_offline_installation() && install_mode.is_offline() {
         anyhow::bail!(
             "Offline installation is not supported on {}. Boot an online Artix live ISO \
              or install with network access.",
-            plan.linux_variant.label()
+            plan.linux_variant().label()
         );
     }
 
@@ -445,7 +449,7 @@ pub async fn execute_installation(
         .as_deref()
         .is_none_or(|name| name.eq_ignore_ascii_case("disk"));
     if is_disk_execution && !dry_run && !is_chroot() {
-        if plan.environment.may_probe_for_existing_install() {
+        if plan.environment().may_probe_for_existing_install() {
             if let Some(existing) = crate::arch::installation_identity::find_matching_installation(
                 &plan,
                 &intent_sha256,
@@ -462,7 +466,7 @@ pub async fn execute_installation(
             println!(
                 "Skipping the already-installed check: the install target is {}, so reading \
                  installation markers from it would read the running system.",
-                plan.environment.target_label()
+                plan.environment().target_label()
             );
         }
     }
@@ -526,7 +530,7 @@ pub async fn execute_installation(
                     && let Err(ce) = crate::arch::offline::cleanup_target(
                         &executor,
                         install_mode,
-                        plan.mirror_region.as_deref(),
+                        plan.mirror_region().as_deref(),
                     )
                 {
                     println!("Warning: Offline cleanup after failed install failed: {ce}");
@@ -572,7 +576,7 @@ pub async fn execute_installation(
             crate::arch::offline::cleanup_target(
                 &executor,
                 install_mode,
-                plan.mirror_region.as_deref(),
+                plan.mirror_region().as_deref(),
             )?;
 
             let marker = crate::arch::installation_identity::write_completed_marker(
@@ -637,12 +641,12 @@ async fn execute_step(
             "Step {:?} requires chroot, setting up and entering...",
             step
         );
-        setup_chroot(executor, config_path, plan.linux_variant)?;
+        setup_chroot(executor, config_path, plan.linux_variant())?;
 
         // Re-enter the installer in the target with its copied questions file.
         let step_name = format!("{:?}", step).to_lowercase();
 
-        let mut cmd = std::process::Command::new(plan.linux_variant.chroot_command());
+        let mut cmd = std::process::Command::new(plan.linux_variant().chroot_command());
         cmd.arg(paths::CHROOT_MOUNT)
             .arg("/usr/bin/ins-install")
             .arg("arch")
@@ -695,7 +699,7 @@ async fn execute_step(
     match step {
         InstallStep::Disk => disk::prepare_disk(plan, context, executor)?,
         InstallStep::Base => base::install_base(plan, executor).await?,
-        InstallStep::Fstab => fstab::generate_fstab(executor, plan.linux_variant)?,
+        InstallStep::Fstab => fstab::generate_fstab(executor, plan.linux_variant())?,
         InstallStep::Config => config::install_config(plan, executor).await?,
         InstallStep::Bootloader => bootloader::install_bootloader(plan, executor).await?,
         InstallStep::Post => post::install_post(plan, executor).await?,

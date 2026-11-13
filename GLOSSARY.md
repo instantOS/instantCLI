@@ -31,3 +31,7 @@ _Avoid_: Installation source
 **Arch repository support**:
 The compatibility packages, signing keys, and additional Arch repositories needed to use Arch packages on Artix.
 _Avoid_: Bridge
+
+**Installation plan**:
+The validated choices and resolved system requirements used to install the selected system on its target disk.
+_Avoid_: Raw answers

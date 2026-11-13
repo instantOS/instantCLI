@@ -481,11 +481,7 @@ pub struct SessionAnswers {
 }
 
 impl SessionAnswers {
-    pub fn from_context(
-        context: &InstallContext,
-        autologin_default: bool,
-        linux_variant: ArchLinuxVariant,
-    ) -> Result<Self> {
+    pub fn from_context(context: &InstallContext, autologin_default: bool) -> Result<Self> {
         let desktop = context
             .get_answer(&StepId::DesktopEnvironment)
             .map(|answer| {
@@ -506,8 +502,7 @@ impl SessionAnswers {
         Ok(Self {
             desktop,
             display_manager,
-            use_plymouth: context.bool_answer(StepId::UsePlymouth)?.unwrap_or(true)
-                && linux_variant.supports_plymouth_configuration(),
+            use_plymouth: context.bool_answer(StepId::UsePlymouth)?.unwrap_or(true),
             autologin: context
                 .bool_answer(StepId::Autologin)?
                 .unwrap_or(autologin_default),
@@ -519,12 +514,12 @@ impl SessionAnswers {
     }
 }
 
-/// Complete configuration accepted by the execution layer.
+/// Validated choices and detected facts used to resolve execution decisions.
 ///
 /// Unlike wizard state, this contains no missing required answers and encodes
 /// mutually exclusive installation shapes through enums.
 #[derive(Debug, Clone)]
-pub struct InstallPlan {
+pub(crate) struct InstallInputs {
     pub system_info: SystemInfo,
     /// Where the installer runs and how the target relates to it. Resolved
     /// from the machine, not from an answer: the execution layer's guards
@@ -549,6 +544,33 @@ pub struct InstallPlan {
     pub autologin: bool,
     pub use_xorg: bool,
     pub minimal_mode: bool,
+}
+
+/// Immutable installation decisions. Only construction can resolve compatibility.
+#[derive(Debug, Clone)]
+pub struct InstallPlan {
+    system_info: SystemInfo,
+    environment: InstallEnvironment,
+    linux_variant: ArchLinuxVariant,
+    storage: StoragePlan,
+    hostname: Hostname,
+    username: Username,
+    password: LoginPassword,
+    keymap: ConsoleKeymap,
+    console_font: crate::common::console_font::ConsoleFont,
+    timezone: Timezone,
+    locale: LocaleName,
+    mirror_region: Option<String>,
+    kernel: Kernel,
+    desktop: DesktopEnvironment,
+    display_manager: DisplayManager,
+    autologin: bool,
+    use_xorg: bool,
+    minimal_mode: bool,
+    setup: super::system_configuration::SystemConfiguration,
+    initramfs: super::system_configuration::InitramfsConfiguration,
+    base_packages: Vec<String>,
+    standard_packages: Vec<String>,
 }
 
 impl TryFrom<&InstallContext> for InstallPlan {
@@ -671,10 +693,9 @@ impl InstallPlan {
                 ..
             }
         );
-        let session =
-            SessionAnswers::from_context(context, encryption_implies_autologin, linux_variant)?;
+        let session = SessionAnswers::from_context(context, encryption_implies_autologin)?;
 
-        Ok(Self {
+        Ok(Self::resolve(InstallInputs {
             system_info: context.system_info.clone(),
             environment,
             linux_variant,
@@ -702,11 +723,152 @@ impl InstallPlan {
             autologin: session.autologin,
             use_xorg: session.use_xorg,
             minimal_mode: session.minimal_mode,
-        })
+        }))
     }
 }
 
 impl InstallPlan {
+    fn resolve(inputs: InstallInputs) -> Self {
+        let session = SessionAnswers {
+            desktop: inputs.desktop,
+            display_manager: inputs.display_manager,
+            use_plymouth: inputs.use_plymouth,
+            autologin: inputs.autologin,
+            use_xorg: inputs.use_xorg,
+            minimal_mode: inputs.minimal_mode,
+        };
+        let setup = super::system_configuration::SystemConfiguration::resolve(
+            inputs.linux_variant,
+            &session,
+            &inputs.system_info,
+        );
+        let initramfs = super::system_configuration::InitramfsConfiguration::resolve(
+            &inputs,
+            setup.plymouth().copied(),
+        );
+        let base_packages = super::packages::base_packages(&inputs);
+        let standard_packages = super::packages::standard_packages(&inputs, &setup, &initramfs);
+        Self {
+            system_info: inputs.system_info,
+            environment: inputs.environment,
+            linux_variant: inputs.linux_variant,
+            storage: inputs.storage,
+            hostname: inputs.hostname,
+            username: inputs.username,
+            password: inputs.password,
+            keymap: inputs.keymap,
+            console_font: inputs.console_font,
+            timezone: inputs.timezone,
+            locale: inputs.locale,
+            mirror_region: inputs.mirror_region,
+            kernel: inputs.kernel,
+            desktop: inputs.desktop,
+            display_manager: inputs.display_manager,
+            autologin: inputs.autologin,
+            use_xorg: inputs.use_xorg,
+            minimal_mode: inputs.minimal_mode,
+            setup,
+            initramfs,
+            base_packages,
+            standard_packages,
+        }
+    }
+
+    pub fn system_info(&self) -> &SystemInfo {
+        &self.system_info
+    }
+    pub fn environment(&self) -> InstallEnvironment {
+        self.environment
+    }
+    pub fn linux_variant(&self) -> ArchLinuxVariant {
+        self.linux_variant
+    }
+    pub fn storage(&self) -> &StoragePlan {
+        &self.storage
+    }
+    pub fn hostname(&self) -> &Hostname {
+        &self.hostname
+    }
+    pub fn username(&self) -> &Username {
+        &self.username
+    }
+    pub fn password(&self) -> &LoginPassword {
+        &self.password
+    }
+    pub fn keymap(&self) -> &ConsoleKeymap {
+        &self.keymap
+    }
+    pub fn console_font(&self) -> &crate::common::console_font::ConsoleFont {
+        &self.console_font
+    }
+    pub fn timezone(&self) -> &Timezone {
+        &self.timezone
+    }
+    pub fn locale(&self) -> &LocaleName {
+        &self.locale
+    }
+    pub fn mirror_region(&self) -> &Option<String> {
+        &self.mirror_region
+    }
+    pub fn kernel(&self) -> Kernel {
+        self.kernel
+    }
+    pub fn desktop(&self) -> DesktopEnvironment {
+        self.desktop
+    }
+    pub fn display_manager(&self) -> DisplayManager {
+        self.display_manager
+    }
+    pub fn autologin(&self) -> bool {
+        self.autologin
+    }
+    pub fn use_xorg(&self) -> bool {
+        self.use_xorg
+    }
+    pub fn minimal_mode(&self) -> bool {
+        self.minimal_mode
+    }
+
+    pub fn setup(&self) -> &super::system_configuration::SystemConfiguration {
+        &self.setup
+    }
+    pub fn initramfs(&self) -> &super::system_configuration::InitramfsConfiguration {
+        &self.initramfs
+    }
+    pub fn base_packages(&self) -> &[String] {
+        &self.base_packages
+    }
+    pub fn standard_packages(&self) -> &[String] {
+        &self.standard_packages
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_inputs(self, edit: impl FnOnce(&mut InstallInputs)) -> Self {
+        let mut inputs = InstallInputs {
+            use_plymouth: self.setup.plymouth().is_some(),
+            system_info: self.system_info,
+            environment: self.environment,
+            linux_variant: self.linux_variant,
+            storage: self.storage,
+            hostname: self.hostname,
+            username: self.username,
+            password: self.password,
+            keymap: self.keymap,
+            console_font: self.console_font,
+            timezone: self.timezone,
+            locale: self.locale,
+            mirror_region: self.mirror_region,
+            kernel: self.kernel,
+            desktop: self.desktop,
+            display_manager: self.display_manager,
+            autologin: self.autologin,
+            use_xorg: self.use_xorg,
+            minimal_mode: self.minimal_mode,
+        };
+        edit(&mut inputs);
+        Self::resolve(inputs)
+    }
+
     pub fn boot_mode(&self) -> &BootMode {
         &self.system_info.boot_mode
     }
@@ -714,7 +876,7 @@ impl InstallPlan {
 
 #[cfg(test)]
 pub(crate) fn test_install_plan() -> InstallPlan {
-    InstallPlan {
+    InstallPlan::resolve(InstallInputs {
         system_info: SystemInfo {
             boot_mode: BootMode::UEFI64,
             ..SystemInfo::default()
@@ -741,7 +903,7 @@ pub(crate) fn test_install_plan() -> InstallPlan {
         autologin: false,
         use_xorg: false,
         minimal_mode: false,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -772,7 +934,7 @@ mod tests {
         assert_eq!(
             InstallPlan::from_context(&context, ArchLinuxVariant::Arch)
                 .unwrap()
-                .console_font
+                .console_font()
                 .name(),
             "default8x16"
         );
@@ -780,7 +942,7 @@ mod tests {
         assert_eq!(
             InstallPlan::from_context(&context, ArchLinuxVariant::Arch)
                 .unwrap()
-                .console_font
+                .console_font()
                 .name(),
             "sun12x22"
         );
@@ -797,7 +959,7 @@ mod tests {
         let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
 
         assert_eq!(
-            plan.storage.filesystem(),
+            plan.storage().filesystem(),
             FilesystemPlan::Btrfs {
                 compression: BtrfsCompression::Lzo
             }
@@ -812,7 +974,7 @@ mod tests {
 
         let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
 
-        assert_eq!(plan.storage.filesystem(), FilesystemPlan::Ext4);
+        assert_eq!(plan.storage().filesystem(), FilesystemPlan::Ext4);
     }
 
     #[test]
@@ -825,7 +987,7 @@ mod tests {
         context.set_answer(StepId::RootPartition, "/dev/sda2".to_owned());
         context.set_answer(StepId::BootPartition, "/dev/sda1".to_owned());
         let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
-        assert!(matches!(plan.storage, StoragePlan::Manual { .. }));
+        assert!(matches!(plan.storage(), StoragePlan::Manual { .. }));
     }
 
     #[test]
@@ -949,10 +1111,10 @@ mod tests {
             InstallPlan::from_context(&required_context("automatic"), ArchLinuxVariant::Arch)
                 .unwrap();
         assert!(
-            plan.environment.target().is_some()
-                || plan.environment.may_probe_for_existing_install()
+            plan.environment().target().is_some()
+                || plan.environment().may_probe_for_existing_install()
         );
-        assert!(!plan.environment.host().label().is_empty());
+        assert!(!plan.environment().host().label().is_empty());
     }
 
     #[test]
@@ -964,11 +1126,11 @@ mod tests {
         let artix =
             InstallPlan::from_context(&context, ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC))
                 .unwrap();
-        assert!(!artix.use_plymouth);
-        assert!(artix.mirror_region.is_none());
+        assert!(artix.initramfs().plymouth().is_none());
+        assert!(artix.mirror_region().is_none());
         let arch = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
-        assert!(arch.use_plymouth);
-        assert_eq!(arch.mirror_region.as_deref(), Some("Europe/Berlin"));
+        assert!(arch.initramfs().plymouth().is_some());
+        assert_eq!(arch.mirror_region().as_deref(), Some("Europe/Berlin"));
     }
 
     #[test]
@@ -980,9 +1142,9 @@ mod tests {
         let mut context = required_context("automatic");
         context.set_answer(StepId::Disk, "/dev/sdb".to_string());
         let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
-        assert_eq!(plan.storage.disk().as_str(), "/dev/sdb");
+        assert_eq!(plan.storage().disk().as_str(), "/dev/sdb");
         assert_eq!(
-            plan.environment,
+            plan.environment(),
             InstallEnvironment::detect(&DiskPath::parse("/dev/sdb").unwrap())
         );
     }
