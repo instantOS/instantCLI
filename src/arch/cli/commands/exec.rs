@@ -52,8 +52,8 @@ pub(super) async fn handle_exec_command(
 fn ensure_exec_host(profile: HostProfile, in_chroot: bool, dry_run: bool) -> Result<()> {
     if !dry_run && !in_chroot && !profile.supports_installation() {
         anyhow::bail!(
-            "Installation from this distribution is not supported. Boot the instantOS live ISO \
-             or run the installer from an Arch Linux or instantOS system."
+            "Installation from this distribution is not supported. Boot the instantOS or Artix \
+             live ISO or run the installer from an Arch Linux, Artix Linux or instantOS system."
         );
     }
     Ok(())
@@ -72,8 +72,15 @@ mod tests {
             HostProfile::LiveIso,
             HostProfile::RunningArch,
             HostProfile::RunningInstantOs,
+            HostProfile::RunningArtix,
         ] {
             assert!(ensure_exec_host(profile, false, false).is_ok());
         }
+    }
+
+    #[test]
+    fn the_refusal_names_artix_as_a_supported_host() {
+        let error = ensure_exec_host(HostProfile::ForeignDistro, false, false).unwrap_err();
+        assert!(error.to_string().contains("Artix"), "{error}");
     }
 }

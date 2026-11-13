@@ -18,12 +18,14 @@ pub const HOST_ENV: &str = "INS_HOST_ENV";
 /// What the installer is running on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostProfile {
-    /// The instantOS live ISO: `/etc` is the archiso cowspace (RAM).
+    /// A supported live installation ISO; its writable filesystem is disposable.
     LiveIso,
-    /// A running Arch-family system that is not instantOS.
+    /// A running Arch-family system other than instantOS or Artix.
     RunningArch,
     /// A running instantOS installation.
     RunningInstantOs,
+    /// A running Artix system (any of its supported init systems).
+    RunningArtix,
     /// Any other distribution. Not supported for installation yet.
     ForeignDistro,
 }
@@ -44,9 +46,12 @@ impl HostProfile {
             "liveiso" => Ok(Self::LiveIso),
             "running" => Ok(Self::RunningArch),
             "instantos" => Ok(Self::RunningInstantOs),
+            "artix" => Ok(Self::RunningArtix),
             "foreign" => Ok(Self::ForeignDistro),
             other => {
-                bail!("{HOST_ENV}={other:?} is not one of liveiso, running, instantos, foreign")
+                bail!(
+                    "{HOST_ENV}={other:?} is not one of liveiso, running, instantos, artix, foreign"
+                )
             }
         }
     }
@@ -60,6 +65,7 @@ impl HostProfile {
         }
         match OperatingSystem::detect() {
             OperatingSystem::InstantOS => Self::RunningInstantOs,
+            OperatingSystem::Artix => Self::RunningArtix,
             os if os.in_family(&OperatingSystem::Arch) => Self::RunningArch,
             _ => Self::ForeignDistro,
         }
@@ -75,15 +81,16 @@ impl HostProfile {
     pub fn supports_installation(self) -> bool {
         matches!(
             self,
-            Self::LiveIso | Self::RunningArch | Self::RunningInstantOs
+            Self::LiveIso | Self::RunningArch | Self::RunningInstantOs | Self::RunningArtix
         )
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::LiveIso => "the instantOS live ISO",
+            Self::LiveIso => "a live installation ISO",
             Self::RunningArch => "a running Arch Linux system",
             Self::RunningInstantOs => "a running instantOS system",
+            Self::RunningArtix => "a running Artix Linux system",
             Self::ForeignDistro => "this distribution",
         }
     }
@@ -252,6 +259,10 @@ mod tests {
             HostProfile::RunningInstantOs
         );
         assert_eq!(
+            HostProfile::from_override("artix").unwrap(),
+            HostProfile::RunningArtix
+        );
+        assert_eq!(
             HostProfile::from_override("foreign").unwrap(),
             HostProfile::ForeignDistro
         );
@@ -263,13 +274,27 @@ mod tests {
         assert!(HostProfile::LiveIso.etc_is_ephemeral());
         assert!(!HostProfile::RunningArch.etc_is_ephemeral());
         assert!(!HostProfile::RunningInstantOs.etc_is_ephemeral());
+        assert!(!HostProfile::RunningArtix.etc_is_ephemeral());
         assert!(!HostProfile::ForeignDistro.etc_is_ephemeral());
     }
 
     #[test]
     fn a_running_arch_host_supports_installation_but_not_reconfiguration() {
         assert!(HostProfile::RunningArch.supports_installation());
+        assert!(HostProfile::RunningArtix.supports_installation());
         assert!(!HostProfile::ForeignDistro.supports_installation());
+    }
+
+    #[test]
+    fn every_supported_profile_has_a_specific_label() {
+        assert_eq!(
+            HostProfile::RunningArtix.label(),
+            "a running Artix Linux system"
+        );
+        assert_ne!(
+            HostProfile::RunningArtix.label(),
+            HostProfile::RunningArch.label()
+        );
     }
 
     #[test]

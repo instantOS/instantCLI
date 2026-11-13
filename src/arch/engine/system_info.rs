@@ -122,6 +122,46 @@ pub fn detect_network_vendor_ids() -> Vec<String> {
     vendors.into_iter().collect()
 }
 
+/// Map a DMI product or vendor string to the name `systemd-detect-virt` would
+/// report for the same hypervisor.
+///
+/// This is a fallback for hosts without `systemd-detect-virt` (Artix and other
+/// non-systemd systems), so it only needs the common virtual-machine strings.
+fn vm_type_from_dmi(product_name: &str) -> Option<&'static str> {
+    let product = product_name.trim().to_ascii_lowercase();
+    if product.is_empty() {
+        return None;
+    }
+
+    if product.contains("kvm") {
+        Some("kvm")
+    } else if product.contains("qemu") || product.contains("bochs") {
+        Some("qemu")
+    } else if product.contains("vmware") {
+        Some("vmware")
+    } else if product.contains("virtualbox") || product.contains("innotek") {
+        Some("oracle")
+    } else {
+        None
+    }
+}
+
+/// Read the DMI product name, then the vendor, as a VM-detection fallback.
+fn detect_vm_type_from_dmi() -> Option<String> {
+    for path in [
+        "/sys/class/dmi/id/product_name",
+        "/sys/class/dmi/id/sys_vendor",
+    ] {
+        let Ok(value) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        if let Some(vm_type) = vm_type_from_dmi(&value) {
+            return Some(vm_type.to_string());
+        }
+    }
+    None
+}
+
 impl SystemInfo {
     pub fn detect() -> Self {
         let mut info = SystemInfo {
@@ -202,12 +242,14 @@ impl SystemInfo {
             info.gpus = detected_gpus.into_iter().collect();
         }
 
-        // VM check
-        if let Ok(virt) = std::process::Command::new("systemd-detect-virt").output()
-            && virt.status.success()
-        {
-            info.vm_type = Some(String::from_utf8_lossy(&virt.stdout).trim().to_string());
-        }
+        // VM check. `systemd-detect-virt` is authoritative when it exists; on
+        // non-systemd hosts (Artix) fall back to the DMI product name.
+        info.vm_type = std::process::Command::new("systemd-detect-virt")
+            .output()
+            .ok()
+            .filter(|virt| virt.status.success())
+            .map(|virt| String::from_utf8_lossy(&virt.stdout).trim().to_string())
+            .or_else(detect_vm_type_from_dmi);
 
         // Network interface vendors, used for firmware split selection
         info.network_vendor_ids = detect_network_vendor_ids();
@@ -371,5 +413,32 @@ impl SystemInfo {
 
         println!("  {}", "─".repeat(50).bright_black());
         println!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::vm_type_from_dmi;
+
+    #[test]
+    fn dmi_product_names_map_to_vm_types() {
+        for (product, expected) in [
+            ("KVM", "kvm"),
+            ("kvm", "kvm"),
+            ("QEMU", "qemu"),
+            ("Bochs", "qemu"),
+            ("VMware Virtual Platform", "vmware"),
+            ("VirtualBox", "oracle"),
+            ("innotek GmbH", "oracle"),
+        ] {
+            assert_eq!(vm_type_from_dmi(product), Some(expected), "{product}");
+        }
+    }
+
+    #[test]
+    fn unrecognized_dmi_does_not_identify_a_hypervisor() {
+        assert_eq!(vm_type_from_dmi(""), None);
+        assert_eq!(vm_type_from_dmi("   "), None);
+        assert_eq!(vm_type_from_dmi("X570 AORUS ELITE"), None);
     }
 }

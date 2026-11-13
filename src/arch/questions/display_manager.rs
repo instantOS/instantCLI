@@ -96,7 +96,7 @@ impl WizardStep for DisplayManagerQuestion {
         }
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         crate::arch::config::DesktopEnvironment::selected_or_default(context)
             .requires_display_manager()
     }

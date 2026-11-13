@@ -9,16 +9,18 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::engine::{InstallContext, InstallPlan, StepId, StoragePlan};
 use crate::common::blockdev::{BlockDevice, Filesystem, load_lsblk};
 use crate::common::commands::run_status;
 
-const IDENTITY_SCHEMA_VERSION: u32 = 1;
+const IDENTITY_SCHEMA_VERSION: u32 = 2;
 pub const INSTALLATION_MARKER: &str = "/etc/instant/installation.toml";
 
 #[derive(Debug, Serialize)]
 struct InstallationIntent {
     schema_version: u32,
+    linux_variant: &'static str,
     answers: BTreeMap<String, String>,
 }
 
@@ -41,7 +43,7 @@ pub struct MatchingInstallation {
 /// Secrets are deliberately excluded: persisting a digest of the complete
 /// questions file would provide an offline password verifier. Wizard control
 /// answers and warnings are excluded because they do not affect the target.
-pub fn fingerprint(context: &InstallContext) -> Result<String> {
+pub fn fingerprint(context: &InstallContext, linux_variant: ArchLinuxVariant) -> Result<String> {
     let answers = context
         .answers()
         .filter(|(id, _)| answer_affects_installation(**id))
@@ -50,6 +52,7 @@ pub fn fingerprint(context: &InstallContext) -> Result<String> {
 
     let intent = InstallationIntent {
         schema_version: IDENTITY_SCHEMA_VERSION,
+        linux_variant: linux_variant.id(),
         answers,
     };
     let bytes = toml::to_string(&intent).context("Failed to serialize installation identity")?;
@@ -58,8 +61,12 @@ pub fn fingerprint(context: &InstallContext) -> Result<String> {
 
 /// Bind resumable execution state to the exact configuration, including
 /// secrets. This digest never belongs in the completed target marker.
-pub fn configuration_fingerprint(configuration: &str) -> String {
-    hex::encode(Sha256::digest(configuration.as_bytes()))
+pub fn configuration_fingerprint(configuration: &str, linux_variant: ArchLinuxVariant) -> String {
+    let mut digest = Sha256::new();
+    digest.update(linux_variant.id().as_bytes());
+    digest.update([0]);
+    digest.update(configuration.as_bytes());
+    hex::encode(digest.finalize())
 }
 
 fn answer_affects_installation(id: StepId) -> bool {
@@ -82,7 +89,7 @@ pub fn find_matching_installation(
     plan: &InstallPlan,
     intent_sha256: &str,
 ) -> Result<Option<MatchingInstallation>> {
-    let disk_path = plan.storage.disk().as_str();
+    let disk_path = plan.storage().disk().as_str();
     let tree = load_lsblk(&[disk_path])?;
 
     for device in tree.blockdevices.iter().flat_map(linux_filesystems) {
@@ -94,7 +101,7 @@ pub fn find_matching_installation(
     if let StoragePlan::Automatic {
         encryption: Some(encryption),
         ..
-    } = &plan.storage
+    } = &plan.storage()
     {
         return probe_encrypted_installation(plan, encryption.password.expose(), intent_sha256);
     }
@@ -194,7 +201,7 @@ fn probe_encrypted_installation(
     password: &str,
     intent_sha256: &str,
 ) -> Result<Option<MatchingInstallation>> {
-    let disk = plan.storage.disk().as_str();
+    let disk = plan.storage().disk().as_str();
     let luks_partition = crate::arch::execution::disk::get_part_path(disk, 2);
     if !Path::new(&luks_partition).exists() {
         return Ok(None);
@@ -303,7 +310,10 @@ mod tests {
             context_with_answers(&[(StepId::Kernel, "linux"), (StepId::Hostname, "instant")]);
         second.system_info.gpus.reverse();
 
-        assert_eq!(fingerprint(&first).unwrap(), fingerprint(&second).unwrap());
+        assert_eq!(
+            fingerprint(&first, ArchLinuxVariant::Arch).unwrap(),
+            fingerprint(&second, ArchLinuxVariant::Arch).unwrap()
+        );
     }
 
     #[test]
@@ -318,14 +328,17 @@ mod tests {
         second.system_info.internet_connected = false;
         second.system_info.total_ram_gb = Some(15);
 
-        assert_eq!(fingerprint(&first).unwrap(), fingerprint(&second).unwrap());
+        assert_eq!(
+            fingerprint(&first, ArchLinuxVariant::Arch).unwrap(),
+            fingerprint(&second, ArchLinuxVariant::Arch).unwrap()
+        );
     }
 
     #[test]
     fn resumable_state_fingerprint_includes_secrets() {
         assert_ne!(
-            configuration_fingerprint("Password = 'first'"),
-            configuration_fingerprint("Password = 'second'")
+            configuration_fingerprint("Password = 'first'", ArchLinuxVariant::Arch),
+            configuration_fingerprint("Password = 'second'", ArchLinuxVariant::Arch)
         );
     }
 
@@ -334,7 +347,35 @@ mod tests {
         let first = context_with_answers(&[(StepId::Hostname, "first")]);
         let second = context_with_answers(&[(StepId::Hostname, "second")]);
 
-        assert_ne!(fingerprint(&first).unwrap(), fingerprint(&second).unwrap());
+        assert_ne!(
+            fingerprint(&first, ArchLinuxVariant::Arch).unwrap(),
+            fingerprint(&second, ArchLinuxVariant::Arch).unwrap()
+        );
+    }
+
+    #[test]
+    fn variant_changes_both_installation_identity_and_resume_binding() {
+        use crate::arch::arch_linux_variant::ArtixInitSystem;
+        let context = context_with_answers(&[(StepId::Hostname, "instant")]);
+        let variants = [
+            ArchLinuxVariant::Arch,
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+            ArchLinuxVariant::Artix(ArtixInitSystem::Runit),
+            ArchLinuxVariant::Artix(ArtixInitSystem::S6),
+            ArchLinuxVariant::Artix(ArtixInitSystem::Dinit),
+        ];
+        for (i, first) in variants.iter().enumerate() {
+            for second in &variants[i + 1..] {
+                assert_ne!(
+                    fingerprint(&context, *first).unwrap(),
+                    fingerprint(&context, *second).unwrap()
+                );
+                assert_ne!(
+                    configuration_fingerprint("same answers", *first),
+                    configuration_fingerprint("same answers", *second)
+                );
+            }
+        }
     }
 
     #[test]

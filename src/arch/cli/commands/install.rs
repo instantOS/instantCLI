@@ -4,6 +4,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::arch::cli::ArchCommands;
+use crate::arch::host::HostProfile;
 
 use super::super::utils::ensure_root;
 use super::ask::{AskOutcome, handle_ask_command};
@@ -37,14 +38,75 @@ fn confirm_battery_power() -> Result<bool> {
     ))
 }
 
+/// A network configuration tool the live environment may ship.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NetworkSetupTool {
+    Nmtui,
+    Connmanctl,
+    Iwctl,
+}
+
+impl NetworkSetupTool {
+    fn binary(self) -> &'static str {
+        match self {
+            Self::Nmtui => "nmtui",
+            Self::Connmanctl => "connmanctl",
+            Self::Iwctl => "iwctl",
+        }
+    }
+
+    fn action_label(self) -> &'static str {
+        match self {
+            Self::Nmtui => "Open nmtui",
+            Self::Connmanctl => "Open connmanctl",
+            Self::Iwctl => "Open iwctl",
+        }
+    }
+}
+
+/// The first available network tool, in preference order.
+///
+/// `available` is injected so the order is testable without touching the
+/// machine's installed binaries.
+fn select_network_setup_tool(available: impl Fn(&str) -> bool) -> Option<NetworkSetupTool> {
+    [
+        NetworkSetupTool::Nmtui,
+        NetworkSetupTool::Connmanctl,
+        NetworkSetupTool::Iwctl,
+    ]
+    .into_iter()
+    .find(|tool| available(tool.binary()))
+}
+
+fn run_network_setup_tool(tool: NetworkSetupTool) -> Result<()> {
+    let status = std::process::Command::new(tool.binary()).status()?;
+    if !status.success() {
+        eprintln!(
+            "{} exited unsuccessfully; internet connectivity will be checked again.",
+            tool.binary()
+        );
+    }
+    Ok(())
+}
+
+fn wait_for_manual_connection() -> Result<()> {
+    println!("No supported network configuration tool was found.");
+    println!("Connect to a network manually, then press Enter to check again.");
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(())
+}
+
 fn ensure_interactive_internet() -> Result<bool> {
     use crate::menu_utils::{ConfirmResult, FzfWrapper};
 
     // Offline installs never block on connectivity: the bundle covers the
-    // packages, so nmtui stays an offer the user may take or leave.
+    // packages, so the network prompt stays an offer the user may take or
+    // leave.
     let offline = crate::arch::offline::mode().is_offline();
 
     while !crate::common::network::check_internet() {
+        let tool = select_network_setup_tool(|binary| which::which(binary).is_ok());
         let (prompt, no_text) = if offline {
             (
                 "No internet connection was detected. The offline bundle covers this installation.\n\nOpen the network configuration anyway?",
@@ -59,7 +121,7 @@ fn ensure_interactive_internet() -> Result<bool> {
 
         let choice = FzfWrapper::builder()
             .confirm(prompt)
-            .yes_text("Open nmtui")
+            .yes_text(tool.map_or("Check again", NetworkSetupTool::action_label))
             .no_text(no_text)
             .confirm_dialog()?;
 
@@ -72,9 +134,9 @@ fn ensure_interactive_internet() -> Result<bool> {
             return Ok(false);
         }
 
-        let status = std::process::Command::new("nmtui").status()?;
-        if !status.success() {
-            eprintln!("nmtui exited unsuccessfully; internet connectivity will be checked again.");
+        match tool {
+            Some(tool) => run_network_setup_tool(tool)?,
+            None => wait_for_manual_connection()?,
         }
     }
 
@@ -84,13 +146,13 @@ fn ensure_interactive_internet() -> Result<bool> {
 /// Explain supported hosts and the disk restriction on running systems.
 fn unsupported_host_message(distro: &str) -> String {
     format!(
-        "instantOS can be installed from the live ISO or from a running Arch Linux or \
-         instantOS system — but not yet from {distro}.\n\
+        "instantOS can be installed from the live ISO or from a running Arch Linux, Artix Linux \
+         or instantOS system — but not yet from {distro}.\n\
          \n\
          Two ways forward:\n\
-           •  Boot the instantOS live ISO on this machine and run the installer from there.\n\
-           •  Install Arch Linux first, boot it, then run `ins arch install` to put instantOS \
-         on a different disk.\n\
+           •  Boot the instantOS or Artix live ISO on this machine and run the installer from there.\n\
+           •  Install Arch Linux or Artix Linux first, boot it, then run `ins arch install` to put \
+         instantOS on a different disk.\n\
          \n\
          From a running system, the disk you are running from cannot be used — the installer \
          refuses it and says so."
@@ -131,9 +193,9 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
 
     let system_info = crate::arch::engine::SystemInfo::detect();
 
-    let profile = crate::arch::host::HostProfile::detect().unwrap_or_else(|error| {
+    let profile = HostProfile::detect().unwrap_or_else(|error| {
         eprintln!("Warning: could not classify this system: {error:#}");
-        crate::arch::host::HostProfile::ForeignDistro
+        HostProfile::ForeignDistro
     });
     if !profile.supports_installation() {
         eprintln!(
@@ -149,7 +211,7 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
             "{} {}",
             "Error:".red().bold(),
             format!(
-                "Arch Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
+                "Arch Linux or Artix Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
                 system_info.architecture
             )
             .red()
@@ -204,7 +266,15 @@ mod tests {
         assert!(rendered.contains("live ISO"), "one supported host named");
         assert!(
             rendered.contains("Arch Linux"),
-            "the other supported host named"
+            "the Arch host is named: {rendered}"
+        );
+        assert!(
+            rendered.contains("Artix Linux"),
+            "the Artix host is named: {rendered}"
+        );
+        assert!(
+            rendered.contains("Artix live ISO"),
+            "the Artix live ISO is named: {rendered}"
         );
         assert!(
             rendered.contains("ins arch install"),
@@ -213,6 +283,28 @@ mod tests {
         assert!(
             rendered.contains("different disk"),
             "and the scope limit of the running-system path: {rendered}"
+        );
+    }
+
+    #[test]
+    fn network_tools_are_preferred_in_order() {
+        assert_eq!(
+            select_network_setup_tool(|_| true),
+            Some(NetworkSetupTool::Nmtui),
+            "nmtui wins when everything is installed"
+        );
+        assert_eq!(
+            select_network_setup_tool(|binary| binary != "nmtui"),
+            Some(NetworkSetupTool::Connmanctl)
+        );
+        assert_eq!(
+            select_network_setup_tool(|binary| binary == "iwctl"),
+            Some(NetworkSetupTool::Iwctl)
+        );
+        assert_eq!(
+            select_network_setup_tool(|_| false),
+            None,
+            "no tool falls back to the manual prompt"
         );
     }
 

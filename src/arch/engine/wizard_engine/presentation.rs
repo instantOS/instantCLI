@@ -235,7 +235,8 @@ impl AdvancedOption {
                 .enumerate()
                 .filter(|(_, step)| {
                     matches!(step.ask_policy(context), AskPolicy::Optional { .. })
-                        && step.should_ask(context)
+                        && step.is_relevant(context)
+                        && (!step.is_ready(context) || step.is_available(context))
                 })
                 .map(|(index, step)| Self::Answer {
                     index,

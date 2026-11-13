@@ -1,4 +1,5 @@
 use super::CommandRunner;
+use crate::arch::engine::system_configuration::RootUnlockMethod;
 use crate::arch::engine::{BootMode, InstallPlan};
 use crate::common::config_edit::set_keys;
 use anyhow::{Context, Result};
@@ -7,7 +8,7 @@ use std::process::Command;
 pub async fn install_bootloader(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Installing bootloader (inside chroot)...");
 
-    match plan.system_info.boot_mode {
+    match plan.system_info().boot_mode {
         BootMode::UEFI64 | BootMode::UEFI32 => install_grub_uefi(plan, executor)?,
         BootMode::BIOS => install_grub_bios(plan, executor)?,
     }
@@ -17,25 +18,11 @@ pub async fn install_bootloader(plan: &InstallPlan, executor: &dyn CommandRunner
     Ok(())
 }
 
-/// Packages needed for bootloader setup (installed in a single batch elsewhere)
-pub fn bootloader_package_list(plan: &InstallPlan) -> Vec<String> {
-    let mut packages = vec!["grub".to_string(), "os-prober".to_string()];
-
-    if matches!(
-        plan.system_info.boot_mode,
-        BootMode::UEFI64 | BootMode::UEFI32
-    ) {
-        packages.push("efibootmgr".to_string());
-    }
-
-    packages
-}
-
 fn install_grub_uefi(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected UEFI mode. Installing GRUB for UEFI...");
 
     // Determine the appropriate target based on UEFI mode
-    let target = match plan.system_info.boot_mode {
+    let target = match plan.system_info().boot_mode {
         BootMode::UEFI64 => "x86_64-efi",
         BootMode::UEFI32 => "i386-efi",
         _ => anyhow::bail!("Invalid boot mode for UEFI installation"),
@@ -65,7 +52,7 @@ fn install_grub_uefi(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result
 fn install_grub_bios(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Detected BIOS mode. Installing GRUB for BIOS...");
 
-    let disk = plan.storage.disk().as_str();
+    let disk = plan.storage().disk().as_str();
 
     println!("Installing GRUB to MBR of {}", disk);
 
@@ -81,15 +68,15 @@ fn install_grub_bios(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result
 fn configure_grub(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
     println!("Generating GRUB configuration...");
 
-    if plan.storage.encryption().is_some() {
-        configure_grub_encryption(plan, executor)?;
+    if let Some(encryption) = plan.initramfs().encryption() {
+        configure_grub_encryption(plan, encryption, executor)?;
     }
 
-    if plan.use_plymouth && !plan.minimal_mode {
+    if plan.initramfs().plymouth().is_some() {
         configure_grub_plymouth(executor)?;
     }
 
-    if !plan.minimal_mode {
+    if !plan.minimal_mode() {
         configure_grub_theme(executor)?;
     }
 
@@ -122,9 +109,16 @@ fn generate_grub_config(executor: &dyn CommandRunner) -> Result<()> {
     Ok(())
 }
 
-fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<()> {
+fn configure_grub_encryption(
+    plan: &InstallPlan,
+    encryption: RootUnlockMethod,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     if executor.dry_run() {
-        println!("[DRY RUN] Adding 'rd.luks.name=...=cryptlvm' to GRUB_CMDLINE_LINUX");
+        println!(
+            "[DRY RUN] Adding '{}' to GRUB_CMDLINE_LINUX",
+            encryption.kernel_parameters("...")
+        );
         println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=n in /etc/default/grub");
         return Ok(());
     }
@@ -135,12 +129,15 @@ fn configure_grub_encryption(plan: &InstallPlan, executor: &dyn CommandRunner) -
 
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
-    std::fs::write(grub_default, encrypted_grub_defaults(&content, &uuid))?;
+    std::fs::write(
+        grub_default,
+        encrypted_grub_defaults(&content, &uuid, encryption),
+    )?;
     Ok(())
 }
 
-fn encrypted_grub_defaults(content: &str, uuid: &str) -> String {
-    let param = build_grub_encryption_param(uuid);
+fn encrypted_grub_defaults(content: &str, uuid: &str, encryption: RootUnlockMethod) -> String {
+    let param = encryption.kernel_parameters(uuid);
     let with_param = add_grub_kernel_param(content, &param);
     // The automatic encrypted layout has a separate, unencrypted /boot.
     // Only the Linux initramfs unlocks root; GRUB must not decrypt it.
@@ -148,7 +145,7 @@ fn encrypted_grub_defaults(content: &str, uuid: &str) -> String {
 }
 
 fn luks_partition_path(plan: &InstallPlan) -> String {
-    crate::arch::execution::disk::get_part_path(plan.storage.disk().as_str(), 2)
+    crate::arch::execution::disk::get_part_path(plan.storage().disk().as_str(), 2)
 }
 
 fn read_luks_uuid(luks_part: &str) -> Result<String> {
@@ -170,13 +167,6 @@ fn read_luks_uuid(luks_part: &str) -> Result<String> {
     }
 
     Ok(uuid)
-}
-
-fn build_grub_encryption_param(uuid: &str) -> String {
-    format!(
-        "rd.luks.name={}=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
-        uuid
-    )
 }
 
 fn configure_grub_plymouth(executor: &dyn CommandRunner) -> Result<()> {
@@ -355,11 +345,25 @@ mod tests {
     #[test]
     fn encrypted_root_is_unlocked_by_linux_not_grub() {
         let content = "GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"\"\n";
-        let updated = encrypted_grub_defaults(content, "test-uuid");
+        let updated = encrypted_grub_defaults(content, "test-uuid", RootUnlockMethod::Systemd);
         assert!(updated.contains("GRUB_ENABLE_CRYPTODISK=n"));
         assert!(updated.contains("rd.luks.name=test-uuid=cryptlvm"));
         assert!(updated.contains("root=/dev/mapper/instantOS-root"));
-        assert_eq!(encrypted_grub_defaults(&updated, "test-uuid"), updated);
+        assert_eq!(
+            encrypted_grub_defaults(&updated, "test-uuid", RootUnlockMethod::Systemd),
+            updated
+        );
+    }
+
+    #[test]
+    fn artix_encrypted_root_uses_the_cryptdevice_parameter() {
+        let content = "GRUB_ENABLE_CRYPTODISK=y\nGRUB_CMDLINE_LINUX=\"\"\n";
+        let updated = encrypted_grub_defaults(content, "test-uuid", RootUnlockMethod::Busybox);
+        assert!(updated.contains("cryptdevice=UUID=test-uuid:cryptlvm"));
+        assert!(updated.contains("root=/dev/mapper/instantOS-root"));
+        assert!(updated.contains("resume=/dev/mapper/instantOS-swap"));
+        assert!(!updated.contains("rd.luks.name"));
+        assert!(updated.contains("GRUB_ENABLE_CRYPTODISK=n"));
     }
 
     #[test]

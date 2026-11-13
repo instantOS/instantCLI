@@ -38,7 +38,7 @@ pub struct BooleanQuestion {
     description: Option<String>,
     icon: NerdFont,
     default: Option<BooleanDefault>,
-    should_ask_predicate: Option<Box<ContextPredicate>>,
+    is_relevant_predicate: Option<Box<ContextPredicate>>,
     dependencies: Vec<StepId>,
 }
 
@@ -50,7 +50,7 @@ impl BooleanQuestion {
             description: None,
             icon,
             default: None,
-            should_ask_predicate: None,
+            is_relevant_predicate: None,
             dependencies: Vec::new(),
         }
     }
@@ -99,7 +99,7 @@ impl BooleanQuestion {
         F: Fn(&InstallContext) -> bool + 'static + Send + Sync,
     {
         self.add_dependencies(dependencies);
-        self.should_ask_predicate = Some(Box::new(func));
+        self.is_relevant_predicate = Some(Box::new(func));
         self
     }
 
@@ -122,8 +122,8 @@ impl WizardStep for BooleanQuestion {
         self.description.as_deref().or(Some(&self.prompt))
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
-        if let Some(predicate) = &self.should_ask_predicate {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
+        if let Some(predicate) = &self.is_relevant_predicate {
             predicate(context)
         } else {
             true

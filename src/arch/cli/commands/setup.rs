@@ -1,20 +1,37 @@
 use std::io::IsTerminal;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::config::DesktopEnvironment;
 use crate::arch::engine::{FlowKind, InstallContext, StepId, WizardOutcome, WizardStep};
+use crate::arch::host::HostProfile;
 use crate::arch::questions::{DesktopEnvironmentQuestion, DisplayManagerQuestion};
-use crate::common::distro::is_live_iso;
 use crate::settings::users::validate_username;
 
 use super::super::utils::{detect_single_user, ensure_root};
 use super::{AutologinDefault, autologin_question};
 
-pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) -> Result<()> {
-    if is_live_iso() {
-        anyhow::bail!("This command cannot be run on a live CD/ISO.");
+/// `ins arch setup` converts an existing Arch-family installation.
+///
+/// A live ISO has no installed system to convert, and a foreign distribution
+/// has neither the package base nor the init layout the setup flow assumes.
+fn ensure_setup_host(profile: HostProfile) -> Result<()> {
+    match profile {
+        HostProfile::RunningArch | HostProfile::RunningInstantOs | HostProfile::RunningArtix => {
+            Ok(())
+        }
+        HostProfile::LiveIso => anyhow::bail!("This command cannot be run on a live CD/ISO."),
+        HostProfile::ForeignDistro => anyhow::bail!(
+            "`ins arch setup` is only supported on Arch Linux, Artix Linux and instantOS. \
+             This system is {}.",
+            profile.label()
+        ),
     }
+}
+
+pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) -> Result<()> {
+    ensure_setup_host(HostProfile::detect()?)?;
 
     // Validate the explicit `--user` override up front: setup targets an
     // existing account, and an invalid name would otherwise only surface as a
@@ -53,6 +70,8 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
         .or_else(detect_single_user);
 
     let context = crate::arch::engine::InstallContext::for_setup(target_user.clone());
+    let linux_variant =
+        ArchLinuxVariant::detect().context("could not detect the installation variant")?;
 
     // Run the desktop-related questions from `ins arch install` as a small
     // setup wizard. The setup flow asks optional questions in the main flow
@@ -64,7 +83,7 @@ pub(super) async fn handle_setup_command(user: Option<String>, dry_run: bool) ->
         return Ok(());
     };
 
-    print_setup_configuration(&context);
+    print_setup_configuration(&context, linux_variant);
 
     let executor = crate::arch::execution::CommandExecutor::new(dry_run, None);
     crate::arch::execution::setup::setup_instantos(&context, &executor, target_user).await
@@ -81,7 +100,7 @@ fn setup_relaunch_args(user: Option<&str>, dry_run: bool) -> Vec<String> {
     args
 }
 
-fn print_setup_configuration(context: &InstallContext) {
+fn print_setup_configuration(context: &InstallContext, linux_variant: ArchLinuxVariant) {
     let answer = |id: StepId| -> String {
         context
             .get_answer(&id)
@@ -90,6 +109,11 @@ fn print_setup_configuration(context: &InstallContext) {
     };
 
     println!("\nSetup configuration:");
+    println!(
+        "  Arch Linux variant: {} ({})",
+        linux_variant.label(),
+        linux_variant.init_system().label()
+    );
     println!(
         "  Desktop environment: {}",
         DesktopEnvironment::selected_or_default(context).label()
@@ -115,8 +139,9 @@ fn setup_questions() -> Vec<Box<dyn WizardStep>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{setup_questions, setup_relaunch_args};
+    use super::{ensure_setup_host, setup_questions, setup_relaunch_args};
     use crate::arch::engine::{FlowKind, WizardEngine};
+    use crate::arch::host::HostProfile;
 
     #[test]
     fn relaunch_preserves_setup_options() {
@@ -129,5 +154,34 @@ mod tests {
     #[test]
     fn setup_question_graph_is_valid() {
         WizardEngine::for_flow(FlowKind::Setup, setup_questions()).unwrap();
+    }
+
+    #[test]
+    fn setup_accepts_every_running_arch_family_host() {
+        for profile in [
+            HostProfile::RunningArch,
+            HostProfile::RunningInstantOs,
+            HostProfile::RunningArtix,
+        ] {
+            assert!(
+                ensure_setup_host(profile).is_ok(),
+                "{} should support setup",
+                profile.label()
+            );
+        }
+    }
+
+    #[test]
+    fn setup_refuses_live_and_foreign_hosts() {
+        let live = ensure_setup_host(HostProfile::LiveIso).unwrap_err();
+        assert!(live.to_string().contains("live CD/ISO"), "{live}");
+
+        let foreign = ensure_setup_host(HostProfile::ForeignDistro).unwrap_err();
+        assert!(
+            foreign
+                .to_string()
+                .contains("Arch Linux, Artix Linux and instantOS"),
+            "the refusal names the supported systems: {foreign}"
+        );
     }
 }

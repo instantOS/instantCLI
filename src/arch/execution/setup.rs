@@ -1,10 +1,12 @@
 use super::CommandRunner;
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::execution::pacman::Pacman;
 use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::arch::config::{DesktopEnvironment, DisplayManager};
-use crate::arch::engine::{InstallContext, InstallPlan, SessionAnswers, StepId, SystemInfo};
+use crate::arch::engine::system_configuration::SystemConfiguration;
+use crate::arch::engine::{InstallContext, InstallPlan, SessionAnswers, StepId};
 use crate::common::config_edit::{set_keys, set_keys_in_section, update_file};
 use crate::ui::nerd_font::NerdFont;
 
@@ -15,57 +17,72 @@ struct SetupOptions {
     username: Option<String>,
     desktop: DesktopEnvironment,
     display_manager: DisplayManager,
-    use_plymouth: bool,
+    system: SystemConfiguration,
     autologin: bool,
     use_xorg: bool,
     minimal_mode: bool,
-    system_info: SystemInfo,
+    linux_variant: ArchLinuxVariant,
 }
 
 impl SetupOptions {
     fn from_wizard(context: &InstallContext, override_user: Option<String>) -> Result<Self> {
         // Parsed exactly as for a fresh install; setup never asks about disk
         // encryption, so autologin defaults to off.
+        let linux_variant = ArchLinuxVariant::detect().context("could not detect the variant")?;
         let session = SessionAnswers::from_context(context, false)?;
 
         Ok(Self {
             username: override_user.or_else(|| context.get_answer(&StepId::Username).cloned()),
             desktop: session.desktop,
             display_manager: session.display_manager,
-            use_plymouth: session.use_plymouth,
+            system: SystemConfiguration::resolve(linux_variant, &session, &context.system_info),
             autologin: session.autologin,
             use_xorg: session.use_xorg,
             minimal_mode: session.minimal_mode,
-            system_info: context.system_info.clone(),
+            linux_variant,
         })
     }
 
     fn from_install_plan(plan: &InstallPlan) -> Self {
+        let linux_variant = plan.linux_variant();
         Self {
-            username: Some(plan.username.as_str().to_owned()),
-            desktop: plan.desktop,
-            display_manager: plan.display_manager,
-            use_plymouth: plan.use_plymouth,
-            autologin: plan.autologin,
-            use_xorg: plan.use_xorg,
-            minimal_mode: plan.minimal_mode,
-            system_info: plan.system_info.clone(),
+            username: Some(plan.username().as_str().to_owned()),
+            desktop: plan.desktop(),
+            display_manager: plan.display_manager(),
+            system: plan.setup().clone(),
+            autologin: plan.autologin(),
+            use_xorg: plan.use_xorg(),
+            minimal_mode: plan.minimal_mode(),
+            linux_variant,
         }
     }
 }
 
-/// Set up instantOS on a system.
-/// This function is used by both:
-/// - `ins arch install` (Post step, inside chroot after Config installed standard packages)
-/// - `ins arch setup` (on existing vanilla Arch installations)
-///
-/// It only installs instantOS-specific packages and configuration, not standard Arch packages.
+/// Convert an existing installation to instantOS. Artix also needs the init
+/// packages for the services enabled below; fresh installs get those in Config.
 pub async fn setup_instantos(
     context: &InstallContext,
     executor: &dyn CommandRunner,
     override_user: Option<String>,
 ) -> Result<()> {
     let options = SetupOptions::from_wizard(context, override_user)?;
+    if !options.linux_variant.supports_offline_installation()
+        && crate::arch::offline::mode().is_offline()
+    {
+        anyhow::bail!(
+            "Offline installation is not supported on {}. Use a network-connected Artix system.",
+            options.linux_variant.label()
+        );
+    }
+
+    // Fresh installations prepare standard repositories in Config. Conversion
+    // owns that work here, before installing service integrations or instantOS.
+    if !options.minimal_mode {
+        Pacman::for_variant(options.linux_variant)
+            .prepare_repositories(options.system.repositories(), executor)
+            .await?;
+    }
+    ensure_init_service_packages(&options, executor)?;
     setup_instantos_with_options(&options, executor).await
 }
 
@@ -86,19 +103,14 @@ async fn setup_instantos_with_options(
     let minimal_mode = options.minimal_mode;
 
     if !minimal_mode {
-        // Enable multilib for 32-bit support (Steam, Wine, etc.)
-        // This is idempotent - only enables if not already enabled
-        println!("Enabling multilib repository...");
-        Pacman::current()
-            .enable_multilib(executor.dry_run())
-            .await?;
-
         // Set up instantOS repository and install instantOS packages
-        setup_instant_repo(executor).await?;
+        setup_instant_repo(options.linux_variant, executor).await?;
         install_instant_packages(options, executor)?;
 
         // Configure Plymouth theme (after instantOS packages are installed)
-        super::config::configure_plymouth(options.use_plymouth, minimal_mode, executor)?;
+        if let Some(plymouth) = options.system.plymouth() {
+            super::config::configure_plymouth(plymouth, executor)?;
+        }
 
         // Update /etc/os-release to identify as instantOS
         update_os_release(executor)?;
@@ -142,14 +154,34 @@ async fn setup_instantos_with_options(
     Ok(())
 }
 
+fn ensure_init_service_packages(
+    options: &SetupOptions,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    let packages = options.system.services().init_packages();
+    if packages.is_empty() {
+        return Ok(());
+    }
+
+    println!(
+        "Ensuring Artix init service packages: {}",
+        packages.join(", ")
+    );
+    let package_refs: Vec<&str> = packages.iter().map(String::as_str).collect();
+    Pacman::for_variant(options.linux_variant).install(&package_refs, executor)
+}
+
 /// Set up the instantOS repository in pacman.conf.
 /// Note: This does NOT enable multilib. For fresh installations, multilib is enabled
 /// during the Config step. For `ins arch setup` on existing systems, users already
 /// have their own multilib configuration.
-pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
+async fn setup_instant_repo(
+    linux_variant: ArchLinuxVariant,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
     println!("Setting up instantOS repository...");
     let offline_content = crate::arch::offline::instant_mirrorlist_override();
-    Pacman::current()
+    Pacman::for_variant(linux_variant)
         .setup_instant_repo(executor.dry_run(), offline_content.as_deref())
         .await?;
 
@@ -163,25 +195,17 @@ pub async fn setup_instant_repo(executor: &dyn CommandRunner) -> Result<()> {
 
 /// Install instantOS packages from the [instant] repository.
 ///
-/// These are the only packages installed by `ins arch setup` on existing systems.
-/// For fresh installations, standard packages are installed separately in the Config step.
+/// Fresh installations get standard packages in Config. Existing Artix
+/// systems additionally need their init integration packages before setup.
 fn install_instant_packages(options: &SetupOptions, executor: &dyn CommandRunner) -> Result<()> {
-    let mut packages =
-        crate::arch::execution::packages::build_instant_package_plan(options.minimal_mode);
-    if options.use_xorg {
-        packages.push("xorg-server".to_string());
-    }
-    if !options.minimal_mode && options.system_info.has_bluetooth {
-        println!("Bluetooth adapter detected, adding bluetooth management");
-        packages.push("blueman".to_string());
-    }
+    let packages = options.system.instant_packages();
     if packages.is_empty() {
         println!("Minimal mode enabled, skipping instantOS packages.");
         return Ok(());
     }
     println!("Installing packages: {}", packages.join(", "));
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-    Pacman::current().install(&package_refs, executor)?;
+    Pacman::for_variant(options.linux_variant).install(&package_refs, executor)?;
     Ok(())
 }
 
@@ -321,51 +345,39 @@ fn setup_wallpaper(username: &str, executor: &dyn CommandRunner) {
 fn enable_services(executor: &dyn CommandRunner, options: &SetupOptions) -> Result<()> {
     println!("Enabling services...");
 
-    let mut services = vec!["NetworkManager", "sshd", "systemd-timesyncd"];
-    let desktop = options.desktop;
+    let linux_variant = options.linux_variant;
 
-    if let Some(vm_type) = &options.system_info.vm_type {
-        match vm_type.as_str() {
-            "vmware" => {
-                services.push("vmtoolsd");
-            }
-            "kvm" | "qemu" | "bochs" => {
-                services.push("qemu-guest-agent");
-            }
-            "oracle" => {
-                services.push("vboxservice");
-            }
-            _ => {}
-        }
-    }
+    let service_config = options.system.services();
+    let mut services: Vec<&str> = service_config
+        .required()
+        .iter()
+        .map(|service| service.service_name)
+        .collect();
+    let best_effort_services: Vec<&str> = service_config
+        .optional()
+        .iter()
+        .map(|service| service.service_name)
+        .collect();
 
     let selected_dm = options.display_manager;
     let selected_dm_service = selected_dm.answer_value();
 
-    // Check if other display managers are enabled
-    // We check this directly via Command because the executor errors on failure (non-zero exit),
-    // and systemctl is-enabled returns non-zero if disabled.
+    // Check if other display managers are enabled. The abstraction knows how
+    // each init records that, so this works outside systemd too.
     let mut other_dm_enabled = false;
 
     for check_dm in &["sddm", "gdm", "lightdm"] {
         if *check_dm == selected_dm_service {
             continue;
         }
-        let mut cmd = Command::new("systemctl");
-        cmd.arg("is-enabled").arg(check_dm);
-        cmd.stdout(std::process::Stdio::null());
-        cmd.stderr(std::process::Stdio::null());
-
-        if let Ok(status) = cmd.status()
-            && status.success()
-        {
+        if !executor.dry_run() && super::services::service_enabled(linux_variant, check_dm)? {
             println!("Detected enabled display manager: {}", check_dm);
             other_dm_enabled = true;
             break;
         }
     }
 
-    if !other_dm_enabled && !options.minimal_mode && desktop.requires_display_manager() {
+    if !other_dm_enabled && service_config.display_manager().is_some() {
         match selected_dm {
             crate::arch::config::DisplayManager::Gdm => {
                 services.push(selected_dm_service);
@@ -402,17 +414,16 @@ fn enable_services(executor: &dyn CommandRunner, options: &SetupOptions) -> Resu
         println!("Skipping display manager setup because no graphical desktop was selected.");
     }
 
-    for service in services {
+    super::services::enable_services(linux_variant, &services, &best_effort_services, executor)?;
+
+    // The user-level SSH agent socket is a systemd user unit; Artix has no
+    // equivalent to enable here.
+    if service_config.user_ssh_agent() {
+        println!("Enabling user-level ssh-agent.socket...");
         let mut cmd = Command::new("systemctl");
-        cmd.arg("enable").arg(service);
+        cmd.arg("--global").arg("enable").arg("ssh-agent.socket");
         executor.run(&mut cmd)?;
     }
-
-    // Enable the user-level SSH agent socket (socket-activated via ~/.config/systemd/user/)
-    println!("Enabling user-level ssh-agent.socket...");
-    let mut cmd = Command::new("systemctl");
-    cmd.arg("--global").arg("enable").arg("ssh-agent.socket");
-    executor.run(&mut cmd)?;
 
     Ok(())
 }
@@ -668,4 +679,59 @@ fn configure_gdm_autologin(options: &SetupOptions, executor: &dyn CommandRunner)
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::arch_linux_variant::{ArchLinuxVariant, ArtixInitSystem};
+    use crate::arch::execution::mock::MockRunner;
+
+    fn artix_options(init: ArtixInitSystem) -> SetupOptions {
+        let plan = crate::arch::engine::test_install_plan().with_test_inputs(|inputs| {
+            inputs.linux_variant = ArchLinuxVariant::Artix(init);
+        });
+        SetupOptions::from_install_plan(&plan)
+    }
+
+    #[test]
+    fn artix_enable_services_uses_rc_update_and_skips_systemd_units() {
+        let executor = MockRunner::new();
+        let options = artix_options(ArtixInitSystem::OpenRC);
+
+        enable_services(&executor, &options).unwrap();
+
+        let log = executor.command_log();
+        for expected in [
+            "rc-update add NetworkManager default",
+            "rc-update add sshd default",
+            "rc-update add chrony default",
+        ] {
+            assert!(log.contains(&expected.to_string()), "{log:?}");
+        }
+        assert!(
+            !log.iter()
+                .any(|command| command.contains("systemd-timesyncd"))
+        );
+        assert!(
+            !log.iter()
+                .any(|command| command.contains("ssh-agent.socket"))
+        );
+    }
+
+    #[test]
+    fn artix_setup_forces_plymouth_off() {
+        let mut plan = crate::arch::engine::test_install_plan();
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.linux_variant = ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC);
+        });
+        plan = plan.with_test_inputs(|inputs| {
+            inputs.use_plymouth = true;
+        });
+
+        let options = SetupOptions::from_install_plan(&plan);
+
+        assert!(options.system.plymouth().is_none());
+        assert_eq!(options.linux_variant, plan.linux_variant());
+    }
 }

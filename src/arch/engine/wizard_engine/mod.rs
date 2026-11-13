@@ -96,7 +96,7 @@ enum StepInteraction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StepReadiness {
     Ready,
-    Irrelevant,
+    Skipped,
 }
 
 enum NavigationAction {
@@ -234,9 +234,9 @@ impl WizardEngine {
         loop {
             let Some(index) = self.find_next_step_index() else {
                 // Resolve every provider before the final review so provider-
-                // driven relevance (notably mirror fallback) is reflected in
-                // the context that will be saved. Failures for already valid
-                // answers remain dormant unless that question must be asked.
+                // driven availability is reflected in the review.
+                // Failures for already valid answers remain dormant unless
+                // that question must be asked.
                 providers.finish_all().await;
                 self.normalize_context();
                 if self.find_next_step_index().is_some() {
@@ -253,7 +253,7 @@ impl WizardEngine {
 
             if matches!(
                 self.wait_until_ready(index, &mut providers).await?,
-                StepReadiness::Irrelevant
+                StepReadiness::Skipped
             ) {
                 continue;
             }
@@ -385,18 +385,25 @@ impl WizardEngine {
             ))?;
         }
 
-        // A provider may make a question irrelevant while populating its data
-        // (the mirror provider uses this for its fallback path).
-        if !self.steps[index].should_ask(&self.context) {
+        // Relevance may change while providers populate their data.
+        if !self.steps[index].is_relevant(&self.context) {
             self.step_graph
                 .drop_step_state(&mut self.context, question_id);
-            return Ok(StepReadiness::Irrelevant);
+            return Ok(StepReadiness::Skipped);
         }
         if let Some(message) = self.steps[index].fatal_error_message(&self.context) {
             self.show_fatal_error(&message)?;
         }
         if self.steps[index].is_ready(&self.context) {
-            return Ok(StepReadiness::Ready);
+            return Ok(
+                if read_audit::hook(&*self.steps[index], "is_available", || {
+                    self.steps[index].is_available(&self.context)
+                }) {
+                    StepReadiness::Ready
+                } else {
+                    StepReadiness::Skipped
+                },
+            );
         }
         let source = if had_providers {
             "provider completed without supplying"
@@ -463,9 +470,17 @@ impl WizardEngine {
     fn find_next_step_index(&mut self) -> Option<usize> {
         for index in 0..self.steps.len() {
             let step = &self.steps[index];
-            if !read_audit::hook(&**step, "should_ask", || step.should_ask(&self.context)) {
+            if !read_audit::hook(&**step, "is_relevant", || step.is_relevant(&self.context)) {
                 let id = step.id();
                 self.step_graph.drop_step_state(&mut self.context, id);
+                continue;
+            }
+
+            // Pending provider data must be awaited before availability can
+            // skip a question. Unavailability does not erase a saved answer.
+            if step.is_ready(&self.context)
+                && !read_audit::hook(&**step, "is_available", || step.is_available(&self.context))
+            {
                 continue;
             }
 
@@ -517,7 +532,7 @@ impl WizardEngine {
             let step = &self.steps[index];
             let id = step.id();
 
-            if !read_audit::hook(&**step, "should_ask", || step.should_ask(&self.context)) {
+            if !read_audit::hook(&**step, "is_relevant", || step.is_relevant(&self.context)) {
                 self.step_graph.drop_step_state(&mut self.context, id);
                 continue;
             }
@@ -788,7 +803,10 @@ impl WizardEngine {
 
         let mut index = current_index - 1;
         while index > 0
-            && (!self.steps[index].should_ask(&self.context) || self.steps[index].is_info_only())
+            && (!self.steps[index].is_relevant(&self.context)
+                || (self.steps[index].is_ready(&self.context)
+                    && !self.steps[index].is_available(&self.context))
+                || self.steps[index].is_info_only())
         {
             index -= 1;
         }
@@ -849,7 +867,7 @@ pub fn validate_imported_context(
     let graph = StepGraph::new(steps)?;
     for step in steps {
         let id = step.id();
-        if !read_audit::hook(&**step, "should_ask", || step.should_ask(context)) {
+        if !read_audit::hook(&**step, "is_relevant", || step.is_relevant(context)) {
             if context.get_answer(&id).is_some() {
                 bail!("the stored answer for {id:?} is irrelevant to the selected configuration")
             }
