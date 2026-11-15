@@ -1,4 +1,5 @@
 pub mod annotations;
+pub mod bootstrap;
 pub mod cli;
 pub mod config;
 pub mod disks;
@@ -13,6 +14,7 @@ pub mod locales;
 pub mod logging;
 pub mod mirrors;
 pub mod mkinitcpio;
+mod network;
 pub mod offline;
 pub mod questions;
 

@@ -377,7 +377,7 @@ async fn run_full_wizard(
     let config_path = resolve_config_path(output_config);
 
     // Perform system checks
-    let system_info = SystemInfo::detect();
+    let system_info = SystemInfo::detect_with_network(crate::arch::network::available().await?);
 
     let install_mode = crate::arch::offline::mode();
     crate::arch::offline::validate(install_mode, system_info.internet_connected)?;

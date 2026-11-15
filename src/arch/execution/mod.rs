@@ -25,6 +25,10 @@ use self::state::InstallState;
 use self::step::InstallStep;
 
 pub fn is_chroot() -> bool {
+    // The bootstrap is an installation source, not the installation target.
+    if crate::arch::bootstrap::is_environment() {
+        return false;
+    }
     // A simple check is to compare the device/inode of / and /proc/1/root
     // If they are different, we are in a chroot.
     // If /proc is not mounted, this might fail, but in our context it should be.
@@ -366,7 +370,7 @@ pub async fn execute_installation(
     // Validate the install source before touching the disk.
     let install_mode = crate::arch::offline::mode();
     let network_available = install_mode == crate::arch::offline::Mode::Opportunistic
-        && crate::common::network::check_internet();
+        && crate::arch::network::available().await?;
     crate::arch::offline::validate(install_mode, network_available)?;
 
     if crate::common::distro::is_live_iso()
@@ -626,6 +630,10 @@ async fn execute_step(
             .arg(step_name)
             .arg("--questions-file")
             .arg(paths::CONFIG_FILE);
+
+        if !plan.environment.host().etc_is_ephemeral() {
+            cmd.env(crate::arch::bootstrap::PRESERVE_FIRMWARE, "1");
+        }
 
         if executor.dry_run() {
             cmd.arg("--dry-run");

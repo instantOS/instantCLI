@@ -92,7 +92,7 @@ pub fn format_and_mount_partitions(
         filesystem::wipe_signatures(&swap_path, executor)?;
         executor.run(Command::new("mkswap").arg(&swap_path))?;
         println!("Activating Swap...");
-        executor.run(Command::new("swapon").arg(&swap_path))?;
+        super::activate_swap(&swap_path, executor)?;
     }
 
     if let Some(home_path) = manual_partitions

@@ -1,0 +1,112 @@
+# Installation environments
+
+Run `ins arch install` for the interactive installer. On the instantOS live ISO
+or a running Arch-family system, it uses the local installation tools. On an
+x86_64 foreign Linux distribution such as Ubuntu or Debian, it automatically
+creates an authenticated Arch bootstrap environment and runs the same installer
+there. Select Minimal Mode for vanilla Arch instead of instantOS.
+
+For a saved configuration, use `sudo ins arch exec --questions-file PATH`.
+Foreign hosts support complete installations; individual execution steps need a
+persistent Arch environment. `--dry-run` validates and describes the plan on
+the source host without downloading a bootstrap or changing disks.
+
+## Host requirements
+
+- x86_64 Linux, root access, working internet and sufficient space in `/var/tmp`
+  for the downloaded archive, extracted bootstrap and installation tools.
+- A compatible `ins` binary: a static musl build or a GNU build compatible with
+  the host's glibc. A binary built on a newer distribution can require a newer
+  glibc than the source OS provides.
+- GnuPG, tar with zstd support, and util-linux mount/namespace tools. On Ubuntu
+  and Debian: `sudo apt install gnupg tar zstd util-linux mount coreutils`.
+- Hosts with mounted btrfs filesystems also need `btrfs-progs` so every member
+  device, including multi-device filesystems, can be protected.
+
+Missing prerequisites are reported before installation. Pacman and
+arch-install-scripts packages from the host distribution are not used. Their
+versions and keyrings can lag behind current Arch packages; the bootstrap
+provides a single, current Arch toolchain and trust database.
+
+The interactive installer checks HTTPS connectivity and offers network
+configuration on the source host before preparing Arch. If `nmtui` is absent,
+configure the connection using the host's network settings and select Retry.
+The bootstrap shares that connection; it does not run a network configuration
+UI or expose the host's NetworkManager sockets. If connectivity fails during
+preparation or installation, fix it on the source host and rerun the same
+command. Saved answers remain available; execution restarts as described below.
+
+## Target selection and lifecycle
+
+The target must be a separate, unused disk. The bootstrap records the source's
+mounted devices and their block-device ancestors before changing environments,
+including LVM/MD parents, swap and btrfs members. Device identities protect
+aliases as well as ordinary `/dev` paths. Unmount an unused spare disk on the
+source OS before launching the installer. Installing over the running system
+requires the live ISO. Overlay/container/network roots with no identifiable
+backing block devices are refused.
+
+Disk validation, opening cfdisk, and disk preparation also perform a live
+Linux exclusive-open probe. This refuses disks claimed by mounted partitions,
+swap or device mappings in any mount namespace, including claims made after
+the initial source snapshot. The probe is released before the installer's own
+tools claim the disk; it is not a reservation for the installation's duration.
+Do not mount, activate or otherwise use the target concurrently on the host.
+
+Answers, logs and execution state use the source's private `/run/ins-install`
+directory. They remain available after the bootstrap exits and disappear when
+the host reboots. Each fresh bootstrap starts fresh execution state, since disk
+mounts from a previous namespace cannot be resumed. Retrying an interrupted
+installation reruns its disk preparation; it does not resume partially
+completed package installation. A completed installation with the same identity
+is still detected before disk writes.
+
+UEFI installations from a running system use GRUB's standard removable-media
+fallback path with `--no-nvram`; the installer does not change the source
+machine's firmware boot order. Choose the target disk in the firmware boot
+menu. BIOS installations write GRUB to the selected target disk's MBR.
+Reboot/shutdown requests from the finished menu run on the source only after
+the bootstrap has released its resources.
+
+## Implementation boundaries
+
+`arch/bootstrap/download.rs` discovers an available dated release through
+Arch's HTTPS release API, fetches its archive from the Arch mirror and its
+detached signature from archlinux.org, and verifies the signature before
+extracting anything. GnuPG uses a private keyring containing the bundled release
+key, pinned to full primary fingerprint
+`3E80CA1A8B89F69CBA57D98A76A5EF9054449A5C`. A signing-key change fails closed
+and requires updating the bundled key and pin after independently verifying
+the new release signer. The key comes from Pierre Schmitz's release signing
+identity documented on [Arch's download page](https://archlinux.org/download/).
+
+The launcher owns the temporary directory in the original mount namespace.
+A supervisor runs as PID 1 in a private mount/PID namespace. It binds the
+bootstrap root onto itself, mounts procfs, exposes `/dev`, and binds `/sys`
+read-only without its efivarfs submount. It shares only the installer state
+directory and read-only udev/kernel-module directories; the source's systemd
+and D-Bus sockets are not exposed. Networking uses the host's network namespace
+and a copied resolver configuration.
+
+The bootstrap is an installation source, distinct from the target chroot under
+`/mnt`. An explicit root marker prevents the existing chroot detector from
+confusing those environments. The supervisor records created swap, encryption
+mappings and volume groups, stops installer descendants, unmounts the target
+and releases those resources on success, error, SIGINT or SIGTERM. Source swap
+is excluded from the target fstab. Existing encryption resource names are
+refused before disk preparation.
+
+Resource journal updates are published by atomic rename, so interrupting a
+registration leaves either the previous complete journal or the new complete
+journal available for cleanup.
+
+Only the outer launcher removes the temporary directory, after namespace
+execution ends. It never traverses the namespace's bind mounts during removal.
+The supervisor performs no recursive directory deletion.
+
+Pure installer tests live in instantCLI. An ignored test,
+`a_later_mount_in_another_namespace_refuses_the_whole_disk`, verifies the live
+claim against a disposable loop disk mounted in a separate namespace. Run it
+as root with loop-device support, util-linux and e2fsprogs installed. Full disk,
+interruption, preservation and standalone-boot tests live in the `host-ubuntu` flow of
+[instantOS-e2e](https://github.com/instantOS/instantOS-e2e).

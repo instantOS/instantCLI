@@ -96,7 +96,7 @@ pub fn mount_uefi(
 
     filesystem::mount_root(filesystem, &p3, true, executor)?;
     executor.run(Command::new("mount").args(["--mkdir", "-t", "vfat", &p1, "/mnt/boot"]))?;
-    executor.run(Command::new("swapon").arg(&p2))?;
+    super::activate_swap(&p2, executor)?;
 
     Ok(())
 }
@@ -112,7 +112,7 @@ pub fn mount_bios(
     println!("Mounting partitions...");
 
     filesystem::mount_root(filesystem, &p2, true, executor)?;
-    executor.run(Command::new("swapon").arg(&p1))?;
+    super::activate_swap(&p1, executor)?;
 
     Ok(())
 }

@@ -250,6 +250,7 @@ pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
 /// Called before `umount` or `swapoff`, including for hand-authored plans that
 /// bypass the wizard's disk question.
 pub fn ensure_not_running_disk(disk: &str) -> Result<()> {
+    crate::arch::bootstrap::ensure_available(disk)?;
     // A target that is not a device path cannot be the running device, so
     // there is nothing to refuse. Parsed as a `DevicePath`, because the device
     // holding `/` is a partition on a partitioned system and a `DiskPath`

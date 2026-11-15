@@ -346,6 +346,15 @@ Install the updated instantMENU binary when using the native backend. This
 change advances the hosted menu protocol to version 5; the client restarts an
 older scratchpad server through the existing compatibility mechanism.
 
+## Installing Arch from Ubuntu or another Linux distribution
+
+`ins arch install` can install onto a spare disk from an x86_64 Linux system.
+Foreign distributions automatically use a verified, temporary Arch bootstrap;
+Ubuntu does not need pacman or arch-install-scripts installed. The running
+system's disks are protected. Minimal Mode installs vanilla Arch.
+
+See [installation environments and prerequisites](ARCH_INSTALLATION.md).
+
 ## Installer TTY fonts
 
 `ins arch install` asks for a console font near the start, before the keyboard
