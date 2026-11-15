@@ -1,37 +1,12 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 
-pub mod desktop;
-pub mod discovery;
+use crate::applications::{discovery, types};
 pub mod execute;
-pub mod types;
 
 use crate::menu::protocol::{ChoiceOptions, FzfPreview, SerializableMenuItem};
 use crate::menu::{MenuBackend, ResolvedBackend, client, instantmenu};
 use crate::menu_utils::{DialogOutcome, FzfWrapper, MenuSelection};
 use types::LaunchItem;
-
-/// Get XDG data directories in desktop-entry precedence order.
-pub(crate) fn get_xdg_data_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    if let Some(home_data) = dirs::data_dir() {
-        dirs.push(home_data);
-    }
-
-    if let Ok(system_dirs) = std::env::var("XDG_DATA_DIRS") {
-        for dir in system_dirs.split(':') {
-            if !dir.is_empty() {
-                dirs.push(PathBuf::from(dir));
-            }
-        }
-    } else {
-        dirs.push(PathBuf::from("/usr/local/share"));
-        dirs.push(PathBuf::from("/usr/share"));
-    }
-
-    dirs
-}
 
 /// Application discovery and launch options.
 #[derive(clap::Args, Debug, Clone)]

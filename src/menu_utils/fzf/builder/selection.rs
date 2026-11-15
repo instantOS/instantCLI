@@ -148,10 +148,6 @@ impl<'a, T, A> StreamSelection<'a, T, A> {
     /// unconditionally because it cannot be re-decided once fzf has
     /// spawned.
     ///
-    /// No production menu streams padded rows yet; the runtime is
-    /// exercised through the mock tests in `padded.rs`. Retire this
-    /// allowance when the first live call site lands.
-    #[allow(dead_code)]
     pub fn padded(self) -> Self {
         Self {
             builder: self.builder,

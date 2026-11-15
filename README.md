@@ -426,3 +426,32 @@ ins launch --list
 Use `--backend instantmenu`, `--backend tui` or `--backend scratchpad` to select
 one explicitly. The hosted menu protocol is now version 9; restart an older
 menu server when upgrading.
+
+
+## Open with
+
+`ins open FILE` uses the standard fzf menu to choose a desktop application.
+Directories work too; `ins open --gui FILE` opens the picker in the configured
+terminal.
+
+Application discovery streams into the menu in the background. The current
+default is marked, pinned at the top and initially selected. Recommended apps
+and other installed apps follow, ordered by frequency and recency of successful
+launches for the detected MIME type. Manually chosen apps are remembered for
+that MIME type too.
+
+The menu uses the shared styling, padded rows, separators, fuzzy search and
+responsive preview layout. Previews combine application details with the
+existing file previewer for text, images, media, PDFs, archives and directories.
+Fzf loads previews asynchronously as you navigate.
+
+- Type to search; arrows or Ctrl+N/P move; Enter opens; Esc cancels.
+- Ctrl+D or clicking the bottom **Use as default** checkbox toggles it without
+  losing your search or selection. The change applies to this MIME type after
+  a successful launch.
+- Ctrl+/ shows or hides previews; Alt+Up/Down scrolls them. These are shared
+  controls for fzf menus with previews.
+
+Uses fzf and `xdg-mime` from xdg-utils, with support for Flatpak exports and
+NoDisplay file handlers. Usage is stored in
+`$XDG_STATE_HOME/ins/open-frecency.json` (normally `~/.local/state/ins/`).

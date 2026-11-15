@@ -7,12 +7,21 @@ use std::path::{Path, PathBuf};
 
 #[derive(Default)]
 pub(crate) struct MimeDatabase {
-    pub(super) apps: HashMap<String, Vec<String>>,
+    pub(crate) apps: HashMap<String, Vec<String>>,
     aliases: HashMap<String, String>,
     subclasses: HashMap<String, Vec<String>>,
 }
 
 impl MimeDatabase {
+    pub(crate) fn add_application(&mut self, id: &str, mime_types: &[String]) {
+        for mime in mime_types {
+            self.apps
+                .entry(mime.clone())
+                .or_default()
+                .push(id.to_owned());
+        }
+    }
+
     pub(crate) fn canonical_type<'a>(&'a self, mime_type: &'a str) -> &'a str {
         self.aliases
             .get(mime_type)
@@ -66,22 +75,11 @@ pub(crate) fn get_apps_for_mime(mime_type: &str, database: &MimeDatabase) -> Vec
 }
 
 fn get_mimeinfo_cache_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    if let Some(data_home) = xdg_data_home() {
-        paths.push(data_home.join("applications/mimeinfo.cache"));
-        paths.push(data_home.join("flatpak/exports/share/applications/mimeinfo.cache"));
-    }
-
-    paths.push(PathBuf::from(
-        "/var/lib/flatpak/exports/share/applications/mimeinfo.cache",
-    ));
-
-    for dir in xdg_data_dirs() {
-        paths.push(dir.join("applications/mimeinfo.cache"));
-    }
-
-    paths.into_iter().filter(|p| p.exists()).collect()
+    crate::applications::data_dirs()
+        .into_iter()
+        .map(|root| root.join("applications/mimeinfo.cache"))
+        .filter(|path| path.exists())
+        .collect()
 }
 
 fn parse_mimeinfo_cache(path: &Path) -> Result<HashMap<String, Vec<String>>> {

@@ -12,7 +12,7 @@ use super::FzfBuilder;
 use super::SharedConfig;
 use super::shared::{
     FzfCommandOptions, apply_fzf_command_options, base_fzf_command, build_padded_item_from_lines,
-    default_header_text, run_fzf_with_input,
+    run_fzf_with_input,
 };
 use crate::menu_utils::fzf::types::{
     DialogOutcome, FzfPreview, FzfSelectable, InitialCursor, MenuKeybind, MenuSelection,
@@ -226,9 +226,13 @@ impl FzfBuilder {
         let pump_store = Arc::new(Mutex::new(store));
         let pump_items = Arc::clone(&pump_store);
         let (cancel_tx, cancel_rx) = crossbeam_channel::bounded::<()>(1);
+        // Keep the NamedTempFile owned by the menu session. The producer can
+        // finish long before the user stops requesting previews; moving it
+        // into the pump would unlink the manifest as soon as the stream ends.
+        let manifest_writer = manifest.as_file().try_clone()?;
         let pump = thread::spawn(move || {
             let mut stdin = stdin;
-            let mut manifest = manifest;
+            let mut manifest = manifest_writer;
             loop {
                 let first = select! {
                     recv(cancel_rx) -> _ => break,
@@ -406,6 +410,7 @@ fn configure_padded_cmd<A>(
     allow_multiple: bool,
 ) -> Command {
     let mut cmd = base_fzf_command();
+    super::super::preview::configure_controls(&mut cmd, preview_manifest.is_some());
 
     cmd.arg("--read0");
     cmd.arg("--ansi");
@@ -461,7 +466,7 @@ fn configure_padded_cmd<A>(
         .initial_cursor
         .as_ref()
         .map(|InitialCursor::Index(index)| *index);
-    let header = padded_header_text(shared, keybinds);
+    let header = shared.header_with_hints(keybinds, preview_manifest.is_some());
     apply_fzf_command_options(
         &mut cmd,
         shared,
@@ -475,20 +480,6 @@ fn configure_padded_cmd<A>(
     );
 
     cmd
-}
-
-fn padded_header_text<A>(shared: &SharedConfig, keybinds: &[MenuKeybind<A>]) -> Option<String> {
-    let hint = (!keybinds.is_empty())
-        .then(|| super::super::keybind::render_hint(keybinds, shared.responsive_layout));
-    match (default_header_text(shared), hint) {
-        (Some(mut header), Some(hint)) => {
-            header.push('\n');
-            header.push_str(&hint);
-            Some(header)
-        }
-        (Some(header), None) => Some(header),
-        (None, hint) => hint,
-    }
 }
 
 fn parse_padded_response<T: FzfSelectable + Clone, A: Clone>(

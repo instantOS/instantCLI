@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::applications::app_info::ApplicationInfoCache;
+use crate::applications::mime_cache::{get_apps_for_mime, load_mime_database};
+use crate::applications::system::query_default_app;
 use crate::preview::PreviewContext;
 use crate::preview::default_apps::display_app_name;
-use crate::settings::defaultapps::{
-    ApplicationInfoCache, get_apps_for_mime, load_mime_database, query_default_app,
-};
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewWriter;

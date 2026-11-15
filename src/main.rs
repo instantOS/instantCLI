@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 
 mod all_menu;
+mod applications;
 mod arch;
 mod assist;
 mod autostart;
@@ -19,6 +20,7 @@ mod launch;
 mod menu;
 mod menu_utils;
 mod notify;
+mod open;
 mod pass;
 mod preview;
 mod resolvething;
@@ -141,6 +143,8 @@ enum Commands {
         #[command(subcommand)]
         command: DevCommands,
     },
+    /// Choose an application to open a file or directory
+    Open(open::OpenArgs),
     /// Application launcher
     Launch(launch::LaunchArgs),
     /// Password-store integration backed by `pass`
@@ -333,6 +337,9 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
             })?;
         }
         Some(Commands::Display) => display::run()?,
+        Some(Commands::Open(args)) => {
+            open::run(args)?;
+        }
         Some(Commands::Launch(args)) => {
             let exit_code = run_async(launch::handle_launch_command(args.clone()))?;
             std::process::exit(exit_code);

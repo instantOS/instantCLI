@@ -315,6 +315,7 @@ fn configure_menu_args<A>(
     shared: &SharedConfig,
     keybinds: &[MenuKeybind<A>],
     allow_multiple: bool,
+    has_preview: bool,
 ) {
     cmd.arg("--ansi"); // Enable ANSI color interpretation in display text
     cmd.arg("--tiebreak=index");
@@ -328,27 +329,11 @@ fn configure_menu_args<A>(
     if let Some(prompt) = &shared.prompt {
         cmd.arg("--prompt").arg(format!("{prompt} > "));
     }
-    let header_text = match &shared.header {
-        Some(header) => {
-            let mut text = header.to_fzf_string();
-            if !keybinds.is_empty() {
-                text.push('\n');
-                text.push_str(&super::keybind::render_hint(
-                    keybinds,
-                    shared.responsive_layout,
-                ));
-            }
-            Some(text)
-        }
-        None if !keybinds.is_empty() => Some(super::keybind::render_hint(
-            keybinds,
-            shared.responsive_layout,
-        )),
-        None => None,
-    };
+    let header_text = shared.header_with_hints(keybinds, has_preview);
     if let Some(header_text) = header_text {
         cmd.arg("--header").arg(header_text);
     }
+    super::preview::configure_controls(cmd, has_preview);
     super::keybind::configure_command(cmd, keybinds);
 }
 
@@ -564,7 +549,13 @@ impl FzfWrapper {
 
         // Configure fzf command
         let mut cmd = base_fzf_command();
-        configure_menu_args(&mut cmd, &shared, keybinds, allow_multiple);
+        configure_menu_args(
+            &mut cmd,
+            &shared,
+            keybinds,
+            allow_multiple,
+            !matches!(preview_strategy, PreviewStrategy::None),
+        );
 
         // Build input text and configure preview
         let input_text =
@@ -627,7 +618,7 @@ impl FzfWrapper {
         C: Into<StreamingCommand>,
     {
         let mut fzf = base_fzf_command();
-        configure_menu_args(&mut fzf, &shared, keybinds, allow_multiple);
+        configure_menu_args(&mut fzf, &shared, keybinds, allow_multiple, true);
         fzf.args(base_args);
         let cursor_position = shared
             .initial_cursor
@@ -733,7 +724,7 @@ impl FzfWrapper {
 
         // Configure fzf command
         let mut cmd = base_fzf_command();
-        configure_menu_args(&mut cmd, &shared, keybinds, allow_multiple);
+        configure_menu_args(&mut cmd, &shared, keybinds, allow_multiple, true);
         let input_text =
             configure_preview_and_input(&mut cmd, preview_strategy, &display_data, separator_mode);
 

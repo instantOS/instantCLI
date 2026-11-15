@@ -1,12 +1,12 @@
 use anyhow::Result;
 
-use crate::launch::types::LaunchItem;
+use crate::applications::types::LaunchItem;
 
 /// Execute a launch item
 pub fn execute_launch_item(item: &LaunchItem, in_terminal: bool) -> Result<()> {
     match item {
         LaunchItem::DesktopApp { path, .. } => {
-            let details = crate::launch::desktop::load_desktop_details(path)?;
+            let details = crate::applications::desktop::load_desktop_details(path)?;
             details.execute()?;
         }
         LaunchItem::PathExecutable { name, .. } => {

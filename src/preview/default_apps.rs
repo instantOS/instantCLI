@@ -1,6 +1,7 @@
 use anyhow::Result;
 
-use crate::settings::defaultapps::{ApplicationInfoCache, query_default_app};
+use crate::applications::app_info::ApplicationInfoCache;
+use crate::applications::system::query_default_app;
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewWriter;

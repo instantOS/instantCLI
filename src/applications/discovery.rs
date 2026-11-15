@@ -12,8 +12,15 @@ use crate::common::desktop_entry::DesktopEntry;
 /// precedence order; the first desktop file for an ID masks every later one,
 /// including when that first entry is `Hidden=true`.
 pub fn discover_launch_items(include_path: bool) -> Vec<LaunchItem> {
-    let mut items = Vec::new();
-    let mut desktop_ids = HashSet::new();
+    discover_items(include_path, false)
+}
+
+/// Include NoDisplay handlers, which are valid Open With choices.
+pub(crate) fn discover_file_handlers() -> Vec<LaunchItem> {
+    discover_items(false, true)
+}
+
+fn discover_items(include_path: bool, handlers: bool) -> Vec<LaunchItem> {
     let current_desktops = current_desktops();
     let path_dirs = env::split_paths(&env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
     let (path_executables, executable_names) = if include_path {
@@ -23,18 +30,17 @@ pub fn discover_launch_items(include_path: bool) -> Vec<LaunchItem> {
         (Vec::new(), None)
     };
 
-    for data_dir in super::get_xdg_data_dirs() {
+    let mut scan = DesktopScan::new(
+        &current_desktops,
+        &path_dirs,
+        executable_names.as_ref(),
+        handlers,
+    );
+    for data_dir in crate::applications::data_dirs() {
         let applications = data_dir.join("applications");
-        discover_desktop_directory(
-            &applications,
-            &applications,
-            &mut desktop_ids,
-            &current_desktops,
-            &path_dirs,
-            executable_names.as_ref(),
-            &mut items,
-        );
+        scan.directory(&applications, &applications);
     }
+    let mut items = scan.items;
 
     if !path_executables.is_empty() {
         let desktop_names = items
@@ -99,77 +105,94 @@ fn discover_path_executables(path_dirs: &[PathBuf]) -> (Vec<String>, HashSet<Str
     (names, seen)
 }
 
-fn discover_desktop_directory(
-    root: &Path,
-    directory: &Path,
-    seen_ids: &mut HashSet<String>,
-    current_desktops: &HashSet<String>,
-    path_dirs: &[PathBuf],
-    executable_names: Option<&HashSet<String>>,
-    items: &mut Vec<LaunchItem>,
-) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    let mut entries = entries.flatten().collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            discover_desktop_directory(
-                root,
-                &path,
-                seen_ids,
-                current_desktops,
-                path_dirs,
-                executable_names,
-                items,
-            );
-            continue;
-        }
-        if path.extension().and_then(|extension| extension.to_str()) != Some("desktop") {
-            continue;
-        }
-        let Ok(relative) = path.strip_prefix(root) else {
-            continue;
-        };
-        let id = relative
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("-");
-        if !seen_ids.insert(id.clone()) {
-            continue;
-        }
+struct DesktopScan<'a> {
+    seen_ids: HashSet<String>,
+    current_desktops: &'a HashSet<String>,
+    path_dirs: &'a [PathBuf],
+    executable_names: Option<&'a HashSet<String>>,
+    items: Vec<LaunchItem>,
+    handlers: bool,
+}
 
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
+impl<'a> DesktopScan<'a> {
+    fn new(
+        current_desktops: &'a HashSet<String>,
+        path_dirs: &'a [PathBuf],
+        executable_names: Option<&'a HashSet<String>>,
+        handlers: bool,
+    ) -> Self {
+        Self {
+            seen_ids: HashSet::new(),
+            current_desktops,
+            path_dirs,
+            executable_names,
+            items: Vec::new(),
+            handlers,
+        }
+    }
+
+    fn directory(&mut self, root: &Path, directory: &Path) {
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
         };
-        let Some(entry) = DesktopEntry::parse(&content) else {
-            continue;
-        };
-        if entry.hidden || entry.no_display {
-            continue;
+        let mut entries = entries.flatten().collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                self.directory(root, &path);
+                continue;
+            }
+            if path.extension().and_then(|extension| extension.to_str()) != Some("desktop") {
+                continue;
+            }
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            let id = relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("-");
+            if !self.seen_ids.insert(id.clone()) {
+                continue;
+            }
+
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Some(entry) = DesktopEntry::parse(&content) else {
+                continue;
+            };
+            if entry.hidden || (!self.handlers && entry.no_display) {
+                continue;
+            }
+            if entry.entry_type != Some("Application") {
+                continue;
+            }
+            if entry.exec.is_none_or(str::is_empty) {
+                continue;
+            }
+            if let Some(try_exec) = entry.try_exec
+                && !command_exists(try_exec, self.path_dirs, self.executable_names)
+            {
+                continue;
+            }
+            if !self.handlers
+                && !visible_on_desktops(
+                    entry.only_show_in,
+                    entry.not_show_in,
+                    self.current_desktops,
+                )
+            {
+                continue;
+            }
+            self.items.push(LaunchItem::DesktopApp {
+                id,
+                name: entry.name.unwrap_or_default().to_string(),
+                path,
+            });
         }
-        if entry.entry_type != Some("Application") {
-            continue;
-        }
-        if entry.exec.is_none_or(str::is_empty) {
-            continue;
-        }
-        if let Some(try_exec) = entry.try_exec
-            && !command_exists(try_exec, path_dirs, executable_names)
-        {
-            continue;
-        }
-        if !visible_on_desktops(entry.only_show_in, entry.not_show_in, current_desktops) {
-            continue;
-        }
-        items.push(LaunchItem::DesktopApp {
-            id,
-            name: entry.name.unwrap_or_default().to_string(),
-            path,
-        });
     }
 }
 
@@ -264,12 +287,26 @@ mod tests {
         )
         .unwrap();
 
-        let mut seen = HashSet::new();
-        let mut items = Vec::new();
         let current = HashSet::new();
-        discover_desktop_directory(&high, &high, &mut seen, &current, &[], None, &mut items);
-        discover_desktop_directory(&low, &low, &mut seen, &current, &[], None, &mut items);
+        let mut scan = DesktopScan::new(&current, &[], None, true);
+        scan.directory(&high, &high);
+        scan.directory(&low, &low);
+        let items = scan.items;
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn file_handlers_include_nodisplay_and_ignore_desktop_visibility() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join("handler.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Handler\nExec=handler %f\nNoDisplay=true\nOnlyShowIn=OtherDesktop;\n").unwrap();
+        let current = HashSet::new();
+        let mut launcher = DesktopScan::new(&current, &[], None, false);
+        launcher.directory(root.path(), root.path());
+        assert!(launcher.items.is_empty());
+        let mut handlers = DesktopScan::new(&current, &[], None, true);
+        handlers.directory(root.path(), root.path());
+        assert_eq!(handlers.items.len(), 1);
     }
 
     #[test]
@@ -284,17 +321,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut seen = HashSet::new();
-        let mut items = Vec::new();
-        discover_desktop_directory(
-            root.path(),
-            root.path(),
-            &mut seen,
-            &HashSet::new(),
-            &[],
-            None,
-            &mut items,
-        );
+        let current = HashSet::new();
+        let mut scan = DesktopScan::new(&current, &[], None, false);
+        scan.directory(root.path(), root.path());
+        let items = scan.items;
         assert!(matches!(
             &items[0],
             LaunchItem::DesktopApp { id, path: actual, .. }

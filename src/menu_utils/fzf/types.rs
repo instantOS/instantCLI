@@ -556,6 +556,23 @@ impl<A> MenuKeybind<A> {
     }
 }
 
+/// A displayed shortcut handled inside the renderer (rather than a submitted action).
+/// Keys are display labels, so standard controls such as Enter and Esc are valid.
+#[derive(Debug, Clone)]
+pub struct MenuHint {
+    pub key: String,
+    pub label: String,
+}
+
+impl MenuHint {
+    pub fn new(key: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            label: label.into(),
+        }
+    }
+}
+
 /// Result type for checklist dialogs
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChecklistResult<T> {

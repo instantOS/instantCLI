@@ -20,6 +20,7 @@
 //! with a per-row preview manifest, so both static collections and live
 //! streams support them, while child-process command sources stay compact.
 
+mod checkbox;
 mod checklist;
 mod dialogs;
 mod padded;
@@ -45,6 +46,7 @@ pub(crate) struct SharedConfig {
     pub initial_cursor: Option<InitialCursor>,
     pub initial_query: Option<String>,
     pub responsive_layout: bool,
+    pub hints: Vec<MenuHint>,
 }
 
 impl SharedConfig {
@@ -57,11 +59,34 @@ impl SharedConfig {
             initial_cursor: None,
             initial_query: None,
             responsive_layout: false,
+            hints: Vec::new(),
         }
     }
 
     pub(crate) fn args(&self) -> impl Iterator<Item = &String> {
         self.default_args.iter().chain(self.user_args.iter())
+    }
+
+    pub(crate) fn header_with_hints<A>(
+        &self,
+        keybinds: &[MenuKeybind<A>],
+        has_preview: bool,
+    ) -> Option<String> {
+        let mut hints = self.hints.clone();
+        if has_preview {
+            hints.extend(super::preview::control_hints());
+        }
+        let hint = (!keybinds.is_empty() || !hints.is_empty())
+            .then(|| super::keybind::render_hint(keybinds, &hints, self.responsive_layout));
+        match (self.header.as_ref().map(Header::to_fzf_string), hint) {
+            (Some(mut header), Some(hint)) => {
+                header.push('\n');
+                header.push_str(&hint);
+                Some(header)
+            }
+            (Some(header), None) => Some(header),
+            (None, hint) => hint,
+        }
     }
 
     fn with_dialog_args(mut self, defaults: Vec<String>) -> Self {
@@ -312,6 +337,12 @@ impl FzfBuilder {
         self
     }
 
+    /// Add hints for native renderer actions using the same keycaps as typed keybinds.
+    pub fn hints(mut self, hints: impl IntoIterator<Item = MenuHint>) -> Self {
+        self.shared.hints.extend(hints);
+        self
+    }
+
     pub fn responsive_layout(mut self) -> Self {
         self.shared.responsive_layout = true;
         self
@@ -508,6 +539,16 @@ impl ChecklistBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_hints_only_appear_for_menus_with_previews() {
+        let builder = FzfBuilder::new().header(Header::default("Choose an item"));
+        let plain = builder.shared.header_with_hints::<()>(&[], false).unwrap();
+        assert!(!plain.contains("show/hide preview"));
+        let preview = builder.shared.header_with_hints::<()>(&[], true).unwrap();
+        assert_eq!(preview.matches("show/hide preview").count(), 1);
+        assert_eq!(preview.matches("scroll preview").count(), 1);
+    }
 
     #[test]
     fn dialog_transitions_replace_defaults_but_preserve_user_args() {

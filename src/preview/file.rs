@@ -1,5 +1,6 @@
 //! File suggestion preview - generates rich previews based on file type/mimetype.
 
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 
@@ -269,15 +270,43 @@ fn render_text_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> R
         }
     }
 
-    // Count lines
-    if let Ok(content) = std::fs::read_to_string(path) {
-        let lines = content.lines().count();
-        builder = builder.field("Lines", &lines.to_string());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
+    if path.metadata()?.is_file() {
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?
+            .take(16 * 1024)
+            .read_to_end(&mut bytes)?;
+        builder = builder
+            .blank()
+            .separator()
+            .subtext("Contents · first 80 lines / 16 KiB");
+        for line in text_excerpt(&bytes).lines() {
+            builder = builder.text(line);
+        }
     }
 
-    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
-
     Ok(builder.build_string())
+}
+
+/// Keep previews bounded and prevent file contents from emitting terminal controls.
+fn text_excerpt(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    text.lines()
+        .take(80)
+        .map(|line| {
+            line.chars()
+                .take(240)
+                .map(|c| {
+                    if c.is_control() && c != '\t' {
+                        '�'
+                    } else {
+                        c
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_archive_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
@@ -482,6 +511,15 @@ fn split_long_segment(segment: &str, line_width: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_previews_bound_content_and_strip_terminal_controls() {
+        let bytes = "\x1b[31mhello\n".repeat(200);
+        let preview = text_excerpt(bytes.as_bytes());
+        assert_eq!(preview.lines().count(), 80);
+        assert!(!preview.contains('\x1b'));
+        assert_eq!(text_excerpt("x".repeat(500).as_bytes()).len(), 240);
+    }
 
     #[test]
     fn wraps_long_paths_at_directory_boundaries() {

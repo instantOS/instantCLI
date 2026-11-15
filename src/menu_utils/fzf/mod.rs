@@ -27,8 +27,8 @@ pub use builder::ItemSelection;
 pub use header::HeaderBuilder;
 pub use types::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,
-    FzfSelectable, Header, MenuItem, MenuKey, MenuKeybind, MenuSelection, StreamingCommand,
-    StreamingMenuItem, default_fzf_key,
+    FzfSelectable, Header, MenuHint, MenuItem, MenuKey, MenuKeybind, MenuSelection,
+    StreamingCommand, StreamingMenuItem, default_fzf_key,
 };
 
 // Re-export main user-facing types

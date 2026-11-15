@@ -5,7 +5,7 @@ use std::process::Command;
 
 use anyhow::{Result, anyhow, bail};
 
-use super::types::MenuKeybind;
+use super::types::{MenuHint, MenuKeybind};
 use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::text::{display_width, truncate_to_width};
@@ -13,6 +13,8 @@ use crate::ui::text::{display_width, truncate_to_width};
 const ANSI_RESET: &str = "\x1b[0m";
 const HINT_MAX_WIDTH: usize = 96;
 const HINT_MIN_WIDTH: usize = 12;
+// The estimated pane width includes fzf's horizontal padding, gutter and borders.
+const HINT_CHROME_WIDTH: usize = 8;
 const SEPARATOR_WIDTH: usize = 5;
 
 struct HintSegment {
@@ -65,8 +67,8 @@ fn normalize_label(label: &str) -> String {
         .join(" ")
 }
 
-fn render_segment<A>(bind: &MenuKeybind<A>, max_width: usize) -> HintSegment {
-    let key = truncate_to_width(&bind.key.display_name(), max_width.saturating_sub(2));
+fn render_segment(bind: &MenuHint, max_width: usize) -> HintSegment {
+    let key = truncate_to_width(&normalize_label(&bind.key), max_width.saturating_sub(2));
     let key_width = display_width(&key) + 2;
     let label = normalize_label(&bind.label);
     let label_gap = usize::from(!label.is_empty()) * 2;
@@ -100,16 +102,26 @@ fn hint_width(responsive_layout: bool) -> usize {
             .map(|(columns, _)| usize::from(columns).saturating_sub(4))
             .unwrap_or(76)
     };
-    list_width.clamp(HINT_MIN_WIDTH, HINT_MAX_WIDTH)
+    list_width
+        .saturating_sub(HINT_CHROME_WIDTH)
+        .clamp(HINT_MIN_WIDTH, HINT_MAX_WIDTH)
 }
 
 /// Render accent keycaps and muted labels, wrapping complete bindings to the
 /// estimated width of the fzf list pane.
-pub(super) fn render_hint<A>(keybinds: &[MenuKeybind<A>], responsive_layout: bool) -> String {
-    render_hint_at_width(keybinds, hint_width(responsive_layout))
+pub(super) fn render_hint<A>(
+    keybinds: &[MenuKeybind<A>],
+    hints: &[MenuHint],
+    responsive_layout: bool,
+) -> String {
+    render_hint_at_width(keybinds, hints, hint_width(responsive_layout))
 }
 
-fn render_hint_at_width<A>(keybinds: &[MenuKeybind<A>], max_width: usize) -> String {
+fn render_hint_at_width<A>(
+    keybinds: &[MenuKeybind<A>],
+    hints: &[MenuHint],
+    max_width: usize,
+) -> String {
     let keyboard = char::from(NerdFont::Keyboard);
     let prefix_width = display_width(&keyboard.to_string()) + 2;
     let first_prefix = format!("{}{keyboard}{ANSI_RESET}  ", hex_to_ansi_fg(colors::BLUE));
@@ -122,10 +134,13 @@ fn render_hint_at_width<A>(keybinds: &[MenuKeybind<A>], max_width: usize) -> Str
     let mut lines = vec![first_prefix];
     let mut line_width = prefix_width;
     let mut has_segment = false;
-    for segment in keybinds
+    let mut seen = HashSet::new();
+    let all_hints = keybinds
         .iter()
-        .map(|bind| render_segment(bind, content_width))
-    {
+        .map(|bind| MenuHint::new(bind.key.display_name(), &bind.label))
+        .chain(hints.iter().cloned())
+        .filter(|hint| seen.insert(normalize_label(&hint.key)));
+    for segment in all_hints.map(|hint| render_segment(&hint, content_width)) {
         let separator_width = if has_segment { SEPARATOR_WIDTH } else { 0 };
         if has_segment && line_width + separator_width + segment.width > max_width {
             lines.push(continuation_prefix.clone());
@@ -158,7 +173,7 @@ mod tests {
             MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit\n  entry", 1u8),
             MenuKeybind::new(MenuKey::new("alt-d").unwrap(), "delete", 2u8),
         ];
-        let rendered = render_hint_at_width(&binds, 30);
+        let rendered = render_hint_at_width(&binds, &[], 30);
         let plain = default_fzf_key(&rendered);
         let lines = plain.lines().collect::<Vec<_>>();
 
@@ -176,7 +191,7 @@ mod tests {
             MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit", 1u8),
             MenuKeybind::new(MenuKey::new("alt-d").unwrap(), "delete", 2u8),
         ];
-        let plain = default_fzf_key(&render_hint_at_width(&binds, 80));
+        let plain = default_fzf_key(&render_hint_at_width(&binds, &[], 80));
 
         assert_eq!(plain.lines().count(), 1);
         assert!(plain.contains("edit  •   Alt D"));
@@ -189,10 +204,32 @@ mod tests {
             "edit an exceptionally long entry label",
             1u8,
         )];
-        let plain = default_fzf_key(&render_hint_at_width(&binds, 24));
+        let plain = default_fzf_key(&render_hint_at_width(&binds, &[], 24));
 
         assert!(plain.contains('…'));
         assert!(plain.lines().all(|line| display_width(line) <= 24));
+    }
+
+    #[test]
+    fn native_and_typed_hints_share_styles_and_are_not_repeated() {
+        let binds = [MenuKeybind::new(
+            MenuKey::new("ctrl-d").unwrap(),
+            "default",
+            (),
+        )];
+        let hints = [
+            MenuHint::new("Ctrl D", "duplicate"),
+            MenuHint::new("Enter", "open"),
+        ];
+        let rendered = render_hint_at_width(&binds, &hints, 90);
+        let plain = default_fzf_key(&rendered);
+        assert_eq!(plain.matches("Ctrl D").count(), 1);
+        assert!(!plain.contains("duplicate"));
+        assert!(plain.contains("Enter   open"));
+        assert_eq!(
+            rendered.matches(&hex_to_ansi_bg(colors::SURFACE0)).count(),
+            2
+        );
     }
 
     #[test]
