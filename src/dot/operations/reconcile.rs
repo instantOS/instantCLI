@@ -331,7 +331,6 @@ mod tests {
             .unwrap()
             .applied_hash;
         fs::write(&target, "local change").unwrap();
-        crate::dot::dotfile::invalidate_cache(&target);
         commit_source_deletion(&env);
         crate::dot::operations::apply::apply_all(&env.config, &env.db, false, false).unwrap();
 
@@ -386,7 +385,6 @@ mod tests {
         crate::dot::operations::apply::apply_all(&env.config, &env.db, false, false).unwrap();
         fs::remove_file(&target).unwrap();
         fs::create_dir(&target).unwrap();
-        crate::dot::dotfile::invalidate_cache(&target);
         commit_source_deletion(&env);
 
         let current = crate::dot::get_all_dotfiles(&env.config, &env.db, false).unwrap();

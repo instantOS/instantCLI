@@ -2,11 +2,9 @@ use super::config::DotfileConfig;
 use super::db::{Database, DotFileType};
 use super::encryption;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::fs;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
 
 /// Whether a dotfile's source is stored plain on disk or as an age-encrypted blob.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,27 +23,6 @@ impl SourceKind {
         } else {
             SourceKind::Plain
         }
-    }
-}
-
-// Simple in-memory cache for file hashes.
-// This is distinct from the persistent Database. It is used to avoid re-computing
-// SHA256 hashes for the same file path multiple times within a single process run.
-// It does not persist across runs.
-static HASH_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-
-const HASH_CACHE_SIZE: usize = 1000; // Limit cache size to prevent memory bloat
-
-fn get_hash_cache() -> &'static Mutex<HashMap<String, String>> {
-    HASH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Remove a path from the in-memory hash cache.
-/// Should be called whenever a file is modified by the program.
-pub(crate) fn invalidate_cache(path: &Path) {
-    let path_str = path.to_string_lossy().to_string();
-    if let Ok(mut cache) = get_hash_cache().lock() {
-        cache.remove(&path_str);
     }
 }
 
@@ -201,7 +178,7 @@ impl Dotfile {
     }
 
     /// Sha256-hex of an in-memory byte slice. Used for plaintext of
-    /// decrypted age sources (never goes through the on-disk hash cache).
+    /// decrypted age sources.
     pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
@@ -209,16 +186,6 @@ impl Dotfile {
     }
 
     pub fn compute_hash(path: &Path) -> Result<String, anyhow::Error> {
-        // Check cache first
-        let path_str = path.to_string_lossy().to_string();
-
-        {
-            let cache = get_hash_cache().lock().unwrap();
-            if let Some(cached_hash) = cache.get(&path_str) {
-                return Ok(cached_hash.clone());
-            }
-        }
-
         // Compute hash with buffered reading for large files
         let file = fs::File::open(path)?;
         let mut hasher = Sha256::new();
@@ -233,22 +200,7 @@ impl Dotfile {
             hasher.update(&buffer[..bytes_read]);
         }
 
-        let hash = hex::encode(hasher.finalize());
-
-        // Cache the result
-        {
-            let mut cache = get_hash_cache().lock().unwrap();
-            if cache.len() >= HASH_CACHE_SIZE {
-                // Simple eviction: clear half the cache
-                let keys: Vec<String> = cache.keys().cloned().collect();
-                for key in keys.iter().take(HASH_CACHE_SIZE / 2) {
-                    cache.remove(key);
-                }
-            }
-            cache.insert(path_str, hash.clone());
-        }
-
-        Ok(hash)
+        Ok(hex::encode(hasher.finalize()))
     }
 
     /// Decrypt the age source, write plaintext to the target, and record all
@@ -261,7 +213,6 @@ impl Dotfile {
             &plaintext,
             "decrypted target file",
         )?;
-        invalidate_cache(&self.target_path);
 
         let plain_hash = Self::hash_bytes(&plaintext);
         let cipher_hash = Self::compute_hash(&self.source_path)?;
@@ -298,7 +249,6 @@ impl Dotfile {
         match self.kind {
             SourceKind::Plain => {
                 fs::copy(&self.source_path, &self.target_path)?;
-                invalidate_cache(&self.target_path);
 
                 // After applying, record the target hash with source_file=false since we just copied from source
                 let source_hash = self.get_file_hash(&self.source_path, true, db)?;
@@ -332,7 +282,6 @@ impl Dotfile {
 
                 if should_copy {
                     fs::copy(&self.target_path, &self.source_path)?;
-                    invalidate_cache(&self.source_path);
                     // Update the source file's hash in the database after copying
                     let _ = self.get_file_hash(&self.source_path, true, db);
                     let _ = self.get_file_hash(&self.target_path, false, db);
@@ -359,7 +308,6 @@ impl Dotfile {
                         &ciphertext,
                         "encrypted source file",
                     )?;
-                    invalidate_cache(&self.source_path);
 
                     // Record the new plain hash and cipher hash in the database
                     let new_plain_hash = Self::hash_bytes(&plaintext);
@@ -390,7 +338,6 @@ impl Dotfile {
             SourceKind::Plain => {
                 // Force copy source -> target, overwriting any modifications
                 fs::copy(&self.source_path, &self.target_path)?;
-                invalidate_cache(&self.target_path);
 
                 // After reset, record the target hash with source_file=false since we just copied from source
                 let source_hash = self.get_file_hash(&self.source_path, true, db)?;
@@ -425,7 +372,6 @@ impl Dotfile {
 
         // Copy target -> source
         fs::copy(&self.target_path, &self.source_path)?;
-        invalidate_cache(&self.source_path);
 
         // Compute the hash of the copied content
         let hash = Self::compute_hash(&self.source_path)?;
@@ -498,6 +444,29 @@ mod tests {
     use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn hash_detects_same_size_edits_with_preserved_mtime() -> anyhow::Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("config");
+        fs::write(&path, "before")?;
+        let modified = fs::metadata(&path)?.modified()?;
+        assert_eq!(
+            Dotfile::compute_hash(&path)?,
+            Dotfile::hash_bytes(b"before")
+        );
+
+        fs::write(&path, "after!")?;
+        fs::File::open(&path)?.set_times(fs::FileTimes::new().set_modified(modified))?;
+        assert_eq!(
+            Dotfile::compute_hash(&path)?,
+            Dotfile::hash_bytes(b"after!")
+        );
+
+        fs::remove_file(&path)?;
+        assert!(Dotfile::compute_hash(&path).is_err());
+        Ok(())
+    }
 
     #[test]
     #[serial]
@@ -602,7 +571,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_fetch_updates_hash_cache() {
+    fn test_fetch_updates_source_hash() {
         let dir = tempdir().unwrap();
         let repo_path = dir.path().join("repo");
         let target_path = dir.path().join("target");
@@ -620,7 +589,7 @@ mod tests {
             false,
         );
 
-        // 1. Compute hash of source (populates cache with "initial")
+        // 1. Compute hash of the initial source contents
         let initial_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
 
         // 2. Fetch (updates source file to "modified")
