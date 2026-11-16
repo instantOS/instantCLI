@@ -35,6 +35,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- release v0.14.25
+- nicer transcription process
+- better readme
+- deslop readme
+- fmt
+- open file picker before MIME detection finishes
+- stream preferred open-with applications before full discovery
+- remove redundant default hints
+- refactor menu server and ensure request cleanup
+- *(deps)* fetch instantos-ipc from git
+- *(arch)* split install summary into facts and renderers
+- *(dot)* share conversion logic and repository display helpers
+- split keyhelp into focused modules
+- better backup prompts
+- add ability to defer game save setup
+- make game previews async
+- improve hashing speed
+- move IPC stuff to shared crat
+- allow uninstalling multiple flatpaks
+- Refactor dotfile status rendering and game action menus
+- Improve video speech review, download progress, and voice mastering
+- audio stuff
+- update agents md
+- Harden audio cut refinement and validate retained speech
+- bump
+- Fix parsing generated video cue references
+- release v0.14.25
+- sync PKGBUILD version
+- release v0.14.25
+- Wait for APK locks and offer retries for dependency installation
+- Merge branch 'main' of lenabook.tailbd646.ts.net:~/workspace/instantCLI into dev
+- Add terminal launcher mode and initial search queries
+- Merge branch 'main' of https://github.com/instantOS/instantCLI
+- Fix KWin scratchpad status and restore emulator menu help
+- Handle package database contention across uninstall backends
+- Merge branch 'dev'
+- Unify terminal launches with instantos-terminal
+- optimize game sync perf
+- Merge branch 'dev' of https://github.com/instantOS/instantCLI
+- Restore game sync feedback and avoid redundant restores
+- Add TTY font selection to appearance settings
+- add postmarket os instructions
+- add apk release workflow
+
+## [0.14.25](https://github.com/instantOS/instantCLI/compare/v0.14.24...v0.14.25) - 2026-11-16
+
+### Added
+
+- add shared-menu open-with picker and MIME frecency
+- *(arch)* install from foreign hosts through a verified bootstrap
+- add bluetui settings entry
+- deal with busy package managers
+- support apk in settings on Alpine and postmarketOS
+
+### Fixed
+
+- fix CI revealed bugs
+- unify preview layout and guard padded menu submissions
+- fix scratchpad invalid name thing
+- bootstrap shell during installation
+- *(dot)* reset targets to current repository sources
+- *(arch)* allow changing partitioning method after cfdisk
+- unify serialization
+- fix polkit agent startup
+- add proper postmarket OS deps
+- restore good game output
+- improve assist recording reliability and clipboard persistence
+- fix
+- better error messages for default links
+
+### Other
+
 - better readme
 - deslop readme
 - fmt
