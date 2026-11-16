@@ -184,7 +184,7 @@ impl ChecklistBuilder {
             &self.shared,
             FzfCommandOptions {
                 prompt_suffix: Some(" > "),
-                header: self.shared.header_with_hints::<()>(&[], has_preview),
+                header: self.shared.header_with_hints::<()>(&[]),
                 include_additional_args: true,
                 cursor,
                 responsive_layout: true,

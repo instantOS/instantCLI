@@ -20,7 +20,7 @@ pub use cursor::MenuCursor;
 pub use file_picker::{FilePickerBuilder, FilePickerScope};
 pub use fzf::{
     ChecklistAction, ChecklistResult, ConfirmResult, DecodedStreamingMenuItem, DialogOutcome,
-    FzfSelectable, FzfWrapper, Header, HeaderBuilder, ItemSelection, MenuHint, MenuItem, MenuKey,
+    FzfSelectable, FzfWrapper, Header, HeaderBuilder, ItemSelection, MenuItem, MenuKey,
     MenuKeybind, MenuSelection, StreamingCommand, StreamingMenuItem, default_fzf_key,
 };
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};

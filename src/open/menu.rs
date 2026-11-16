@@ -6,7 +6,7 @@ use super::model::{self, Choice, Snapshot};
 use crate::applications::app_info::ApplicationInfo;
 use crate::common::shell::{current_exe_command, shell_quote};
 use crate::menu_utils::{
-    DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuHint, MenuItem,
+    DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -159,10 +159,6 @@ pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
                 .field("Type", &mime)
                 .build(),
         )
-        .hints([
-            MenuHint::new("Enter", "open"),
-            MenuHint::new("Esc", "cancel"),
-        ])
         .responsive_layout()
         .stream(receiver)
         .padded()

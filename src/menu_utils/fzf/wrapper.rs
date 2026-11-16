@@ -329,7 +329,7 @@ fn configure_menu_args<A>(
     if let Some(prompt) = &shared.prompt {
         cmd.arg("--prompt").arg(format!("{prompt} > "));
     }
-    let header_text = shared.header_with_hints(keybinds, has_preview);
+    let header_text = shared.header_with_hints(keybinds);
     if let Some(header_text) = header_text {
         cmd.arg("--header").arg(header_text);
     }

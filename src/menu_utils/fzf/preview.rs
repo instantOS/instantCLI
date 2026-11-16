@@ -3,7 +3,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
-use super::types::{FzfPreview, FzfSelectable, MenuHint};
+use super::types::{FzfPreview, FzfSelectable};
 
 /// Standard native controls for every selection menu that renders a preview.
 pub(super) fn configure_controls(command: &mut std::process::Command, has_preview: bool) {
@@ -13,13 +13,6 @@ pub(super) fn configure_controls(command: &mut std::process::Command, has_previe
             "--bind=alt-up:preview-up,alt-down:preview-down",
         ]);
     }
-}
-
-pub(super) fn control_hints() -> [MenuHint; 2] {
-    [
-        MenuHint::new("Ctrl /", "show/hide preview"),
-        MenuHint::new("Alt ↑/↓", "scroll preview"),
-    ]
 }
 
 pub struct PreviewUtils;

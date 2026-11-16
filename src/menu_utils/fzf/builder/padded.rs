@@ -411,7 +411,7 @@ fn configure_padded_cmd<A>(
         .initial_cursor
         .as_ref()
         .map(|InitialCursor::Index(index)| *index);
-    let header = shared.header_with_hints(keybinds, has_preview);
+    let header = shared.header_with_hints(keybinds);
     apply_fzf_command_options(
         &mut cmd,
         shared,

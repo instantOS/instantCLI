@@ -67,17 +67,9 @@ impl SharedConfig {
         self.default_args.iter().chain(self.user_args.iter())
     }
 
-    pub(crate) fn header_with_hints<A>(
-        &self,
-        keybinds: &[MenuKeybind<A>],
-        has_preview: bool,
-    ) -> Option<String> {
-        let mut hints = self.hints.clone();
-        if has_preview {
-            hints.extend(super::preview::control_hints());
-        }
-        let hint = (!keybinds.is_empty() || !hints.is_empty())
-            .then(|| super::keybind::render_hint(keybinds, &hints, self.responsive_layout));
+    pub(crate) fn header_with_hints<A>(&self, keybinds: &[MenuKeybind<A>]) -> Option<String> {
+        let hint = (!keybinds.is_empty() || !self.hints.is_empty())
+            .then(|| super::keybind::render_hint(keybinds, &self.hints, self.responsive_layout));
         match (self.header.as_ref().map(Header::to_fzf_string), hint) {
             (Some(mut header), Some(hint)) => {
                 header.push('\n');
@@ -337,12 +329,6 @@ impl FzfBuilder {
         self
     }
 
-    /// Add hints for native renderer actions using the same keycaps as typed keybinds.
-    pub fn hints(mut self, hints: impl IntoIterator<Item = MenuHint>) -> Self {
-        self.shared.hints.extend(hints);
-        self
-    }
-
     pub fn responsive_layout(mut self) -> Self {
         self.shared.responsive_layout = true;
         self
@@ -541,13 +527,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_hints_only_appear_for_menus_with_previews() {
-        let builder = FzfBuilder::new().header(Header::default("Choose an item"));
-        let plain = builder.shared.header_with_hints::<()>(&[], false).unwrap();
-        assert!(!plain.contains("show/hide preview"));
-        let preview = builder.shared.header_with_hints::<()>(&[], true).unwrap();
-        assert_eq!(preview.matches("show/hide preview").count(), 1);
-        assert_eq!(preview.matches("scroll preview").count(), 1);
+    fn header_hints_only_describe_menu_specific_actions() {
+        let mut builder = FzfBuilder::new().header(Header::default("Choose an item"));
+        builder
+            .shared
+            .hints
+            .push(MenuHint::new("Ctrl D", "use as default"));
+        let header = builder.shared.header_with_hints::<()>(&[]).unwrap();
+        assert_eq!(header.matches("use as default").count(), 1);
+        assert!(!header.contains("preview"));
+        assert!(!header.contains("Enter"));
+        assert!(!header.contains("Esc"));
     }
 
     #[test]
