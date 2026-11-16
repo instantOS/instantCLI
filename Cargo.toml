@@ -6,6 +6,7 @@ description = "Instant CLI - command-line utilities"
 license = "GPL-2.0-only"
 homepage = "https://instantos.io"
 repository = "https://github.com/instantOS/instantCLI"
+publish = false
 
 [features]
 default = []

@@ -46,7 +46,7 @@ yay -S ins
 [Development](#development)).
 
 ```sh
-cargo install ins
+cargo install --git https://github.com/instantOS/instantCLI --locked ins
 ```
 
 **npm:** Linux x64 or ARM64 with Node.js 18 or newer. This installs the binary;
@@ -144,7 +144,8 @@ just test
 
 See [AGENTS.md](AGENTS.md) for repository conventions,
 [installer sources](scripts/install-src/README.md) for work on the install script,
-and [npm publishing](npm/PUBLISHING.md) for npm release maintenance.
+[release maintenance](RELEASING.md),
+and [npm publishing](npm/PUBLISHING.md).
 
 ## License
 
