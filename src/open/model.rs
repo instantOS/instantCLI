@@ -26,6 +26,7 @@ pub(super) struct DiscoveryBatch {
 pub(super) enum Choice {
     Desktop { app: ApplicationInfo, mime: String },
     Executable(PathBuf),
+    RunFile,
 }
 
 fn history_path() -> PathBuf {

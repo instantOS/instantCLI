@@ -145,6 +145,7 @@ fn entries(
 enum OpenAction {
     SetDefault,
     CustomExecutable,
+    RunFile,
 }
 
 #[derive(Clone, Copy)]
@@ -188,6 +189,13 @@ pub(super) fn choose(path: &Path, backend: Backend) -> Result<Option<Choice>> {
         let Some(selection) = choose_action(path, &status, backend)? else {
             return Ok(None);
         };
+        if matches!(selection.action, Some(OpenAction::RunFile)) {
+            if path.is_file() {
+                return Ok(Some(Choice::RunFile));
+            }
+            status = "Only regular files can be executed".into();
+            continue;
+        }
         if matches!(selection.action, Some(OpenAction::CustomExecutable)) {
             if let DialogOutcome::Submitted(path) = backend.pick_executable()? {
                 match which::which(&path) {
@@ -256,7 +264,7 @@ fn choose_action(
         })
         .context("Failed to start application discovery")?;
 
-    let keybinds = keybinds()?;
+    let keybinds = keybinds(path.is_file())?;
     if matches!(backend, Backend::Instantmenu) {
         return instantmenu::select(path, status, receiver, &keybinds);
     }
@@ -279,8 +287,8 @@ fn choose_action(
     }
 }
 
-fn keybinds() -> Result<Vec<MenuKeybind<OpenAction>>> {
-    Ok(vec![
+fn keybinds(allow_execute: bool) -> Result<Vec<MenuKeybind<OpenAction>>> {
+    let mut bindings = vec![
         MenuKeybind::new(
             MenuKey::new("ctrl-d")?,
             "set default",
@@ -291,7 +299,15 @@ fn keybinds() -> Result<Vec<MenuKeybind<OpenAction>>> {
             "custom executable",
             OpenAction::CustomExecutable,
         ),
-    ])
+    ];
+    if allow_execute {
+        bindings.push(MenuKeybind::new(
+            MenuKey::new("ctrl-x")?,
+            "make executable and run",
+            OpenAction::RunFile,
+        ));
+    }
+    Ok(bindings)
 }
 
 #[cfg(test)]

@@ -3,7 +3,8 @@ mod menu;
 mod model;
 
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
@@ -66,19 +67,11 @@ fn run_inner(args: &OpenArgs) -> Result<()> {
     };
     let (app, mime) = match choice {
         model::Choice::Desktop { app, mime } => (app, mime),
+        model::Choice::RunFile => return execute_file(&path),
         model::Choice::Executable(executable) => {
-            let mut command = std::process::Command::new(&executable);
+            let mut command = Command::new(&executable);
             command.arg(&path);
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                command.process_group(0);
-            }
-            command
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
+            spawn_detached(command)
                 .with_context(|| format!("Failed to open file with {}", executable.display()))?;
             return Ok(());
         }
@@ -94,5 +87,43 @@ fn run_inner(args: &OpenArgs) -> Result<()> {
     if let Err(error) = model::record(&mime, &app.desktop_id) {
         eprintln!("Warning: could not remember application usage: {error:#}");
     }
+    Ok(())
+}
+
+/// Execute the opened file itself without passing it back as an argument.
+fn execute_file(path: &Path) -> Result<()> {
+    let metadata = path
+        .metadata()
+        .with_context(|| format!("Cannot inspect {}", path.display()))?;
+    if !metadata.is_file() {
+        bail!("Only regular files can be executed");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = metadata.permissions();
+        let mode = permissions.mode();
+        if mode & 0o100 == 0 && which::which(path).is_err() {
+            // Grant only owner execution; preserve the remaining permissions.
+            permissions.set_mode(mode | 0o100);
+            std::fs::set_permissions(path, permissions)
+                .with_context(|| format!("Failed to make {} executable", path.display()))?;
+        }
+    }
+    spawn_detached(Command::new(path))
+        .with_context(|| format!("Failed to execute {}", path.display()))
+}
+
+fn spawn_detached(mut command: Command) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
     Ok(())
 }

@@ -233,7 +233,7 @@ class Picker:
             self.read()
         if self.process.poll() is None:
             self.process.kill()
-            raise AssertionError("Picker did not exit")
+            raise AssertionError(f"Picker did not exit: {self.screen()}")
         while select.select([self.master], [], [], 0)[0]:
             before = len(self.output)
             self.read()
@@ -543,6 +543,7 @@ assert record['args'][record['args'].index('--prompt') + 1] == ''
 assert record['args'][record['args'].index('--placeholder') + 1] == f'Open With · {file}'
 assert 'ctrl-d:set default' in record['args']
 assert 'ctrl-e:custom executable' in record['args']
+assert 'ctrl-x:make executable and run' in record['args']
 assert '{heading fade} Current default' in record['rows']
 assert record['args'][record['args'].index('--width') + 1] == '640'
 for row in record['rows'].splitlines():
@@ -620,6 +621,66 @@ while not (root / 'custom.json').exists() and time.monotonic() < deadline:
     time.sleep(0.02)
 assert json.loads((root / 'custom.json').read_text()) == [str(file)]
 assert history.read_bytes() == old_history
+
+# Ctrl+X runs the opened file itself, adding only owner execution permission.
+program = root / 'run me; $literal.AppImage'
+program.write_text("#!/usr/bin/env python3\n" + r"""
+import json, sys
+from pathlib import Path
+result = Path(__file__).parent / 'executed.json'
+temp = result.with_suffix('.tmp')
+temp.write_text(json.dumps(sys.argv))
+temp.replace(result)
+""")
+program.chmod(0o640)
+executed = root / 'executed.json'
+old_history = history.read_bytes()
+old_defaults = (root / 'defaults.jsonl').read_bytes()
+picker = Picker(program)
+picker.wait_for('Open With')
+picker.finish()
+assert program.stat().st_mode & 0o777 == 0o640
+assert not executed.exists()
+
+
+def await_execution():
+    deadline = time.monotonic() + 5
+    while not executed.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert json.loads(executed.read_text()) == [str(program)]
+    assert program.stat().st_mode & 0o777 == 0o740
+    assert history.read_bytes() == old_history
+    assert (root / 'defaults.jsonl').read_bytes() == old_defaults
+    assert len(launches()) == 3
+    executed.unlink()
+
+
+picker = Picker(program)
+picker.wait_for('Open With')
+picker.finish(b'\x18')
+await_execution()
+program.chmod(0o640)
+graphical([{'key': 'ctrl-x'}], path=program)
+await_execution()
+# Already executable programs can be launched again without changing their mode.
+graphical([{'key': 'ctrl-x'}], path=program)
+await_execution()
+
+# A directory never advertises direct execution or changes its permissions.
+directory_mode = root.stat().st_mode
+graphical([{'cancel': True}], path=root)
+assert not any(arg.startswith('ctrl-x:') for arg in menus()[-1]['args'])
+assert root.stat().st_mode == directory_mode
+
+# Invalid programs report a launch error instead of launching a handler.
+invalid_program = root / 'invalid-program'
+invalid_program.write_text('not an executable format\n')
+invalid_program.chmod(0o640)
+graphical([{'key': 'ctrl-x'}], path=invalid_program, status=1)
+assert 'Failed to execute' in menus()[-1]['rows']
+assert history.read_bytes() == old_history
+assert (root / 'defaults.jsonl').read_bytes() == old_defaults
+assert len(launches()) == 3
 
 # The GUI opens and cancels even while MIME detection is blocked.
 (root / 'cancel-immediately').touch()

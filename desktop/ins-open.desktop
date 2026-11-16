@@ -8,5 +8,5 @@ Icon=document-open
 Terminal=false
 NoDisplay=true
 Categories=Utility;
-MimeType=application/octet-stream;text/plain;text/markdown;text/html;application/pdf;application/json;application/xml;image/png;image/jpeg;image/gif;image/webp;image/svg+xml;audio/mpeg;audio/ogg;audio/flac;video/mp4;video/webm;application/zip;application/gzip;application/x-tar;inode/directory;
+MimeType=application/octet-stream;application/vnd.appimage;application/x-iso9660-appimage;application/x-executable;text/x-shellscript;text/plain;text/markdown;text/html;application/pdf;application/json;application/xml;image/png;image/jpeg;image/gif;image/webp;image/svg+xml;audio/mpeg;audio/ogg;audio/flac;video/mp4;video/webm;application/zip;application/gzip;application/x-tar;inode/directory;
 Keywords=open;applications;files;instantos;

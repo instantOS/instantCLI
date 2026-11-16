@@ -389,8 +389,10 @@ fn configure_padded_cmd<A>(
     }
     for bind in keybinds {
         let token = general_purpose::STANDARD.encode(bind.key.as_str());
+        // Including {q} lets fzf execute the action even without a matching
+        // row. Its shell-quoted value is discarded; only row indices are output.
         cmd.arg("--bind").arg(format!(
-            "{}:become(printf '%s\\n' action {token} {{+n}})",
+            "{}:become(: {{q}}; printf '%s\\n' action {token} {{+n}})",
             bind.key
         ));
     }
@@ -942,7 +944,7 @@ mod mock_tests {
         assert!(args.iter().any(|arg| arg.starts_with("enter:transform:")));
         let encoded = general_purpose::STANDARD.encode("ctrl-e");
         assert!(args.iter().any(|arg| {
-            arg == &format!("ctrl-e:become(printf '%s\\n' action {encoded} {{+n}})")
+            arg == &format!("ctrl-e:become(: {{q}}; printf '%s\\n' action {encoded} {{+n}})")
         }));
     }
 }

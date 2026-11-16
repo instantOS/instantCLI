@@ -95,7 +95,9 @@ ins video --help
 `ins open --instantmenu FILE` requires `instantmenu` and an X11 or Wayland session.
 It shares application ranking and history with the terminal picker: Enter opens,
 Ctrl+D immediately sets the selected application as the default for the file type,
-and Ctrl+E chooses a custom executable using the hosted Yazi picker. The graphical
+Ctrl+E chooses a custom executable using the hosted Yazi picker, and Ctrl+X
+makes the opened file executable for its owner and runs it directly (including
+AppImages and scripts). Ctrl+X is available for regular files only. The graphical
 menu omits previews; `--gui` opens the full terminal picker instead.
 
 The `desktop/ins-open.desktop` entry is installed by `just install`, `just rootinstall`,

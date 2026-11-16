@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn actions_and_selection_ids_are_validated() -> Result<()> {
-        let bindings = super::super::keybinds()?;
+        let bindings = super::super::keybinds(true)?;
         let items = vec![
             MenuItem::separator("Heading"),
             MenuItem::entry(OpenEntry::Error("error".into())),
