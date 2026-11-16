@@ -2,13 +2,15 @@
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 
-InstantCLI (`ins`) is a collection of Linux command-line and desktop tools from
-[instantOS](https://instantos.io). Manage dotfiles, back up game saves, diagnose
-system problems, and control desktop settings from one command.
+**A Swiss Army knife of [instantOS](https://instantos.io) utilities.**
 
-It also includes an Arch Linux installer, password and OTP management, and a
-transcript-based video editor. Desktop tools integrate with instantWM and
-instantMENU; requirements depend on the command you use.
+A single utility to manage all your Linux needs (and some more).
+
+It includes an Arch Linux installer, dotfile management, a cross-distro and
+cross-WM settings TUI, a clipboard manager, a password manager based on
+[pass](https://www.passwordstore.org/) and much more, all in a single small and
+fast executable. 
+
 
 [Documentation](https://instantos.io/docs/ins.html) ·
 [Releases](https://github.com/instantOS/instantCLI/releases)
