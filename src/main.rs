@@ -196,6 +196,9 @@ enum Commands {
         /// Optional key for preview context (selection key)
         #[arg(long)]
         key: Option<String>,
+        /// Known MIME type for a file preview, avoiding repeat detection
+        #[arg(long)]
+        mime_type: Option<String>,
     },
     /// Scratchpad terminal management
     Scratchpad {
@@ -386,8 +389,8 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
                 "Error handling clip command",
             )?;
         }
-        Some(Commands::Preview { id, key }) => {
-            preview::handle_preview_command(*id, key.clone())?;
+        Some(Commands::Preview { id, key, mime_type }) => {
+            preview::handle_preview_command(*id, key.clone(), mime_type.clone())?;
         }
         Some(Commands::Scratchpad { command }) => {
             let compositor = common::compositor::CompositorType::detect();

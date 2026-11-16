@@ -40,6 +40,7 @@ mod tests {
 
     fn ctx_with_key(key: &str) -> PreviewContext {
         PreviewContext {
+            mime_type: None,
             key: Some(key.to_string()),
             columns: Some(80),
             lines: Some(24),
@@ -80,6 +81,7 @@ mod tests {
     #[test]
     fn missing_key_is_an_error() {
         let ctx = PreviewContext {
+            mime_type: None,
             key: None,
             columns: Some(80),
             lines: Some(24),

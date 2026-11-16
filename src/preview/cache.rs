@@ -196,6 +196,7 @@ mod tests {
         }
 
         let ctx = PreviewContext {
+            mime_type: None,
             key: Some("abc".to_string()),
             columns: Some(80),
             lines: Some(24),
@@ -221,11 +222,13 @@ mod tests {
     #[test]
     fn formatted_cache_keys_include_pane_dimensions() {
         let ctx_a = PreviewContext {
+            mime_type: None,
             key: Some("flathub|org.mozilla.firefox".to_string()),
             columns: Some(80),
             lines: Some(24),
         };
         let ctx_b = PreviewContext {
+            mime_type: None,
             key: Some("flathub|org.mozilla.firefox".to_string()),
             columns: Some(120),
             lines: Some(40),
@@ -265,6 +268,7 @@ mod tests {
             std::env::set_var("INS_PREVIEW_CACHE_DIR", temp.path());
         }
         let ctx = PreviewContext {
+            mime_type: None,
             key: Some("example".to_string()),
             columns: None,
             lines: None,

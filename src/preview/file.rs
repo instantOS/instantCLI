@@ -37,7 +37,10 @@ pub(crate) fn render_file_suggestion_preview(ctx: &PreviewContext) -> Result<Str
         .build_string());
     }
 
-    let mimetype = detect_mimetype(path);
+    let mimetype = ctx
+        .mime_type
+        .clone()
+        .unwrap_or_else(|| detect_mimetype(path));
     let category = mimetype_category(&mimetype);
 
     match category {

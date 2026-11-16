@@ -196,9 +196,14 @@ impl GameSavePreviewPayload {
     }
 }
 
-pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> {
+pub fn handle_preview_command(
+    id: PreviewId,
+    key: Option<String>,
+    mime_type: Option<String>,
+) -> Result<()> {
     let ctx = PreviewContext {
         key,
+        mime_type,
         columns: env_usize("FZF_PREVIEW_COLUMNS"),
         lines: env_usize("FZF_PREVIEW_LINES"),
     };
@@ -398,6 +403,7 @@ fn stream_default_app(
 
 pub(crate) struct PreviewContext {
     key: Option<String>,
+    mime_type: Option<String>,
     #[allow(dead_code)]
     columns: Option<usize>,
     #[allow(dead_code)]

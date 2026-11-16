@@ -48,6 +48,13 @@ from pathlib import Path
 root = Path(os.environ['TEST_ROOT'])
 args = sys.argv[1:]
 if args[:2] == ['query', 'filetype']:
+    if Path(args[2]).name == 'mime-error.txt':
+        print('test MIME detection failure', file=sys.stderr)
+        sys.exit(1)
+    gate = root / 'mime-gate'
+    if gate.exists():
+        with gate.open() as stream:
+            stream.read()
     print('image/png' if args[2].endswith('.png') else 'text/plain')
 elif args[:2] == ['query', 'default']:
     print('viewer.desktop' if args[2] == 'image/png' else 'editor.desktop')
@@ -56,6 +63,15 @@ elif args[0] == 'default':
         file.write(json.dumps(args[1:]) + '\\n')
 else:
     sys.exit(1)
+""")
+# Record MIME probes; image previews may separately request descriptive metadata.
+executable("file", """
+import os, sys
+from pathlib import Path
+if '--mime-type' in sys.argv:
+    with (Path(os.environ['TEST_ROOT']) / 'file-probes').open('a') as stream:
+        stream.write('probe\\n')
+os.execv('/usr/bin/file', ['file', *sys.argv[1:]])
 """)
 terminal = executable("foot", """
 import json, os, sys
@@ -232,6 +248,51 @@ def await_launches(count):
     assert len(launches()) == count, (launches(), picker.screen())
 
 
+# Existing file previews detect types when needed; supplied types skip detection.
+standalone = subprocess.run(
+    [binary, "preview", "--id", "file-suggestion", "--key", str(file)],
+    check=True, capture_output=True, text=True,
+)
+assert "File preview contents" in standalone.stdout
+probe_log = root / "file-probes"
+assert probe_log.read_text().splitlines() == ["probe"]
+supplied = subprocess.run(
+    [binary, "preview", "--id", "file-suggestion", "--key", str(file),
+     "--mime-type", "application/x-ins-test"],
+    check=True, capture_output=True, text=True,
+)
+assert "application/x-ins-test" in supplied.stdout
+assert probe_log.read_text().splitlines() == ["probe"]
+
+# The UI, checkbox and search work while MIME detection cannot finish.
+gate = root / "mime-gate"
+os.mkfifo(gate)
+picker = Picker()
+picker.wait_for("Open With")
+assert "Current default" not in picker.screen()
+picker.send(b"\x04")
+picker.wait_for("[✓] Use as default")
+picker.send(b"Second")
+with gate.open("w") as stream:
+    stream.write("continue")
+picker.wait_for("Desktop ID: second.desktop")
+assert "[✓] Use as default" in picker.screen()
+picker.scroll_preview_to("File preview contents")
+picker.finish()
+gate.unlink()
+assert not history.exists()
+assert not launches()
+assert probe_log.read_text().splitlines() == ["probe"]
+
+# MIME failures surface inside the menu; confirming reports the actual error.
+failed_mime = root / "mime-error.txt"
+failed_mime.write_text("contents")
+picker = Picker(failed_mime)
+picker.wait_for("test MIME detection failure")
+picker.finish(b"\r", status=1)
+assert not history.exists()
+assert not launches()
+
 # A blocked association-cache read must not delay the default, its preview,
 # keyboard focus, or the checkbox. Release discovery only after verifying them.
 cache = applications / "mimeinfo.cache"
@@ -354,4 +415,5 @@ terminal_args = json.loads(terminal_record.read_text())
 assert terminal_args[-2:] == ["open", str(file)], terminal_args
 assert os.access(terminal_args[-3], os.X_OK), terminal_args
 
+assert probe_log.read_text().splitlines() == ["probe"], "File preview repeated MIME detection"
 print("Open With fzf PTY tests passed")

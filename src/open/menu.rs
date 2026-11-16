@@ -61,7 +61,9 @@ impl FzfSelectable for OpenEntry {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            Self::App { app, path, .. } => {
+            Self::App {
+                app, path, mime, ..
+            } => {
                 let mut command = match app.fzf_preview() {
                     FzfPreview::Command(command) => command,
                     FzfPreview::Text(details) => {
@@ -71,9 +73,10 @@ impl FzfSelectable for OpenEntry {
                 };
                 if let Some(path) = path.to_str() {
                     command.push_str(&format!(
-                        "\n{} preview --id file-suggestion --key {}",
+                        "\n{} preview --id file-suggestion --key {} --mime-type {}",
                         current_exe_command(),
-                        shell_quote(path)
+                        shell_quote(path),
+                        shell_quote(mime)
                     ));
                 }
                 FzfPreview::Command(command)
@@ -135,24 +138,25 @@ fn entries(
 }
 
 pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
-    let mime = model::detect_mime(path)?;
     let (sender, receiver) = crossbeam_channel::bounded(128);
-    let worker_mime = mime.clone();
     let worker_path = path.to_owned();
     std::thread::Builder::new()
         .name("open-discovery".into())
         .spawn(move || {
             let mut groups = [false; 3];
             let mut any = false;
-            let result = model::discover(worker_mime, |snapshot| {
-                for row in entries(snapshot, &worker_path, &mut groups) {
-                    any |= matches!(row, MenuItem::Entry(_));
-                    if sender.send(row).is_err() {
-                        return false;
+            let result = (|| {
+                let mime = model::detect_mime(&worker_path)?;
+                model::discover(mime, |snapshot| {
+                    for row in entries(snapshot, &worker_path, &mut groups) {
+                        any |= matches!(row, MenuItem::Entry(_));
+                        if sender.send(row).is_err() {
+                            return false;
+                        }
                     }
-                }
-                true
-            });
+                    true
+                })
+            })();
             let error = match result {
                 Err(error) => Some(format!("{error:#}")),
                 Ok(()) if !any => Some("No installed desktop applications found".into()),
@@ -169,13 +173,12 @@ pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
         .header(
             HeaderBuilder::new(NerdFont::ExternalLink, "Open With")
                 .field("File", path.to_string_lossy())
-                .field("Type", &mime)
                 .build(),
         )
         .responsive_layout()
         .stream(receiver)
         .padded()
-        .checkbox(format!("Use as default for {mime}"), false)
+        .checkbox("Use as default for this file type", false)
         .hint("use as default")
         .select()?;
     match outcome {
@@ -257,6 +260,7 @@ mod tests {
         };
         assert!(command.contains("preview --id file-suggestion --key"));
         assert!(command.contains("preview --id desktop-application --key"));
+        assert!(command.contains("--mime-type text/plain"));
         assert!(command.contains("'\\''"));
     }
 }
