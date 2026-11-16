@@ -1,13 +1,15 @@
 use anyhow::{Context, Result, bail};
 use duct::cmd;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::ui::prelude::{Level, emit};
+use crate::ui::prelude::{Level, OutputFormat, emit, get_output_format};
 
 use crate::video::cli::{TranscribeArgs, TranscribeBackend};
 use crate::video::config::VideoDirectories;
@@ -487,8 +489,9 @@ fn run_granite_driver(
         .take()
         .context("Failed to capture driver stderr")?;
 
-    let stdout_reader = spawn_output_reader(stdout);
-    let stderr_reader = spawn_output_reader(stderr);
+    let progress = Arc::new(Mutex::new(TranscriptionProgress::new()?));
+    let stdout_reader = spawn_output_reader(stdout, Arc::clone(&progress));
+    let stderr_reader = spawn_output_reader(stderr, Arc::clone(&progress));
 
     let started = Instant::now();
     let mut next_heartbeat = Duration::from_secs(30);
@@ -501,15 +504,9 @@ fn run_granite_driver(
         }
         let elapsed = started.elapsed();
         if elapsed >= next_heartbeat {
-            emit(
-                Level::Info,
-                "video.transcribe.heartbeat",
-                &format!(
-                    "Still transcribing with Granite... {} elapsed",
-                    format_elapsed(elapsed)
-                ),
-                None,
-            );
+            if let Ok(progress) = progress.lock() {
+                progress.heartbeat(elapsed);
+            }
             next_heartbeat += Duration::from_secs(30);
         }
         thread::sleep(Duration::from_millis(500));
@@ -521,6 +518,9 @@ fn run_granite_driver(
         .join()
         .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))?;
 
+    if let Ok(progress) = progress.lock() {
+        progress.clear();
+    }
     if !status.success() {
         bail!(
             "Granite transcription failed (exit {status}):\n{}",
@@ -529,6 +529,124 @@ fn run_granite_driver(
     }
     let _ = stdout_lines;
     Ok(())
+}
+
+/// One shared display for both driver streams and the process heartbeat.
+/// Machine output retains progress events; redirected text is less frequent.
+struct TranscriptionProgress {
+    bar: Option<ProgressBar>,
+    bar_style: ProgressStyle,
+    finalizing_style: ProgressStyle,
+    last_percent: Option<u64>,
+    last_logged_percent: Option<u64>,
+}
+
+impl TranscriptionProgress {
+    fn new() -> Result<Self> {
+        let bar_style = ProgressStyle::with_template(
+            "{spinner} [{elapsed_precise}] [{wide_bar}] {percent:>3}% Transcribing with Granite",
+        )?
+        .progress_chars("█▉▊▋▌▍▎▏ ");
+        let finalizing_style = ProgressStyle::with_template(
+            "{spinner} [{elapsed_precise}] Finalizing Granite transcript…",
+        )?;
+        let interactive = get_output_format() == OutputFormat::Text
+            && std::io::stdout().is_terminal()
+            && std::io::stderr().is_terminal()
+            && std::env::var("TERM").is_ok_and(|term| term != "dumb");
+        let bar = if interactive {
+            let bar = ProgressBar::new_spinner();
+            bar.set_style(ProgressStyle::with_template(
+                "{spinner} [{elapsed_precise}] Preparing Granite transcription…",
+            )?);
+            bar.enable_steady_tick(Duration::from_millis(100));
+            Some(bar)
+        } else {
+            None
+        };
+        Ok(Self {
+            bar,
+            bar_style,
+            finalizing_style,
+            last_percent: None,
+            last_logged_percent: None,
+        })
+    }
+
+    fn update(&mut self, done: u64, total: u64) {
+        if total == 0 {
+            return;
+        }
+        let done = done.min(total);
+        let percent = ((u128::from(done) * 100) / u128::from(total)) as u64;
+        // Driver windows can repeat rounded percentages, including 100%.
+        if self
+            .last_percent
+            .is_some_and(|previous| percent <= previous)
+        {
+            return;
+        }
+        let first = self.last_percent.is_none();
+        self.last_percent = Some(percent);
+        if let Some(bar) = &self.bar {
+            if first {
+                bar.set_style(self.bar_style.clone());
+            }
+            bar.set_length(total);
+            bar.set_position(done);
+            if done == total {
+                bar.set_style(self.finalizing_style.clone());
+            }
+        } else if get_output_format() == OutputFormat::Json
+            || self
+                .last_logged_percent
+                .is_none_or(|previous| percent >= previous + 5)
+            || percent == 100
+        {
+            self.last_logged_percent = Some(percent);
+            emit(
+                Level::Info,
+                "video.transcribe.progress",
+                &format!("Transcribing... {percent}%"),
+                Some(serde_json::json!({"done_ms": done, "total_ms": total, "percent": percent})),
+            );
+        }
+    }
+
+    fn heartbeat(&self, elapsed: Duration) {
+        if self.bar.is_none() {
+            emit(
+                Level::Info,
+                "video.transcribe.heartbeat",
+                &format!(
+                    "Still transcribing with Granite... {} elapsed",
+                    format_elapsed(elapsed)
+                ),
+                None,
+            );
+        }
+    }
+
+    fn warning(&self, line: &str) {
+        let show = || emit(Level::Warn, "video.transcribe.warning", line, None);
+        if let Some(bar) = &self.bar {
+            bar.suspend(show);
+        } else {
+            show();
+        }
+    }
+
+    fn clear(&self) {
+        if let Some(bar) = &self.bar {
+            bar.finish_and_clear();
+        }
+    }
+}
+
+impl Drop for TranscriptionProgress {
+    fn drop(&mut self) {
+        self.clear();
+    }
 }
 
 fn format_elapsed(elapsed: Duration) -> String {
@@ -548,7 +666,10 @@ fn format_tail(lines: &[String]) -> String {
 
 /// Drain one output stream: translate `TC_PROGRESS <done> <total>` lines into
 /// progress events and keep a rolling tail of everything else for errors.
-fn spawn_output_reader(stream: impl Read + Send + 'static) -> thread::JoinHandle<Vec<String>> {
+fn spawn_output_reader(
+    stream: impl Read + Send + 'static,
+    progress: Arc<Mutex<TranscriptionProgress>>,
+) -> thread::JoinHandle<Vec<String>> {
     thread::spawn(move || {
         let reader = BufReader::new(stream);
         let mut tail: Vec<String> = Vec::new();
@@ -558,18 +679,16 @@ fn spawn_output_reader(stream: impl Read + Send + 'static) -> thread::JoinHandle
                 if let Some((done, total)) = rest.split_once(' ')
                     && let (Ok(done), Ok(total)) = (done.parse::<u64>(), total.parse::<u64>())
                 {
-                    let pct = (done * 100).checked_div(total).unwrap_or(100);
-                    emit(
-                        Level::Info,
-                        "video.transcribe.progress",
-                        &format!("Transcribing... {pct}%"),
-                        None,
-                    );
+                    if let Ok(mut progress) = progress.lock() {
+                        progress.update(done, total);
+                    }
                 }
                 continue;
             }
             if is_diagnostic_warning(&line) {
-                emit(Level::Warn, "video.transcribe.warning", &line, None);
+                if let Ok(progress) = progress.lock() {
+                    progress.warning(&line);
+                }
             }
             if tail.len() >= OUTPUT_TAIL_LINES {
                 tail.remove(0);
@@ -582,7 +701,10 @@ fn spawn_output_reader(stream: impl Read + Send + 'static) -> thread::JoinHandle
 
 fn is_diagnostic_warning(line: &str) -> bool {
     let lowercase = line.to_ascii_lowercase();
-    lowercase.contains("warning") || lowercase.contains("warn:") || lowercase.starts_with("error:")
+    lowercase.contains("warning")
+        || lowercase.contains("warn:")
+        || lowercase.starts_with("tcwarn ")
+        || lowercase.starts_with("error:")
 }
 
 fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -> Result<()> {
@@ -743,8 +865,65 @@ mod tests {
     }
 
     #[test]
+    fn granite_progress_handles_duplicate_invalid_and_large_values() -> Result<()> {
+        let mut progress = TranscriptionProgress::new()?;
+        // A hidden bar exercises terminal updates without printing or changing
+        // the global renderer used by other tests.
+        progress.clear();
+        let bar = ProgressBar::hidden();
+        progress.bar = Some(bar.clone());
+
+        progress.update(0, 0);
+        assert_eq!(progress.last_percent, None);
+        progress.update(270, 1000);
+        assert_eq!(progress.last_percent, Some(27));
+        assert_eq!(bar.position(), 270);
+        progress.update(270, 1000);
+        progress.update(100, 1000);
+        assert_eq!(progress.last_percent, Some(27));
+        assert_eq!(bar.position(), 270);
+        progress.update(u64::MAX, u64::MAX);
+        assert_eq!(progress.last_percent, Some(100));
+        assert_eq!(bar.position(), u64::MAX);
+        assert_eq!(bar.length(), Some(u64::MAX));
+        progress.clear();
+        assert!(bar.is_finished());
+        Ok(())
+    }
+
+    #[test]
+    fn granite_output_reader_updates_progress_and_retains_error_tail() -> Result<()> {
+        let mut display = TranscriptionProgress::new()?;
+        display.clear();
+        let bar = ProgressBar::hidden();
+        display.bar = Some(bar.clone());
+        let progress = Arc::new(Mutex::new(display));
+        let mut output = String::from("TC_PROGRESS bad data\nTC_PROGRESS 1 0\n");
+        for i in 0..30 {
+            output.push_str(&format!("backend diagnostic {i}\n"));
+        }
+        output.push_str("TC_PROGRESS 50 100\nTC_PROGRESS 50 100\nTC_PROGRESS 100 100\n");
+        let tail = spawn_output_reader(std::io::Cursor::new(output), progress)
+            .join()
+            .map_err(|_| anyhow::anyhow!("output reader panicked"))?;
+        assert_eq!(tail.len(), OUTPUT_TAIL_LINES);
+        assert_eq!(
+            tail.first().map(String::as_str),
+            Some("backend diagnostic 6")
+        );
+        assert_eq!(
+            tail.last().map(String::as_str),
+            Some("backend diagnostic 29")
+        );
+        assert_eq!(bar.position(), 100);
+        assert!(bar.is_finished());
+        Ok(())
+    }
+
+    #[test]
     fn diagnostic_lines_are_distinguished_from_backend_chatter() {
         assert!(is_diagnostic_warning("WARNING: fallback in use"));
+        assert!(is_diagnostic_warning("TCWARN timestamp alignment fallback"));
         assert!(is_diagnostic_warning("backend warn: slow path"));
         assert!(is_diagnostic_warning("error: recoverable decode issue"));
         assert!(!is_diagnostic_warning(
