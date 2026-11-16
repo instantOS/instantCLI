@@ -539,6 +539,8 @@ graphical([{'cancel': True}])
 assert len(menus()) == before_cancel + 1, 'Cancellation opened an error dialog'
 record = menus()[-1]
 assert '--reject-no-match' in record['args']
+assert record['args'][record['args'].index('--prompt') + 1] == ''
+assert record['args'][record['args'].index('--placeholder') + 1] == f'Open With · {file}'
 assert 'ctrl-d:set default' in record['args']
 assert 'ctrl-e:custom executable' in record['args']
 assert '{heading fade} Current default' in record['rows']

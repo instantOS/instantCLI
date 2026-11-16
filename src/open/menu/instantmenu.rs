@@ -44,19 +44,20 @@ pub(super) fn select(
     items: Receiver<MenuItem<OpenEntry>>,
     keybinds: &[MenuKeybind<OpenAction>],
 ) -> Result<Option<MenuSelection<MenuItem<OpenEntry>, OpenAction>>> {
-    let options = ChoiceOptions::new(format!("Open With · {}", plain(&path.to_string_lossy())))
-        .with_bindings(
-            keybinds
-                .iter()
-                .map(|bind| Binding {
-                    key: bind.key.as_str().to_owned(),
-                    label: bind.label.clone(),
-                })
-                .collect(),
-        );
+    let options = ChoiceOptions::new("").with_bindings(
+        keybinds
+            .iter()
+            .map(|bind| Binding {
+                key: bind.key.as_str().to_owned(),
+                label: bind.label.clone(),
+            })
+            .collect(),
+    );
     let mut command = Command::new("instantmenu");
     command
         .args(choice_flags_with_width(&options, "640"))
+        .arg("--placeholder")
+        .arg(format!("Open With · {}", plain(&path.to_string_lossy())))
         .arg("--reject-no-match")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
