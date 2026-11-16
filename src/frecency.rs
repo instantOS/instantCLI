@@ -141,6 +141,14 @@ impl FrecencyStore {
         self.entries.keys().map(String::as_str)
     }
 
+    pub(crate) fn last_accessed(&self, item: &str) -> Option<f64> {
+        self.entries.get(item).map(|entry| entry.last_accessed)
+    }
+
+    pub(crate) fn remove(&mut self, item: &str) {
+        self.entries.remove(item);
+    }
+
     fn record_at(&mut self, item: &str, now: f64) {
         let half_life_secs = self.half_life_secs;
         let entry = self

@@ -456,7 +456,8 @@ deadline = time.monotonic() + 5
 while not (root / 'custom.json').exists() and time.monotonic() < deadline:
     time.sleep(0.02)
 assert json.loads((root / 'custom.json').read_text()) == [str(file)]
-assert history.read_bytes() == old_history
+custom_key = f'text/plain\nexec:{custom}'
+assert json.loads(history.read_text())['entries'][custom_key]['num_accesses'] >= 1
 assert len((root / "defaults.jsonl").read_text().splitlines()) == 1
 
 # --gui starts a graphical terminal without requiring an existing TTY.
@@ -515,6 +516,9 @@ if 'raw' in action:
     print(action['raw'])
     sys.exit(0)
 print(action.get('key', ''))
+if 'custom' in action:
+    row = next(line for line in rows.splitlines() if '(custom · ' + action['custom'] + ')' in line)
+    print(re.search(r'value=(\d+)', row).group(1))
 if 'desktop' in action:
     row = next(line for line in rows.splitlines() if '(' + action['desktop'] + ')' in line)
     print(re.search(r'value=(\d+)', row).group(1))
@@ -627,7 +631,46 @@ deadline = time.monotonic() + 5
 while not (root / 'custom.json').exists() and time.monotonic() < deadline:
     time.sleep(0.02)
 assert json.loads((root / 'custom.json').read_text()) == [str(file)]
-assert history.read_bytes() == old_history
+custom_key = f'text/plain\nexec:{custom}'
+assert json.loads(history.read_text())['entries'][custom_key]['num_accesses'] >= 1
+
+# Remembered executables are shared by both menus and scoped to the file type.
+graphical([{'cancel': True}])
+assert f'(custom · {custom})' in menus()[-1]['rows']
+graphical([{'cancel': True}], path=image)
+assert str(custom) not in menus()[-1]['rows']
+other_file = root / 'another file.txt'
+other_file.write_text('another document')
+(root / 'custom.json').unlink()
+graphical([{'custom': str(custom)}], path=other_file)
+deadline = time.monotonic() + 5
+while not (root / 'custom.json').exists() and time.monotonic() < deadline:
+    time.sleep(0.02)
+assert json.loads((root / 'custom.json').read_text()) == [str(other_file)]
+assert json.loads(history.read_text())['entries'][custom_key]['num_accesses'] == 3
+(root / 'custom.json').unlink()
+picker = Picker(other_file)
+picker.wait_for('Open With')
+picker.send(b'custom executable')
+picker.wait_for('Executable:')
+picker.finish(b'\r')
+deadline = time.monotonic() + 5
+while not (root / 'custom.json').exists() and time.monotonic() < deadline:
+    time.sleep(0.02)
+assert json.loads((root / 'custom.json').read_text()) == [str(other_file)]
+assert json.loads(history.read_text())['entries'][custom_key]['num_accesses'] == 4
+
+# Missing or non-executable handlers are removed on discovery, including on cancel.
+custom.chmod(0o644)
+graphical([{'cancel': True}])
+assert str(custom) not in menus()[-1]['rows']
+assert custom_key not in json.loads(history.read_text())['entries']
+custom.chmod(0o755)
+graphical([{'key': 'ctrl-e'}])
+custom.unlink()
+graphical([{'cancel': True}])
+assert custom_key not in json.loads(history.read_text())['entries']
+assert str(custom) not in menus()[-1]['rows']
 
 # Ctrl+X runs the opened file itself, adding only owner execution permission.
 program = root / 'run me; $literal.AppImage'

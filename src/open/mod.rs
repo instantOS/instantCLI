@@ -69,11 +69,21 @@ fn run_inner(args: &OpenArgs) -> Result<()> {
     let (app, mime) = match choice {
         model::Choice::Desktop { app, mime } => (app, mime),
         model::Choice::RunFile => return execute_file(&path),
-        model::Choice::Executable(executable) => {
+        model::Choice::Executable { executable, mime } => {
             let mut command = Command::new(&executable);
             command.arg(&path);
             spawn_detached(command)
                 .with_context(|| format!("Failed to open file with {}", executable.display()))?;
+            let remembered = (|| {
+                let mime = match mime {
+                    Some(mime) => mime,
+                    None => model::detect_mime(&path)?,
+                };
+                model::record_custom(&mime, &executable)
+            })();
+            if let Err(error) = remembered {
+                eprintln!("Warning: could not remember custom executable: {error:#}");
+            }
             return Ok(());
         }
     };

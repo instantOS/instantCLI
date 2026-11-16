@@ -102,6 +102,13 @@ and binaries for other CPU architectures require confirmation before permissions
 change. Ctrl+X is available for regular files only. The graphical
 menu omits previews; `--gui` opens the full terminal picker instead.
 
+Custom executables chosen with Ctrl+E are remembered per MIME type after a successful
+launch and appear alongside desktop applications in the recommended list. Reusing
+one updates its frecency score. Entries expire after 30 days without use; the cache
+keeps at most 20 per MIME type and 100 overall, evicting the least recently used.
+Missing or non-executable programs are pruned when the picker opens. Ctrl+D requires
+a desktop entry.
+
 The `desktop/ins-open.desktop` entry is installed by `just install`, `just rootinstall`,
 and the Arch package. It makes **INS Open** available in file managers' “Open With” dialogs for
 common file types and folders. To install the entry manually:

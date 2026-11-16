@@ -6,29 +6,27 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use crossbeam_channel::Receiver;
 
-use super::{OpenAction, OpenEntry};
+use super::{Application, OpenAction, OpenEntry, plain};
 use crate::menu::instantmenu::choice_flags_with_width;
 use crate::menu::protocol::{Binding, ChoiceOptions};
 use crate::menu_utils::process::tracked_spawn;
 use crate::menu_utils::{MenuItem, MenuKeybind, MenuSelection};
 
-fn plain(text: &str) -> String {
-    text.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect()
-}
-
 fn render(item: &MenuItem<OpenEntry>, index: usize) -> String {
     match item {
         MenuItem::Separator(label) => format!("{{heading fade}} {}", plain(label)),
         MenuItem::Entry(OpenEntry::App { app, recent, .. }) => {
-            let color = if app.is_default { "green " } else { "" };
-            let name = app.name.as_deref().unwrap_or(&app.desktop_id);
+            let color = if app.is_default() { "green " } else { "" };
+            let name = app.name();
+            let detail = match app.as_ref() {
+                Application::Desktop(app) => app.desktop_id.clone(),
+                Application::Executable(path) => format!("custom · {}", path.display()),
+            };
             format!(
                 "{{{color}icon=mdapplication value={index}}} {} ({}){}{}",
-                plain(name),
-                plain(&app.desktop_id),
-                if app.is_default { " (current)" } else { "" },
+                plain(&name),
+                plain(&detail),
+                if app.is_default() { " (current)" } else { "" },
                 if *recent { " · recent" } else { "" },
             )
         }

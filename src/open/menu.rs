@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use super::model::{self, Choice, DiscoveryBatch};
+use super::model::{self, Application, Choice, DiscoveryBatch};
+#[cfg(test)]
 use crate::applications::app_info::ApplicationInfo;
 use crate::applications::system::set_default_app;
 use crate::common::shell::{current_exe_command, shell_quote};
@@ -15,10 +16,16 @@ use crate::menu_utils::{
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 
+fn plain(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 enum OpenEntry {
     App {
-        app: Box<ApplicationInfo>,
+        app: Box<Application>,
         mime: String,
         path: PathBuf,
         recent: bool,
@@ -36,14 +43,22 @@ impl FzfSelectable for OpenEntry {
                 recommended,
                 ..
             } => {
-                let color = if app.is_default {
+                let color = if app.is_default() {
                     colors::GREEN
                 } else if *recommended {
                     colors::BLUE
                 } else {
                     colors::OVERLAY1
                 };
-                let mut text = app.display_with_badge_color(color);
+                let mut text = match app.as_ref() {
+                    Application::Desktop(app) => app.display_with_badge_color(color),
+                    Application::Executable(executable) => format!(
+                        "{} {} (custom · {})",
+                        format_icon_colored(NerdFont::Application, color),
+                        plain(&app.name()),
+                        plain(&executable.to_string_lossy())
+                    ),
+                };
                 if *recent {
                     text.push_str("  ↗ recent");
                 }
@@ -58,7 +73,7 @@ impl FzfSelectable for OpenEntry {
 
     fn fzf_key(&self) -> String {
         match self {
-            Self::App { app, .. } => app.desktop_id.clone(),
+            Self::App { app, .. } => app.key(),
             Self::Error(_) => "__open_error__".into(),
         }
     }
@@ -68,7 +83,14 @@ impl FzfSelectable for OpenEntry {
             Self::App {
                 app, path, mime, ..
             } => {
-                let mut command = match app.fzf_preview() {
+                let preview = match app.as_ref() {
+                    Application::Desktop(app) => app.fzf_preview(),
+                    Application::Executable(executable) => FzfPreview::Text(format!(
+                        "Custom executable\nExecutable: {}\nOpens this item by passing its path as a single argument.",
+                        executable.display()
+                    )),
+                };
+                let mut command = match preview {
                     FzfPreview::Command(command) => command,
                     FzfPreview::Text(details) => {
                         format!("printf '%s\\n' {}", shell_quote(&details))
@@ -110,7 +132,7 @@ fn entries(
             .apps
             .iter()
             .filter(|candidate| {
-                let app_group = if candidate.app.is_default {
+                let app_group = if candidate.app.is_default() {
                     0
                 } else if candidate.recommended {
                     1
@@ -217,7 +239,13 @@ pub(super) fn choose(path: &Path, backend: Backend) -> Result<Option<Choice>> {
         if matches!(selection.action, Some(OpenAction::CustomExecutable)) {
             if let DialogOutcome::Submitted(path) = backend.pick_executable()? {
                 match which::which(&path) {
-                    Ok(executable) => return Ok(Some(Choice::Executable(executable))),
+                    Ok(executable) => {
+                        let mime = selection.items.iter().find_map(|item| match item {
+                            MenuItem::Entry(OpenEntry::App { mime, .. }) => Some(mime.clone()),
+                            _ => None,
+                        });
+                        return Ok(Some(Choice::Executable { executable, mime }));
+                    }
                     Err(error) => {
                         status = format!("Cannot execute {}: {error}", path.display());
                     }
@@ -229,18 +257,26 @@ pub(super) fn choose(path: &Path, backend: Backend) -> Result<Option<Choice>> {
             continue;
         };
         match item {
-            MenuItem::Entry(OpenEntry::App { app, mime, .. }) => {
-                if matches!(selection.action, Some(OpenAction::SetDefault)) {
+            MenuItem::Entry(OpenEntry::App { app, mime, .. }) => match (*app, selection.action) {
+                (Application::Desktop(app), Some(OpenAction::SetDefault)) => {
                     set_default_app(&mime, &app.desktop_id)
                         .context("Failed to set default application")?;
                     status = format!(
                         "Default set to {}",
                         app.name.as_deref().unwrap_or(&app.desktop_id)
                     );
-                } else {
-                    return Ok(Some(Choice::Desktop { app: *app, mime }));
                 }
-            }
+                (Application::Desktop(app), _) => return Ok(Some(Choice::Desktop { app, mime })),
+                (Application::Executable(_), Some(OpenAction::SetDefault)) => {
+                    status = "Custom executables have no desktop entry for an XDG default; press Enter to open".into();
+                }
+                (Application::Executable(executable), _) => {
+                    return Ok(Some(Choice::Executable {
+                        executable,
+                        mime: Some(mime),
+                    }));
+                }
+            },
             MenuItem::Entry(OpenEntry::Error(error)) if selection.action.is_none() => bail!(error),
             _ => {}
         }
@@ -335,7 +371,7 @@ mod tests {
 
     fn candidate(id: &str, default: bool, recommended: bool, score: f64) -> Candidate {
         Candidate {
-            app: ApplicationInfo {
+            app: Application::Desktop(ApplicationInfo {
                 desktop_id: id.into(),
                 name: Some(id.into()),
                 comment: None,
@@ -344,7 +380,7 @@ mod tests {
                 is_default: default,
                 path: Some(PathBuf::from("/apps/app.desktop")),
                 mime_types: vec![],
-            },
+            }),
             recommended,
             score,
         }
