@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use super::model::{self, Choice, Snapshot};
+use super::model::{self, Choice, DiscoveryBatch};
 use crate::applications::app_info::ApplicationInfo;
 use crate::common::shell::{current_exe_command, shell_quote};
 use crate::menu_utils::{
@@ -85,7 +85,11 @@ impl FzfSelectable for OpenEntry {
 
 /// Pin the current default, then rank the remaining groups by MIME-specific usage.
 /// Sending the default first also gives an immediately correct streaming cursor.
-fn entries(snapshot: Snapshot, path: &Path) -> Vec<MenuItem<OpenEntry>> {
+fn entries(
+    snapshot: DiscoveryBatch,
+    path: &Path,
+    groups: &mut [bool; 3],
+) -> Vec<MenuItem<OpenEntry>> {
     let mut rows = Vec::new();
     if let Some(warning) = snapshot.warning {
         rows.push(MenuItem::separator(&warning));
@@ -112,7 +116,10 @@ fn entries(snapshot: Snapshot, path: &Path) -> Vec<MenuItem<OpenEntry>> {
         if applications.peek().is_none() {
             continue;
         }
-        rows.push(MenuItem::separator(label));
+        if !groups[group] {
+            rows.push(MenuItem::separator(label));
+            groups[group] = true;
+        }
         rows.extend(applications.map(|candidate| {
             MenuItem::entry(OpenEntry::App {
                 app: Box::new(candidate.app.clone()),
@@ -123,11 +130,7 @@ fn entries(snapshot: Snapshot, path: &Path) -> Vec<MenuItem<OpenEntry>> {
             })
         }));
     }
-    if !rows.iter().any(|row| matches!(row, MenuItem::Entry(_))) {
-        rows.push(MenuItem::entry(OpenEntry::Error(
-            "No installed desktop applications found".into(),
-        )));
-    }
+
     rows
 }
 
@@ -139,14 +142,24 @@ pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
     std::thread::Builder::new()
         .name("open-discovery".into())
         .spawn(move || {
-            let rows = match model::discover(worker_mime) {
-                Ok(snapshot) => entries(snapshot, &worker_path),
-                Err(error) => vec![MenuItem::entry(OpenEntry::Error(format!("{error:#}")))],
-            };
-            for row in rows {
-                if sender.send(row).is_err() {
-                    break;
+            let mut groups = [false; 3];
+            let mut any = false;
+            let result = model::discover(worker_mime, |snapshot| {
+                for row in entries(snapshot, &worker_path, &mut groups) {
+                    any |= matches!(row, MenuItem::Entry(_));
+                    if sender.send(row).is_err() {
+                        return false;
+                    }
                 }
+                true
+            });
+            let error = match result {
+                Err(error) => Some(format!("{error:#}")),
+                Ok(()) if !any => Some("No installed desktop applications found".into()),
+                Ok(()) => None,
+            };
+            if let Some(error) = error {
+                let _ = sender.send(MenuItem::entry(OpenEntry::Error(error)));
             }
         })
         .context("Failed to start application discovery")?;
@@ -204,7 +217,7 @@ mod tests {
     #[test]
     fn default_is_first_selectable_while_other_groups_keep_frecency_order() {
         let rows = entries(
-            Snapshot {
+            DiscoveryBatch {
                 mime: "text/plain".into(),
                 warning: None,
                 apps: vec![
@@ -214,6 +227,7 @@ mod tests {
                 ],
             },
             Path::new("/tmp/a file.txt"),
+            &mut [false; 3],
         );
         let ids = rows
             .iter()

@@ -1,10 +1,13 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
 use crate::applications::app_info::{ApplicationInfo, ApplicationInfoCache};
-use crate::applications::mime_cache::{get_apps_for_mime, load_mime_database};
+use crate::applications::mime_cache::{
+    MimeDatabase, canonical_mime_type, get_apps_for_mime, load_mime_database,
+};
 use crate::applications::system::query_default_app;
 use crate::frecency::FrecencyStore;
 
@@ -14,7 +17,7 @@ pub(super) struct Candidate {
     pub score: f64,
 }
 
-pub(super) struct Snapshot {
+pub(super) struct DiscoveryBatch {
     pub mime: String,
     pub apps: Vec<Candidate>,
     pub warning: Option<String>,
@@ -65,42 +68,118 @@ pub(super) fn detect_mime(path: &Path) -> Result<String> {
         }
         mime
     };
-    let database = load_mime_database()?;
-    Ok(database.canonical_type(&mime).to_owned())
+    Ok(canonical_mime_type(&mime))
 }
 
-pub(super) fn discover(mime: String) -> Result<Snapshot> {
-    let mut database = load_mime_database()?;
+/// Emit independent phases so the useful choices never wait for the full catalog.
+/// Returning false from the receiver stops further work when the menu has closed.
+pub(super) fn discover(mime: String, mut emit: impl FnMut(DiscoveryBatch) -> bool) -> Result<()> {
     let (default, warning) = match query_default_app(&mime) {
         Ok(value) => (value, None),
         Err(error) => (None, Some(format!("Could not query default: {error}"))),
     };
+    let history = FrecencyStore::load(&history_path());
     let mut catalog = ApplicationInfoCache::default();
+    let mut emitted = HashSet::new();
+    let mut apps = Vec::new();
+    if let Some(id) = default {
+        let mut app = catalog.get(&id);
+        if app.path.is_some() {
+            app.is_default = true;
+            let score = history.score(&history_key(&mime, &id));
+            emitted.insert(id);
+            apps.push(Candidate {
+                app,
+                recommended: true,
+                score,
+            });
+        }
+    }
+    if !emit(DiscoveryBatch {
+        mime: mime.clone(),
+        apps,
+        warning,
+    }) {
+        return Ok(());
+    }
+
+    let mut database = load_mime_database()?;
+    discover_remaining(
+        &mime,
+        &mut catalog,
+        &mut database,
+        &history,
+        &mut emitted,
+        emit,
+    );
+    Ok(())
+}
+
+fn discover_remaining(
+    mime: &str,
+    catalog: &mut ApplicationInfoCache,
+    database: &mut MimeDatabase,
+    history: &FrecencyStore,
+    emitted: &mut HashSet<String>,
+    mut emit: impl FnMut(DiscoveryBatch) -> bool,
+) {
+    let prefix = format!("{mime}\n");
+    let mut known = get_apps_for_mime(mime, database)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    known.extend(
+        history
+            .keys()
+            .filter_map(|key| key.strip_prefix(&prefix).map(str::to_owned)),
+    );
+    let mut recommended = Vec::new();
+    for id in &known {
+        if emitted.contains(id) {
+            continue;
+        }
+        let app = catalog.get(id);
+        if app.path.is_some() {
+            recommended.push(Candidate {
+                score: history.score(&history_key(mime, id)),
+                app,
+                recommended: true,
+            });
+            emitted.insert(id.clone());
+        }
+    }
+    rank(&mut recommended);
+    if !emit(DiscoveryBatch {
+        mime: mime.to_owned(),
+        apps: recommended,
+        warning: None,
+    }) {
+        return;
+    }
+
+    // Recover handlers absent from mimeinfo.cache as part of the last phase.
+    // Already-resolved entries are reused, so every desktop file is parsed once.
     let applications = catalog.all();
     for app in &applications {
         database.add_application(&app.desktop_id, &app.mime_types);
     }
-    let supported = get_apps_for_mime(&mime, &database);
-    let history = FrecencyStore::load(&history_path());
-    let mut apps = applications
+    let supported = get_apps_for_mime(mime, database)
         .into_iter()
-        .map(|mut app| {
-            app.is_default = default.as_deref() == Some(&app.desktop_id);
-            let score = history.score(&history_key(&mime, &app.desktop_id));
-            let recommended = app.is_default || supported.contains(&app.desktop_id) || score > 0.0;
-            Candidate {
-                app,
-                recommended,
-                score,
-            }
+        .collect::<HashSet<_>>();
+    let mut remaining = applications
+        .into_iter()
+        .filter(|app| !emitted.contains(&app.desktop_id))
+        .map(|app| Candidate {
+            recommended: supported.contains(&app.desktop_id),
+            score: 0.0,
+            app,
         })
         .collect::<Vec<_>>();
-    rank(&mut apps);
-    Ok(Snapshot {
-        mime,
-        apps,
-        warning,
-    })
+    rank(&mut remaining);
+    emit(DiscoveryBatch {
+        mime: mime.to_owned(),
+        apps: remaining,
+        warning: None,
+    });
 }
 
 fn rank(apps: &mut [Candidate]) {
@@ -130,6 +209,91 @@ fn rank(apps: &mut [Candidate]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recommendations_arrive_before_catalog_scan_with_history_and_cache_fallback() {
+        let directory = tempfile::tempdir().unwrap();
+        let entry = "[Desktop Entry]\nType=Application\nName=App\nExec=app %f\n";
+        for id in ["indexed", "recent", "other-mime", "unindexed"] {
+            let mime = if id == "unindexed" {
+                "MimeType=text/plain;\n"
+            } else {
+                ""
+            };
+            std::fs::write(
+                directory.path().join(format!("{id}.desktop")),
+                format!("{entry}{mime}"),
+            )
+            .unwrap();
+        }
+        let mut catalog = ApplicationInfoCache::new(vec![directory.path().to_owned()]);
+        let mut database = MimeDatabase::default();
+        database.add_application("indexed.desktop", &["text/plain".into()]);
+        database.add_application("removed.desktop", &["text/plain".into()]);
+        let mut history = FrecencyStore::new();
+        history.record(&history_key("text/plain", "recent.desktop"));
+        history.record(&history_key("image/png", "other-mime.desktop"));
+        let mut batches = Vec::new();
+        discover_remaining(
+            "text/plain",
+            &mut catalog,
+            &mut database,
+            &history,
+            &mut HashSet::new(),
+            |snapshot| {
+                if batches.is_empty() {
+                    assert_eq!(
+                        snapshot
+                            .apps
+                            .iter()
+                            .map(|app| app.app.desktop_id.as_str())
+                            .collect::<Vec<_>>(),
+                        ["recent.desktop", "indexed.desktop"]
+                    );
+                    // This appears in the final batch only if the catalog has
+                    // not been enumerated before delivering recommendations.
+                    std::fs::write(directory.path().join("late.desktop"), entry).unwrap();
+                }
+                batches.push(snapshot);
+                true
+            },
+        );
+        assert_eq!(batches.len(), 2);
+        let remaining = &batches[1].apps;
+        assert_eq!(remaining[0].app.desktop_id, "unindexed.desktop");
+        assert!(remaining[0].recommended);
+        assert!(
+            remaining
+                .iter()
+                .any(|app| app.app.desktop_id == "late.desktop")
+        );
+        assert!(
+            remaining
+                .iter()
+                .find(|app| app.app.desktop_id == "other-mime.desktop")
+                .is_some_and(|app| !app.recommended)
+        );
+    }
+
+    #[test]
+    fn closed_receiver_skips_catalog_scan() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut catalog = ApplicationInfoCache::new(vec![directory.path().to_owned()]);
+        discover_remaining(
+            "text/plain",
+            &mut catalog,
+            &mut MimeDatabase::default(),
+            &FrecencyStore::new(),
+            &mut HashSet::new(),
+            |_| false,
+        );
+        std::fs::write(
+            directory.path().join("late.desktop"),
+            "[Desktop Entry]\nType=Application\nExec=app\n",
+        )
+        .unwrap();
+        assert_eq!(catalog.all().len(), 1);
+    }
 
     #[test]
     fn usage_is_scoped_to_mime_type() {

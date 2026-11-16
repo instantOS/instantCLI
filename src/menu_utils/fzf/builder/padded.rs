@@ -399,10 +399,11 @@ fn configure_padded_cmd<A>(
         cmd.arg("--preview").arg(padded_preview_command(manifest));
     }
     if shared.initial_cursor.is_none() {
-        // Once discovery completes, choose the first real row for an empty query.
+        // Focus the first real row as soon as it arrives, then stop adjusting.
+        // The manifest can be ahead of fzf's reader; only consider loaded rows.
         // With a search, keep fzf's own ranking and focused result.
         cmd.arg("--bind").arg(format!(
-            "load:transform:if [ -z {{q}} ]; then awk -F '\\t' '$4 == 1 {{ printf \"pos(%d)\", NR; exit }}' {}; fi",
+            "result:transform:if [ -n {{q}} ]; then printf 'unbind(result)'; else awk -F '\\t' -v loaded=\"$FZF_TOTAL_COUNT\" 'NR > loaded {{ exit }} $4 == 1 {{ printf \"pos(%d)+unbind(result)\", NR; exit }}' {}; fi",
             crate::common::shell::shell_quote(&manifest.to_string_lossy())
         ));
     }
@@ -893,12 +894,17 @@ mod mock_tests {
         );
         let load = args
             .iter()
-            .find_map(|arg| arg.strip_prefix("load:transform:"))
+            .find_map(|arg| arg.strip_prefix("result:transform:"))
             .unwrap();
-        for (query, expected) in [("''", "pos(2)"), ("'app'", "")] {
+        for (query, loaded, expected) in [
+            ("''", "1", ""),
+            ("''", "2", "pos(2)+unbind(result)"),
+            ("'app'", "2", "unbind(result)"),
+        ] {
             let output = std::process::Command::new("bash")
                 .arg("-c")
                 .arg(load.replace("{q}", query))
+                .env("FZF_TOTAL_COUNT", loaded)
                 .output()
                 .unwrap();
             assert!(

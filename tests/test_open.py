@@ -232,6 +232,26 @@ def await_launches(count):
     assert len(launches()) == count, (launches(), picker.screen())
 
 
+# A blocked association-cache read must not delay the default, its preview,
+# keyboard focus, or the checkbox. Release discovery only after verifying them.
+cache = applications / "mimeinfo.cache"
+os.mkfifo(cache)
+picker = Picker()
+picker.wait_for("Desktop ID: editor.desktop")
+picker.wait_focused("Default Editor")
+picker.send(b"\x04")
+picker.wait_for("[✓] Use as default")
+with cache.open("w") as stream:
+    stream.write("[MIME Cache]\ntext/plain=editor.desktop;second.desktop;terminal.desktop;broken.desktop;\n")
+picker.wait_for("Recommended")
+picker.send(b"Second")
+picker.wait_for("Desktop ID: second.desktop")
+assert "[✓] Use as default" in picker.screen()
+picker.finish()
+cache.unlink()
+cache.write_text("[MIME Cache]\ntext/plain=editor.desktop;second.desktop;terminal.desktop;broken.desktop;\n")
+
+
 picker = Picker()
 picker.wait_for("Current default")
 assert picker.screen().count("Ctrl D") == 1, picker.screen()

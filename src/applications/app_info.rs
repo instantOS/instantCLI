@@ -124,29 +124,34 @@ impl ApplicationInfo {
 }
 
 pub(crate) struct ApplicationInfoCache {
-    paths: HashMap<String, PathBuf>,
+    roots: Vec<PathBuf>,
+    path_dirs: Vec<PathBuf>,
+    paths: Option<HashMap<String, PathBuf>>,
     entries: HashMap<String, ApplicationInfo>,
 }
 
 impl Default for ApplicationInfoCache {
     fn default() -> Self {
-        let paths = crate::applications::discovery::discover_file_handlers()
-            .into_iter()
-            .filter_map(|item| match item {
-                crate::applications::types::LaunchItem::DesktopApp { id, path, .. } => {
-                    Some((id, path))
-                }
-                _ => None,
-            })
-            .collect();
-        Self {
-            paths,
-            entries: HashMap::new(),
-        }
+        Self::new(
+            crate::applications::data_dirs()
+                .into_iter()
+                .map(|root| root.join("applications"))
+                .collect(),
+        )
     }
 }
 
 impl ApplicationInfoCache {
+    pub(crate) fn new(roots: Vec<PathBuf>) -> Self {
+        Self {
+            roots,
+            path_dirs: std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                .collect(),
+            paths: None,
+            entries: HashMap::new(),
+        }
+    }
+
     pub(crate) fn get(&mut self, desktop_id: &str) -> ApplicationInfo {
         if let Some(info) = self.entries.get(desktop_id) {
             return info.clone();
@@ -158,15 +163,26 @@ impl ApplicationInfoCache {
     }
 
     pub(crate) fn all(&mut self) -> Vec<ApplicationInfo> {
-        let ids = self.paths.keys().cloned().collect::<Vec<_>>();
-        ids.iter().map(|id| self.get(id)).collect()
+        let paths = self
+            .paths
+            .get_or_insert_with(|| crate::applications::discovery::desktop_paths(&self.roots));
+        let ids = paths.keys().cloned().collect::<Vec<_>>();
+        ids.iter()
+            .map(|id| self.get(id))
+            .filter(|app| app.path.is_some())
+            .collect()
     }
 
     fn load(&self, desktop_id: &str) -> ApplicationInfo {
-        if let Some(path) = self.paths.get(desktop_id)
-            && let Ok(content) = std::fs::read_to_string(path)
+        let path = match &self.paths {
+            Some(paths) => paths.get(desktop_id).cloned(),
+            None => crate::applications::discovery::desktop_path(&self.roots, desktop_id),
+        };
+        if let Some(path) = path
+            && path.is_file()
+            && let Ok(content) = std::fs::read_to_string(&path)
             && let Some(entry) = DesktopEntry::parse(&content)
-            && entry.entry_type == Some("Application")
+            && crate::applications::discovery::handler_available(&entry, &self.path_dirs, None)
         {
             return ApplicationInfo {
                 desktop_id: desktop_id.to_string(),
@@ -204,6 +220,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn direct_lookup_and_catalog_agree_on_masks_nested_ids_and_availability() {
+        let root = tempfile::tempdir().unwrap();
+        let high = root.path().join("high");
+        let low = root.path().join("low");
+        std::fs::create_dir_all(high.join("vendor")).unwrap();
+        std::fs::create_dir_all(&low).unwrap();
+        let entry = "[Desktop Entry]\nType=Application\nName=Example\nExec=example %f\n";
+        std::fs::write(high.join("vendor/example.desktop"), entry).unwrap();
+        std::fs::write(
+            high.join("vendor-example.desktop"),
+            entry.replace("Example", "Flat"),
+        )
+        .unwrap();
+        std::fs::write(high.join("hidden.desktop"), format!("{entry}Hidden=true\n")).unwrap();
+        std::fs::write(low.join("hidden.desktop"), entry).unwrap();
+        std::fs::write(
+            high.join("missing.desktop"),
+            format!("{entry}TryExec=/nonexistent/ins-test-command\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            high.join("handler.desktop"),
+            format!("{entry}NoDisplay=true\nOnlyShowIn=OtherDesktop;\n"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(high.join("vendor"), high.join("linked.desktop")).unwrap();
+        std::fs::write(low.join("linked.desktop"), entry).unwrap();
+        std::os::unix::fs::symlink(high.join("nonexistent"), high.join("broken.desktop")).unwrap();
+        std::fs::write(low.join("broken.desktop"), entry).unwrap();
+        let mut cache = ApplicationInfoCache::new(vec![high.clone(), low.clone()]);
+        assert_eq!(
+            cache.get("linked.desktop").path,
+            Some(low.join("linked.desktop"))
+        );
+        assert!(cache.get("broken.desktop").path.is_none());
+        assert_eq!(
+            cache.get("vendor-example.desktop").path,
+            Some(high.join("vendor/example.desktop"))
+        );
+        assert!(cache.get("hidden.desktop").path.is_none());
+        assert!(cache.get("missing.desktop").path.is_none());
+        assert!(cache.get("../hidden.desktop").path.is_none());
+        let direct = cache.get("handler.desktop");
+        assert!(direct.path.is_some());
+        let apps = cache.all();
+        assert_eq!(apps.len(), 4);
+        let mut indexed = ApplicationInfoCache::new(vec![high, low]);
+        let indexed_apps = indexed.all();
+        for app in apps {
+            assert_eq!(app.path, indexed.get(&app.desktop_id).path);
+        }
+        assert_eq!(indexed_apps.len(), 4);
+    }
+
+    #[test]
     fn application_details_are_parsed_once_per_snapshot() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("example.desktop");
@@ -212,10 +283,7 @@ mod tests {
             "[Desktop Entry]\nType=Application\nName=Original\nComment=Details\nExec=example\n",
         )
         .unwrap();
-        let mut cache = ApplicationInfoCache {
-            paths: HashMap::from([("example.desktop".into(), path.clone())]),
-            entries: HashMap::new(),
-        };
+        let mut cache = ApplicationInfoCache::new(vec![directory.path().to_owned()]);
 
         let first = cache.get("example.desktop");
         std::fs::write(
@@ -228,5 +296,6 @@ mod tests {
         assert_eq!(first.name.as_deref(), Some("Original"));
         assert_eq!(first.comment.as_deref(), Some("Details"));
         assert_eq!(second.name.as_deref(), Some("Original"));
+        assert_eq!(cache.all()[0].name.as_deref(), Some("Original"));
     }
 }

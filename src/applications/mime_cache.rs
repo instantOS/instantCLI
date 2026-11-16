@@ -29,6 +29,12 @@ impl MimeDatabase {
     }
 }
 
+pub(crate) fn canonical_mime_type(mime: &str) -> String {
+    load_mime_aliases()
+        .remove(mime)
+        .unwrap_or_else(|| mime.to_owned())
+}
+
 pub(crate) fn load_mime_database() -> Result<MimeDatabase> {
     let mut mime_map: HashMap<String, Vec<String>> = HashMap::new();
     let cache_paths = get_mimeinfo_cache_paths();

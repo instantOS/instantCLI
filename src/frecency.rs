@@ -136,6 +136,11 @@ impl FrecencyStore {
         self.score_at(item, unix_now())
     }
 
+    /// Tracked keys, for resolving recent items before enumerating a whole catalog.
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &str> {
+        self.entries.keys().map(String::as_str)
+    }
+
     fn record_at(&mut self, item: &str, now: f64) {
         let half_life_secs = self.half_life_secs;
         let entry = self
