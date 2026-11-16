@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::common::desktop_entry::DesktopEntry;
+use crate::common::shell::{current_exe_command, shell_quote};
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
@@ -23,14 +24,52 @@ pub(crate) struct ApplicationInfo {
 
 impl FzfSelectable for ApplicationInfo {
     fn fzf_display_text(&self) -> String {
-        let icon = format_icon_colored(
-            NerdFont::Desktop,
-            if self.is_default {
-                colors::GREEN
-            } else {
-                colors::BLUE
-            },
-        );
+        self.display_with_badge_color(if self.is_default {
+            colors::GREEN
+        } else {
+            colors::BLUE
+        })
+    }
+
+    fn fzf_key(&self) -> String {
+        self.desktop_id.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match serde_json::to_string(&ApplicationPreviewKey {
+            desktop_id: self.desktop_id.clone(),
+            is_default: self.is_default,
+        }) {
+            Ok(key) => FzfPreview::Command(format!(
+                "{} preview --id desktop-application --key {}",
+                current_exe_command(),
+                shell_quote(&key)
+            )),
+            Err(error) => {
+                FzfPreview::Text(format!("Could not prepare application preview: {error}"))
+            }
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ApplicationPreviewKey {
+    desktop_id: String,
+    is_default: bool,
+}
+
+/// Render in fzf's preview process, where the actual pane width is available.
+pub(crate) fn render_application_preview(key: &str) -> anyhow::Result<String> {
+    let key: ApplicationPreviewKey = serde_json::from_str(key)?;
+    let mut app = ApplicationInfoCache::default().get(&key.desktop_id);
+    app.is_default = key.is_default;
+    Ok(app.preview_text())
+}
+
+impl ApplicationInfo {
+    /// Let a menu distinguish recommendation groups without duplicating row formatting.
+    pub(crate) fn display_with_badge_color(&self, color: &str) -> String {
+        let icon = format_icon_colored(NerdFont::Application, color);
         let mut text = if let Some(name) = &self.name {
             format!("{icon} {name} ({})", self.desktop_id)
         } else {
@@ -45,13 +84,9 @@ impl FzfSelectable for ApplicationInfo {
         text
     }
 
-    fn fzf_key(&self) -> String {
-        self.desktop_id.clone()
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
+    fn preview_text(&self) -> String {
         let title = self.name.as_deref().unwrap_or(&self.desktop_id);
-        let mut builder = PreviewBuilder::new().header(NerdFont::Desktop, title);
+        let mut builder = PreviewBuilder::new().header(NerdFont::Application, title);
 
         if self.is_default {
             builder = builder
@@ -84,7 +119,7 @@ impl FzfSelectable for ApplicationInfo {
             builder = builder.field_indented("Icon", icon);
         }
 
-        builder.build()
+        builder.build_string()
     }
 }
 

@@ -2,18 +2,11 @@ use std::process::Command;
 
 use anyhow::Result;
 
-use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
 pub(crate) fn render_bluetooth_preview() -> Result<String> {
-    let green = hex_to_ansi_fg(colors::GREEN);
-    let red = hex_to_ansi_fg(colors::RED);
-    let teal = hex_to_ansi_fg(colors::TEAL);
-    let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-    let mauve = hex_to_ansi_fg(colors::MAUVE);
-    let reset = "\x1b[0m";
-
     let systemd = crate::common::systemd::SystemdManager::system();
     let active = systemd.is_active("bluetooth.service");
     let enabled = systemd.is_enabled("bluetooth.service");
@@ -33,23 +26,32 @@ pub(crate) fn render_bluetooth_preview() -> Result<String> {
         .blank()
         .line(colors::TEAL, Some(NerdFont::ChevronRight), "Current Status");
 
-    if active {
-        let icon = char::from(NerdFont::CircleCheck);
-        builder = builder.raw(&format!(
-            "  {green}{icon}{reset} Bluetooth service is running"
-        ));
+    builder = if active {
+        builder.indented_line(
+            colors::GREEN,
+            Some(NerdFont::CircleCheck),
+            "Bluetooth service is running",
+        )
     } else {
-        let icon = char::from(NerdFont::Circle);
-        builder = builder.raw(&format!(
-            "  {red}{icon}{reset} Bluetooth service is stopped"
-        ));
-    }
-
-    if enabled {
-        builder = builder.raw(&format!("  {teal}  Enabled at boot{reset}"));
-    } else {
-        builder = builder.raw(&format!("  {subtext}  Disabled at boot{reset}"));
-    }
+        builder.indented_line(
+            colors::RED,
+            Some(NerdFont::Circle),
+            "Bluetooth service is stopped",
+        )
+    };
+    builder = builder.indented_line(
+        if enabled {
+            colors::TEAL
+        } else {
+            colors::SUBTEXT0
+        },
+        None,
+        if enabled {
+            "Enabled at boot"
+        } else {
+            "Disabled at boot"
+        },
+    );
 
     builder = builder.blank().line(
         colors::TEAL,
@@ -58,17 +60,16 @@ pub(crate) fn render_bluetooth_preview() -> Result<String> {
     );
 
     if which::which("bluetoothctl").is_err() {
-        builder = builder.raw(&format!("  {subtext}bluetoothctl not installed{reset}"));
+        builder = builder.subtext("bluetoothctl not installed");
         return Ok(builder.build_string());
     }
 
     let devices = bluetooth_connected_devices();
     if devices.is_empty() {
-        builder = builder.raw(&format!("  {subtext}No devices connected{reset}"));
+        builder = builder.subtext("No devices connected");
     } else {
         for device in devices {
-            let bullet = char::from(NerdFont::Bullet);
-            builder = builder.raw(&format!("  {mauve}{bullet}{reset} {device}"));
+            builder = builder.bullet(&device);
         }
     }
 

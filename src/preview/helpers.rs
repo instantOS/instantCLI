@@ -24,9 +24,9 @@ pub(crate) fn indent_lines(lines: &[String], indent: &str) -> Vec<String> {
     lines.iter().map(|line| format!("{indent}{line}")).collect()
 }
 
-pub(crate) fn push_raw_lines(mut builder: PreviewBuilder, lines: &[String]) -> PreviewBuilder {
+pub(crate) fn push_text_lines(mut builder: PreviewBuilder, lines: &[String]) -> PreviewBuilder {
     for line in lines {
-        builder = builder.raw(line);
+        builder = builder.text(line);
     }
     builder
 }
@@ -48,11 +48,11 @@ pub(crate) fn truncate_label(label: &str, limit: usize) -> String {
 }
 
 pub(crate) trait PreviewBuilderExt {
-    fn raw_lines(self, lines: &[String]) -> Self;
+    fn text_lines(self, lines: &[String]) -> Self;
 }
 
 impl PreviewBuilderExt for PreviewBuilder {
-    fn raw_lines(self, lines: &[String]) -> Self {
-        push_raw_lines(self, lines)
+    fn text_lines(self, lines: &[String]) -> Self {
+        push_text_lines(self, lines)
     }
 }

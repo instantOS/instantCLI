@@ -167,7 +167,11 @@ mod tests {
         else {
             panic!("DuckStation help must have a preview");
         };
-        assert!(preview.contains("download the x86_64 AppImage automatically"));
+        let prose = crate::ui::text::strip_ansi(&preview)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(prose.contains("download the x86_64 AppImage automatically"));
         assert!(preview.contains(super::super::duckstation::DEFAULT_DUCKSTATION_PATH));
     }
 }

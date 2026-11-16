@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::preview::PreviewContext;
 use crate::preview::helpers::{PreviewBuilderExt, indent_lines};
-use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -19,10 +19,6 @@ pub(crate) fn render_disk_preview(ctx: &PreviewContext) -> Result<String> {
             .text("lsblk not found on this system.")
             .build_string());
     }
-
-    let warning = hex_to_ansi_fg(colors::YELLOW);
-    let ok = hex_to_ansi_fg(colors::GREEN);
-    let reset = "\x1b[0m";
 
     let mount_lines = disk_mount_status(disk);
 
@@ -39,23 +35,23 @@ pub(crate) fn render_disk_preview(ctx: &PreviewContext) -> Result<String> {
         .line(mount_status_color, Some(mount_status_icon), "Mount Status");
 
     if mount_lines.is_empty() {
-        builder = builder.raw(&format!("{ok}  No mounted partitions detected{reset}"));
+        builder = builder.line(colors::GREEN, None, "No mounted partitions detected");
     } else {
-        builder = builder.raw(&format!("{warning}  Mounted partitions detected{reset}"));
+        builder = builder.line(colors::YELLOW, None, "Mounted partitions detected");
         for line in &mount_lines {
-            builder = builder.raw(&format!("    {line}"));
+            builder = builder.indented_line(colors::TEXT, None, line);
         }
-        builder = builder.raw(&format!("{warning}  Unmount before proceeding.{reset}"));
+        builder = builder.line(colors::YELLOW, None, "Unmount before proceeding.");
     }
 
     let device_lines = lsblk_lines(&["-d", "-l", "-n", "-o", "NAME,SIZE,MODEL,TYPE", disk]);
     builder = builder
         .blank()
         .line(colors::TEAL, None, "Device")
-        .raw_lines(&indent_lines(&device_lines, "  "))
+        .text_lines(&indent_lines(&device_lines, "  "))
         .blank()
         .line(colors::TEAL, None, "Partitions")
-        .raw_lines(&indent_lines(
+        .text_lines(&indent_lines(
             &lsblk_lines(&["-l", "-n", "-o", "NAME,SIZE,FSTYPE,MOUNTPOINT", disk]),
             "  ",
         ));
@@ -83,10 +79,10 @@ pub(crate) fn render_partition_preview(ctx: &PreviewContext) -> Result<String> {
         .subtext("Verify the filesystem and mount point before selecting.")
         .blank()
         .line(colors::TEAL, None, "Overview")
-        .raw_lines(&indent_lines(&overview, "  "))
+        .text_lines(&indent_lines(&overview, "  "))
         .blank()
         .line(colors::TEAL, None, "Identifiers")
-        .raw_lines(&indent_lines(&identifiers, "  "))
+        .text_lines(&indent_lines(&identifiers, "  "))
         .build_string();
 
     Ok(builder)

@@ -47,7 +47,7 @@ fn render_mime_type_impl(mime_type: &str, preview: &mut PreviewWriter) -> Result
         .blank()
         .line(colors::TEAL, Some(NerdFont::ChevronRight), "Details")
         .field_indented("Type", mime_type)
-        .raw(&format!("  Category: {category}"))
+        .field_indented("Category", category)
         .blank()
         .line(
             colors::TEAL,

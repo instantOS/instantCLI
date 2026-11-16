@@ -12,9 +12,6 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::history::ClipEntry;
 
-// PreviewBuilder emits: padding, header, description, three fields, one
-// language/padding row, separator, and a blank before the payload.
-const BODY_TOP: usize = 9;
 const TEXT_LIMIT: usize = 256 * 1024;
 const HEX_LIMIT: usize = 512;
 
@@ -32,22 +29,22 @@ pub fn render(entry: &ClipEntry) -> Result<()> {
     let language = is_text(&mime, &bytes)
         .then(|| detect_language(&String::from_utf8_lossy(&bytes)))
         .flatten();
-    print_header(entry, &mime, &description, bytes.len(), language.as_ref());
+    let body_top = print_header(entry, &mime, &description, bytes.len(), language.as_ref());
 
     if mime.starts_with("image/") {
-        return preview_image(file.path());
+        return preview_image(file.path(), body_top);
     }
     if mime == "application/pdf" {
-        return preview_pdf(file.path());
+        return preview_pdf(file.path(), body_top);
     }
     if mime.starts_with("video/") {
-        return preview_video(file.path());
+        return preview_video(file.path(), body_top);
     }
     if mime.starts_with("audio/") {
-        return preview_media_metadata(file.path());
+        return preview_media_metadata(file.path()).map(|_| ());
     }
     if is_archive(&mime) {
-        return preview_archive(file.path());
+        return preview_archive(file.path(), body_top);
     }
     if is_text(&mime, &bytes) {
         if let Some(language) = language
@@ -69,7 +66,7 @@ fn print_header(
     description: &str,
     size: usize,
     language: Option<&DetectedLanguage>,
-) {
+) -> usize {
     let (icon, title, color) = preview_identity(mime, language);
     let mut preview = PreviewBuilder::streaming()
         .header(icon, title)
@@ -79,11 +76,8 @@ fn print_header(
         .field("Size", &human_size(size));
     if let Some(language) = language {
         preview = preview.field("Language", language.label);
-    } else {
-        // Keep the body at a stable row for Kitty placement.
-        preview = preview.blank();
     }
-    drop(preview.separator().blank());
+    preview.separator().blank().line_count()
 }
 
 fn preview_identity(
@@ -130,8 +124,8 @@ fn file_description(path: &Path) -> String {
         .unwrap_or_else(|| "Clipboard data".to_string())
 }
 
-fn preview_image(path: &Path) -> Result<()> {
-    if render_terminal_image(path, BODY_TOP)? {
+fn preview_image(path: &Path, body_top: usize) -> Result<()> {
+    if render_terminal_image(path, body_top)? {
         return Ok(());
     }
     let mut preview = PreviewBuilder::streaming().line(
@@ -146,7 +140,7 @@ fn preview_image(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn preview_pdf(path: &Path) -> Result<()> {
+fn preview_pdf(path: &Path, body_top: usize) -> Result<()> {
     let thumbnail = tempfile::Builder::new()
         .prefix("ins-clip-pdf-")
         .suffix(".png")
@@ -161,7 +155,7 @@ fn preview_pdf(path: &Path) -> Result<()> {
         .status()
         .is_ok_and(|status| status.success());
     let rendered_path = output_base.with_extension("png");
-    if rendered && render_terminal_image(&rendered_path, BODY_TOP)? {
+    if rendered && render_terminal_image(&rendered_path, body_top)? {
         let _ = fs::remove_file(rendered_path);
         return Ok(());
     }
@@ -178,8 +172,8 @@ fn preview_pdf(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn preview_video(path: &Path) -> Result<()> {
-    preview_media_metadata(path)?;
+fn preview_video(path: &Path, body_top: usize) -> Result<()> {
+    let metadata_lines = preview_media_metadata(path)?;
     let thumbnail = tempfile::Builder::new()
         .prefix("ins-clip-video-")
         .suffix(".png")
@@ -192,12 +186,12 @@ fn preview_video(path: &Path) -> Result<()> {
         .status()
         .is_ok_and(|status| status.success());
     if rendered {
-        let _ = render_terminal_image(thumbnail.path(), BODY_TOP + 7)?;
+        let _ = render_terminal_image(thumbnail.path(), body_top + metadata_lines)?;
     }
     Ok(())
 }
 
-fn preview_media_metadata(path: &Path) -> Result<()> {
+fn preview_media_metadata(path: &Path) -> Result<usize> {
     let output = Command::new("ffprobe")
         .args([
             "-v",
@@ -234,22 +228,20 @@ fn preview_media_metadata(path: &Path) -> Result<()> {
             };
             preview = preview.field(label, &value);
         }
-        drop(preview);
+        return Ok(preview.line_count());
     }
-    Ok(())
+    Ok(0)
 }
 
-fn preview_archive(path: &Path) -> Result<()> {
+fn preview_archive(path: &Path, body_top: usize) -> Result<()> {
     let output = Command::new("bsdtar").arg("-tf").arg(path).output();
     match output {
         Ok(output) if output.status.success() => {
             let listing = String::from_utf8_lossy(&output.stdout);
             let mut preview = PreviewBuilder::streaming().title(colors::YELLOW, "Archive contents");
-            for line in listing
-                .lines()
-                .take(preview_lines().saturating_sub(BODY_TOP))
-            {
-                preview = preview.raw(line);
+            let remaining = preview_lines().saturating_sub(body_top + preview.line_count());
+            for line in listing.lines().take(remaining) {
+                preview = preview.text(line);
             }
             drop(preview);
         }

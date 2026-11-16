@@ -178,6 +178,19 @@ class Picker:
             if time.monotonic() >= deadline or self.process.poll() is not None:
                 raise AssertionError(f"Missing {text!r}: {self.screen()}")
 
+    def wait_focused(self, text):
+        deadline = time.monotonic() + 10
+        while not any("▌" in line and text in line for line in self.screen().splitlines()):
+            self.read()
+            if time.monotonic() >= deadline or self.process.poll() is not None:
+                raise AssertionError(f"Not focused on {text!r}: {self.screen()}")
+
+    def double_click_separator(self, text):
+        rows = self.screen().splitlines()
+        row = next(i for i, line in enumerate(rows) if "╌╌" in line and text in line[:self.width // 2])
+        event = f"\x1b[<0;12;{row + 1}M\x1b[<0;12;{row + 1}m".encode()
+        self.send(event + event)
+
     def scroll_preview_to(self, text):
         deadline = time.monotonic() + 10
         while text not in self.screen():
@@ -229,6 +242,27 @@ assert b"Hidden Application" not in picker.output
 picker.finish()
 assert not history.exists()
 assert not launches()
+
+# A streamed menu remains alive on separator confirmation after discovery ends.
+# Wheel navigation may focus a heading; Enter and double-click must not submit it.
+picker = Picker()
+picker.wait_for("Desktop ID: editor.desktop")
+assert b"\xe2\x81\xa0" not in picker.output, "Query contains the old invisible marker"
+picker.send(b"\x04")
+picker.wait_for("[✓] Use as default")
+selected_row = next(i for i, line in enumerate(picker.screen().splitlines())
+                    if "▌" in line and "Default Editor" in line[:picker.width // 2])
+picker.send(f"\x1b[<64;12;{selected_row + 1}M".encode())  # Wheel up over the list.
+picker.wait_focused("Current default")
+picker.send(b"\r")
+picker.double_click_separator("Current default")
+picker.send(b"Second")
+picker.wait_for("Desktop ID: second.desktop")
+assert "[✓] Use as default" in picker.screen(), "Checkbox state was lost"
+assert not launches()
+assert not history.exists()
+assert not (root / "defaults.jsonl").exists()
+picker.finish()
 
 # Native footer checkbox; default app is preselected.
 picker = Picker()

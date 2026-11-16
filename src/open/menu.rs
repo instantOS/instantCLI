@@ -18,6 +18,7 @@ enum OpenEntry {
         mime: String,
         path: PathBuf,
         recent: bool,
+        recommended: bool,
     },
     Error(String),
 }
@@ -25,8 +26,20 @@ enum OpenEntry {
 impl FzfSelectable for OpenEntry {
     fn fzf_display_text(&self) -> String {
         match self {
-            Self::App { app, recent, .. } => {
-                let mut text = app.fzf_display_text();
+            Self::App {
+                app,
+                recent,
+                recommended,
+                ..
+            } => {
+                let color = if app.is_default {
+                    colors::GREEN
+                } else if *recommended {
+                    colors::BLUE
+                } else {
+                    colors::OVERLAY1
+                };
+                let mut text = app.display_with_badge_color(color);
                 if *recent {
                     text.push_str("  ↗ recent");
                 }
@@ -49,10 +62,13 @@ impl FzfSelectable for OpenEntry {
     fn fzf_preview(&self) -> FzfPreview {
         match self {
             Self::App { app, path, .. } => {
-                let FzfPreview::Text(details) = app.fzf_preview() else {
-                    return FzfPreview::None;
+                let mut command = match app.fzf_preview() {
+                    FzfPreview::Command(command) => command,
+                    FzfPreview::Text(details) => {
+                        format!("printf '%s\\n' {}", shell_quote(&details))
+                    }
+                    FzfPreview::None => return FzfPreview::None,
                 };
-                let mut command = format!("printf '%s\\n' {}", shell_quote(&details));
                 if let Some(path) = path.to_str() {
                     command.push_str(&format!(
                         "\n{} preview --id file-suggestion --key {}",
@@ -103,6 +119,7 @@ fn entries(snapshot: Snapshot, path: &Path) -> Vec<MenuItem<OpenEntry>> {
                 mime: snapshot.mime.clone(),
                 path: path.to_owned(),
                 recent: candidate.score > 0.0,
+                recommended: candidate.recommended,
             })
         }));
     }
@@ -222,13 +239,14 @@ mod tests {
             mime: "text/plain".into(),
             path: PathBuf::from("/tmp/a 'file'; $literal"),
             recent: false,
+            recommended: true,
         }
         .fzf_preview();
         let FzfPreview::Command(command) = preview else {
             panic!("Expected async command preview");
         };
         assert!(command.contains("preview --id file-suggestion --key"));
-        assert!(command.contains("Desktop ID"));
+        assert!(command.contains("preview --id desktop-application --key"));
         assert!(command.contains("'\\''"));
     }
 }

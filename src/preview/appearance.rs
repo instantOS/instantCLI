@@ -28,20 +28,20 @@ pub(crate) fn render_dark_mode_preview() -> Result<String> {
         .text("Sets the GTK 4 color-scheme preference for compatible apps.")
         .blank()
         .subtext("Current state")
-        .raw(&format!("  Mode: {mode}"))
-        .raw(&format!("  GTK theme: {gtk_theme}"))
-        .raw(&format!("  Icon theme: {icon_theme}"))
+        .field_indented("Mode", mode)
+        .field_indented("GTK theme", &gtk_theme)
+        .field_indented("Icon theme", &icon_theme)
         .blank()
         .separator()
         .blank()
-        .raw(&format!("  Will switch to: {target_mode} mode"));
+        .field("Will switch to", &format!("{target_mode} mode"));
 
     let arrow = char::from(NerdFont::ArrowPointer);
     if gtk_changed {
-        builder = builder.raw(&format!("  GTK: {gtk_theme} {arrow} {new_gtk}"));
+        builder = builder.field("GTK", &format!("{gtk_theme} {arrow} {new_gtk}"));
     }
     if icon_changed {
-        builder = builder.raw(&format!("  Icons: {icon_theme} {arrow} {new_icon}"));
+        builder = builder.field("Icons", &format!("{icon_theme} {arrow} {new_icon}"));
     }
 
     Ok(builder.build_string())
