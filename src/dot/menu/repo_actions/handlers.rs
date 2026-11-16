@@ -38,7 +38,7 @@ fn select_repo_action(
     db: &Database,
     cursor: &mut MenuCursor,
 ) -> Result<Option<RepoAction>> {
-    let actions = build_repo_action_menu(repo_name, config, db);
+    let actions = build_repo_action_menu(repo_name, config, db)?;
 
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy(&format!("Repository: {}", repo_name)))
