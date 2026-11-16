@@ -123,11 +123,7 @@ impl ProtectedDevices {
             bail!("Target is not a block device: {path}");
         }
         let device = metadata.rdev();
-        let identity = format!(
-            "{}:{}",
-            nix::sys::stat::major(device),
-            nix::sys::stat::minor(device)
-        );
+        let identity = format!("{}:{}", nix::libc::major(device), nix::libc::minor(device));
         if let Some(source) = self.0.get(&identity) {
             bail!(
                 "Cannot install onto {path}: {source} was in use by the host when the bootstrap started. Unmount a spare disk on the host before starting the installer; use the live ISO for the host's own disk."

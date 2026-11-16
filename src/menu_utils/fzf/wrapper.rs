@@ -1,6 +1,6 @@
 //! FZF wrapper and selection logic
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use crossbeam_channel::{Receiver, TryRecvError, bounded, select};
 use serde::de::DeserializeOwned;
@@ -372,7 +372,7 @@ pub(super) fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    tracked_spawn(cmd)
+    tracked_spawn(cmd).context("Failed to start fzf; ensure fzf is installed and available in PATH")
 }
 
 /// Wait for fzf to exit, release its registration, and map wait failures
