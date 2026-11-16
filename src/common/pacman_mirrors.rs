@@ -328,7 +328,7 @@ fn split_lines_preserving_endings(content: &str) -> impl Iterator<Item = LinePar
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
     #[test]
@@ -541,6 +541,15 @@ Server = file:///run/archiso/bootmnt/offline-repo/$repo/os/$arch
 
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
+            // Consume the request before replying so closing the socket does not
+            // discard unread data and reset the connection on the client.
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                assert_eq!(stream.read(&mut byte).await.unwrap(), 1);
+                request.push(byte[0]);
+                assert!(request.len() <= 8192, "request headers are too large");
+            }
             let headers = format!(
                 "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
