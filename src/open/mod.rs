@@ -14,11 +14,29 @@ pub(crate) struct OpenArgs {
     /// Local file or directory to open
     pub path: PathBuf,
     /// Open the picker in the configured graphical terminal
-    #[arg(long)]
+    #[arg(long, conflicts_with = "instantmenu")]
     pub gui: bool,
+    /// Open a compact graphical picker using Instant Menu (no terminal required)
+    #[arg(long)]
+    pub instantmenu: bool,
 }
 
 pub(crate) fn run(args: &OpenArgs) -> Result<()> {
+    let result = run_inner(args);
+    if args.instantmenu
+        && let Err(error) = &result
+    {
+        if let Err(dialog_error) = crate::menu::instantmenu::InstantmenuBackend::message(
+            Some("INS Open"),
+            &format!("{error:#}"),
+        ) {
+            eprintln!("Could not display error: {dialog_error:#}");
+        }
+    }
+    result
+}
+
+fn run_inner(args: &OpenArgs) -> Result<()> {
     let path = args
         .path
         .canonicalize()
@@ -35,10 +53,15 @@ pub(crate) fn run(args: &OpenArgs) -> Result<()> {
             .spawn_detached()?;
         return Ok(());
     }
-    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
-        bail!("ins open needs an interactive terminal; use --gui to open one");
-    }
-    let Some(choice) = menu::choose(&path)? else {
+    let backend = if args.instantmenu {
+        menu::Backend::Instantmenu
+    } else {
+        if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+            bail!("ins open needs an interactive terminal; use --instantmenu or --gui");
+        }
+        menu::Backend::Terminal
+    };
+    let Some(choice) = menu::choose(&path, backend)? else {
         return Ok(());
     };
     let (app, mime) = match choice {

@@ -53,6 +53,7 @@ if args[:2] == ['query', 'filetype']:
         sys.exit(1)
     gate = root / 'mime-gate'
     if gate.exists():
+        (root / 'mime-waiting').touch()
         with gate.open() as stream:
             stream.read()
     print('image/png' if args[2].endswith('.png') else 'text/plain')
@@ -467,5 +468,167 @@ terminal_args = json.loads(terminal_record.read_text())
 assert terminal_args[-2:] == ["open", str(file)], terminal_args
 assert os.access(terminal_args[-3], os.X_OK), terminal_args
 
+# Explicit renderers are mutually exclusive.
+conflict = subprocess.run(
+    [binary, 'open', '--gui', '--instantmenu', str(file)], capture_output=True,
+)
+assert conflict.returncode == 2
+
+# Graphical mode uses the same controller without requiring an interactive TTY.
+# Mock only the external renderer and hosted terminal protocol.
+queue = root / "instantmenu-actions.json"
+menu_log = root / "instantmenu.jsonl"
+executable("instantmenu", r"""
+import json, os, re, sys
+from pathlib import Path
+root = Path(os.environ['TEST_ROOT'])
+# Early cancellation must not wait for a stalled MIME/discovery producer.
+if (root / 'cancel-immediately').exists():
+    import time
+    deadline = time.monotonic() + 3
+    while not (root / 'mime-waiting').exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    sys.exit(1)
+rows = sys.stdin.read()
+with (root / 'instantmenu.jsonl').open('a') as stream:
+    stream.write(json.dumps({'args': sys.argv[1:], 'rows': rows}) + '\n')
+if '--bind' not in sys.argv:
+    sys.exit(0)  # Error message dialog.
+queue = root / 'instantmenu-actions.json'
+actions = json.loads(queue.read_text())
+action = actions.pop(0)
+queue.write_text(json.dumps(actions))
+if action.get('cancel'):
+    print('instantmenu: warning: --width auto requires measuring all 300 items; use a fixed width for large lists', file=sys.stderr)
+    sys.exit(1)
+if action.get('failure'):
+    print('instantmenu: could not connect to display', file=sys.stderr)
+    sys.exit(1)
+if 'raw' in action:
+    print(action['raw'])
+    sys.exit(0)
+print(action.get('key', ''))
+if 'desktop' in action:
+    row = next(line for line in rows.splitlines() if '(' + action['desktop'] + ')' in line)
+    print(re.search(r'value=(\d+)', row).group(1))
+""")
+
+
+def graphical(actions, path=file, status=0):
+    queue.write_text(json.dumps(actions))
+    result = subprocess.run(
+        [binary, "open", "--instantmenu", str(path)],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == status, result.stderr
+    assert json.loads(queue.read_text()) == [], queue.read_text()
+    return result
+
+
+def menus():
+    return [json.loads(line) for line in menu_log.read_text().splitlines()]
+
+
+# Install our real desktop entry in the isolated catalog: it must never be offered.
+(applications / 'ins-open.desktop').write_text(
+    (Path(__file__).resolve().parent.parent / 'desktop/ins-open.desktop').read_text()
+)
+old_history = history.read_bytes()
+before_cancel = len(menus()) if menu_log.exists() else 0
+graphical([{'cancel': True}])
+assert len(menus()) == before_cancel + 1, 'Cancellation opened an error dialog'
+record = menus()[-1]
+assert '--reject-no-match' in record['args']
+assert 'ctrl-d:set default' in record['args']
+assert 'ctrl-e:custom executable' in record['args']
+assert '{heading fade} Current default' in record['rows']
+assert record['args'][record['args'].index('--width') + 1] == '640'
+for row in record['rows'].splitlines():
+    if row.startswith('{heading'):
+        assert 'icon=' not in row
+    else:
+        assert 'icon=mdapplication' in row
+        assert row.startswith(('{icon=mdapplication ', '{green icon=mdapplication ')), row
+assert '↗' not in record['rows']
+assert 'Second Editor (second.desktop) (current)' in record['rows']
+assert 'ins-open.desktop' not in record['rows']
+assert 'Hidden Application' not in record['rows']
+assert '\x1b' not in record['rows']
+assert history.read_bytes() == old_history
+assert len(launches()) == 2
+
+# Ctrl+D saves immediately, then both renderers see the new default.
+graphical([{'key': 'ctrl-d', 'desktop': 'editor.desktop'}, {'cancel': True}])
+assert json.loads((root / 'defaults.jsonl').read_text().splitlines()[-1]) == ['editor.desktop', 'text/plain']
+assert 'Default set to Default Editor' in menus()[-1]['rows']
+assert 'Default Editor (editor.desktop) (current)' in menus()[-1]['rows']
+assert history.read_bytes() == old_history
+assert len(launches()) == 2
+picker = Picker()
+picker.wait_for('Desktop ID: editor.desktop')
+picker.wait_focused('Default Editor')
+picker.finish()
+
+graphical([{'desktop': 'second.desktop'}])
+await_launches(3)
+assert launches()[-1] == ['second', str(file)]
+assert len((root / 'defaults.jsonl').read_text().splitlines()) == 2
+
+# Unknown/typed output cannot become a launch. Failures show a graphical message.
+old_history = history.read_bytes()
+graphical([{'raw': '\nunknown'}], status=1)
+assert 'invalid selection' in menus()[-1]['rows']
+assert len(launches()) == 3
+assert history.read_bytes() == old_history
+
+# Genuine renderer errors still surface, including a graphical error message.
+graphical([{'failure': True}], status=1)
+assert 'could not connect to display' in menus()[-1]['rows']
+
+# Being the MIME default must not offer the chooser itself.
+with (root / 'defaults.jsonl').open('a') as stream:
+    stream.write(json.dumps(['ins-open.desktop', 'text/plain']) + '\n')
+graphical([{'cancel': True}])
+assert 'ins-open.desktop' not in menus()[-1]['rows']
+
+# The GUI hosts Yazi externally using the existing file-picker transport.
+# Force dwm so the test uses the transient-terminal fallback on any host.
+os.environ.pop('INSTANTWM', None)
+os.environ['XDG_SESSION_DESKTOP'] = 'dwm'
+executable('foot', r"""
+import json, os, sys
+from pathlib import Path
+root = Path(os.environ['TEST_ROOT'])
+args = sys.argv[1:]
+request = json.loads(Path(args[args.index('--request-file') + 1]).read_text())
+(root / 'hosted-picker.json').write_text(json.dumps(request))
+response = json.loads((root / 'hosted-response.json').read_text())
+Path(args[args.index('--response-file') + 1]).write_text(json.dumps(response))
+""")
+(root / 'hosted-response.json').write_text(json.dumps('Cancelled'))
+graphical([{'key': 'ctrl-e'}, {'cancel': True}])
+request = json.loads((root / 'hosted-picker.json').read_text())
+assert request['FilePicker']['scope'] == 'Files'
+assert request['FilePicker']['allow_multiple'] is False
+(root / 'hosted-response.json').write_text(json.dumps({'FilePickerResult': [str(custom)]}))
+(root / 'custom.json').unlink()
+graphical([{'key': 'ctrl-e'}])
+deadline = time.monotonic() + 5
+while not (root / 'custom.json').exists() and time.monotonic() < deadline:
+    time.sleep(0.02)
+assert json.loads((root / 'custom.json').read_text()) == [str(file)]
+assert history.read_bytes() == old_history
+
+# The GUI opens and cancels even while MIME detection is blocked.
+(root / 'cancel-immediately').touch()
+(root / 'mime-waiting').unlink(missing_ok=True)
+os.mkfifo(gate)
+subprocess.run([binary, 'open', '--instantmenu', str(file)],
+               stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=5)
+with gate.open('w') as stream:
+    stream.write('continue')
+gate.unlink()
+(root / 'cancel-immediately').unlink()
+
 assert probe_log.read_text().splitlines() == ["probe"], "File preview repeated MIME detection"
-print("Open With fzf PTY tests passed")
+print("Open With terminal and Instant Menu integration tests passed")

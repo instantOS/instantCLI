@@ -81,7 +81,7 @@ pub(super) fn discover(mime: String, mut emit: impl FnMut(DiscoveryBatch) -> boo
     let mut catalog = ApplicationInfoCache::default();
     let mut emitted = HashSet::new();
     let mut apps = Vec::new();
-    if let Some(id) = default {
+    if let Some(id) = default.filter(|id| id != "ins-open.desktop") {
         let mut app = catalog.get(&id);
         if app.path.is_some() {
             app.is_default = true;
@@ -133,7 +133,7 @@ fn discover_remaining(
     );
     let mut recommended = Vec::new();
     for id in &known {
-        if emitted.contains(id) {
+        if id == "ins-open.desktop" || emitted.contains(id) {
             continue;
         }
         let app = catalog.get(id);
@@ -166,7 +166,7 @@ fn discover_remaining(
         .collect::<HashSet<_>>();
     let mut remaining = applications
         .into_iter()
-        .filter(|app| !emitted.contains(&app.desktop_id))
+        .filter(|app| app.desktop_id != "ins-open.desktop" && !emitted.contains(&app.desktop_id))
         .map(|app| Candidate {
             recommended: supported.contains(&app.desktop_id),
             score: 0.0,
@@ -213,7 +213,7 @@ mod tests {
     fn recommendations_arrive_before_catalog_scan_with_history_and_cache_fallback() {
         let directory = tempfile::tempdir().unwrap();
         let entry = "[Desktop Entry]\nType=Application\nName=App\nExec=app %f\n";
-        for id in ["indexed", "recent", "other-mime", "unindexed"] {
+        for id in ["indexed", "recent", "other-mime", "unindexed", "ins-open"] {
             let mime = if id == "unindexed" {
                 "MimeType=text/plain;\n"
             } else {
@@ -258,6 +258,12 @@ mod tests {
             },
         );
         assert_eq!(batches.len(), 2);
+        assert!(
+            batches
+                .iter()
+                .flat_map(|batch| &batch.apps)
+                .all(|candidate| candidate.app.desktop_id != "ins-open.desktop")
+        );
         let remaining = &batches[1].apps;
         assert_eq!(remaining[0].app.desktop_id, "unindexed.desktop");
         assert!(remaining[0].recommended);

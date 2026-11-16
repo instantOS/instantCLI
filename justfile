@@ -4,12 +4,16 @@ install:
     install ./target/debug/ins ~/.local/bin/i
     mkdir -p ~/.local/share/applications
     install -m644 desktop/*.desktop ~/.local/share/applications/
+    if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database ~/.local/share/applications; fi
     install -Dm644 systemd/ins-notify-local.service ~/.config/systemd/user/ins-notify.service
     systemctl --user daemon-reload
 
 rootinstall:
     cargo build
     sudo install ./target/debug/ins /usr/local/bin/
+    sudo install -d /usr/local/share/applications
+    sudo install -m644 desktop/*.desktop /usr/local/share/applications/
+    if command -v update-desktop-database >/dev/null 2>&1; then sudo update-desktop-database /usr/local/share/applications; fi
 
 test:
     ./tests/run_all.sh

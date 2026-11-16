@@ -83,6 +83,7 @@ ins video --help
 | `ins clip` | Browse clipboard history |
 | `ins launch` | Search and launch applications |
 | `ins open FILE` | Choose an application to open a file |
+| `ins open --instantmenu FILE` | Choose an application in a compact graphical menu |
 | `ins display` | Choose a display layout with instantWM |
 | `ins keyhelp` | Explore instantWM keybindings |
 | `ins assist` | Open quick desktop actions |
@@ -90,6 +91,26 @@ ins video --help
 | `ins terminal` | Launch your configured terminal |
 | `ins arch install` | Install Arch Linux or instantOS |
 | `ins video` | Edit video through text transcripts |
+
+`ins open --instantmenu FILE` requires `instantmenu` and an X11 or Wayland session.
+It shares application ranking and history with the terminal picker: Enter opens,
+Ctrl+D immediately sets the selected application as the default for the file type,
+and Ctrl+E chooses a custom executable using the hosted Yazi picker. The graphical
+menu omits previews; `--gui` opens the full terminal picker instead.
+
+The `desktop/ins-open.desktop` entry is installed by `just install`, `just rootinstall`,
+and the Arch package. It makes **INS Open** available in file managers' “Open With” dialogs for
+common file types and folders. To install the entry manually:
+
+```sh
+install -Dm644 desktop/ins-open.desktop ~/.local/share/applications/ins-open.desktop
+update-desktop-database ~/.local/share/applications
+```
+
+Choose INS Open as the default in your file manager, or run
+`xdg-mime default ins-open.desktop text/plain` for a specific MIME type. Choosing
+another default with Ctrl+D replaces that association. The chooser excludes its
+own desktop entry to avoid opening itself recursively.
 
 For guides, see the [documentation](https://instantos.io/docs/ins.html),
 [password and OTP guide](https://instantos.io/docs/pass), and

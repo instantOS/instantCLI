@@ -1,3 +1,5 @@
+mod instantmenu;
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -145,18 +147,49 @@ enum OpenAction {
     CustomExecutable,
 }
 
-pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
+#[derive(Clone, Copy)]
+pub(super) enum Backend {
+    Terminal,
+    Instantmenu,
+}
+
+impl Backend {
+    fn pick_executable(self) -> Result<DialogOutcome<PathBuf>> {
+        let start = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/usr/bin"));
+        match self {
+            Self::Terminal => FilePickerBuilder::new()
+                .start_dir(start)
+                .hint("Choose an executable to open the item")
+                .pick_one(),
+            Self::Instantmenu => {
+                use crate::menu::client::HostedMenuClient;
+                use crate::menu_utils::FilePickerScope;
+                match HostedMenuClient::new().file_picker(
+                    Some(start.to_string_lossy().into_owned()),
+                    FilePickerScope::Files,
+                    false,
+                )? {
+                    DialogOutcome::Cancelled => Ok(DialogOutcome::Cancelled),
+                    DialogOutcome::Submitted(paths) => Ok(DialogOutcome::Submitted(
+                        paths
+                            .into_iter()
+                            .next()
+                            .context("File picker returned no executable")?,
+                    )),
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn choose(path: &Path, backend: Backend) -> Result<Option<Choice>> {
     let mut status = String::new();
     loop {
-        let Some(selection) = choose_action(path, &status)? else {
+        let Some(selection) = choose_action(path, &status, backend)? else {
             return Ok(None);
         };
         if matches!(selection.action, Some(OpenAction::CustomExecutable)) {
-            if let DialogOutcome::Submitted(path) = FilePickerBuilder::new()
-                .start_dir(dirs::home_dir().unwrap_or_else(|| PathBuf::from("/usr/bin")))
-                .hint("Choose an executable to open the item")
-                .pick_one()?
-            {
+            if let DialogOutcome::Submitted(path) = backend.pick_executable()? {
                 match which::which(&path) {
                     Ok(executable) => return Ok(Some(Choice::Executable(executable))),
                     Err(error) => {
@@ -191,6 +224,7 @@ pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
 fn choose_action(
     path: &Path,
     status: &str,
+    backend: Backend,
 ) -> Result<Option<crate::menu_utils::MenuSelection<MenuItem<OpenEntry>, OpenAction>>> {
     let (sender, receiver) = crossbeam_channel::bounded(128);
     let worker_path = path.to_owned();
@@ -222,18 +256,10 @@ fn choose_action(
         })
         .context("Failed to start application discovery")?;
 
-    let keybinds = [
-        MenuKeybind::new(
-            MenuKey::new("ctrl-d")?,
-            "set default",
-            OpenAction::SetDefault,
-        ),
-        MenuKeybind::new(
-            MenuKey::new("ctrl-e")?,
-            "custom executable",
-            OpenAction::CustomExecutable,
-        ),
-    ];
+    let keybinds = keybinds()?;
+    if matches!(backend, Backend::Instantmenu) {
+        return instantmenu::select(path, status, receiver, &keybinds);
+    }
     let outcome = FzfWrapper::builder()
         .prompt("Search applications")
         .header(
@@ -251,6 +277,21 @@ fn choose_action(
         DialogOutcome::Cancelled => Ok(None),
         DialogOutcome::Submitted(selection) => Ok(Some(selection)),
     }
+}
+
+fn keybinds() -> Result<Vec<MenuKeybind<OpenAction>>> {
+    Ok(vec![
+        MenuKeybind::new(
+            MenuKey::new("ctrl-d")?,
+            "set default",
+            OpenAction::SetDefault,
+        ),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-e")?,
+            "custom executable",
+            OpenAction::CustomExecutable,
+        ),
+    ])
 }
 
 #[cfg(test)]
