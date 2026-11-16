@@ -12,6 +12,8 @@ pub enum ClipCommands {
     List,
     /// Restore an entry by ID (unambiguous prefixes are accepted)
     Copy { id: String },
+    /// Edit a text entry in Neovim, then copy and save it as a new history entry
+    Edit { id: String },
     /// Delete an entry by ID (unambiguous prefixes are accepted)
     Delete { id: String },
     /// Clear all clipboard history
@@ -49,6 +51,7 @@ pub fn handle_clip_command(command: &Option<ClipCommands>, gui: bool, debug: boo
         None => interactive(),
         Some(ClipCommands::List) => list(),
         Some(ClipCommands::Copy { id }) => copy(id),
+        Some(ClipCommands::Edit { id }) => super::edit::run(&history::find(id)?),
         Some(ClipCommands::Delete { id }) => delete(id),
         Some(ClipCommands::Clear { yes }) => clear(*yes),
         Some(ClipCommands::Enable) => enable(),

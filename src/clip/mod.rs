@@ -1,4 +1,5 @@
 mod commands;
+mod edit;
 mod history;
 mod menu;
 mod preview;

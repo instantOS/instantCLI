@@ -101,6 +101,7 @@ enum ClipMainItem {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ClipKeybindAction {
+    Edit,
     Delete,
     Settings,
     EnableCapture,
@@ -108,6 +109,11 @@ enum ClipKeybindAction {
 
 fn clip_keybinds(capture_active: bool) -> Result<Vec<MenuKeybind<ClipKeybindAction>>> {
     let mut keybinds = vec![
+        MenuKeybind::new(
+            MenuKey::new("ctrl-e")?,
+            "edit in Neovim",
+            ClipKeybindAction::Edit,
+        ),
         MenuKeybind::new(MenuKey::new("ctrl-d")?, "delete", ClipKeybindAction::Delete),
         MenuKeybind::new(
             MenuKey::new("ctrl-o")?,
@@ -117,7 +123,7 @@ fn clip_keybinds(capture_active: bool) -> Result<Vec<MenuKeybind<ClipKeybindActi
     ];
     if !capture_active {
         keybinds.push(MenuKeybind::new(
-            MenuKey::new("ctrl-e")?,
+            MenuKey::new("alt-e")?,
             "enable capture",
             ClipKeybindAction::EnableCapture,
         ));
@@ -248,6 +254,11 @@ pub fn run(backend: ClipBackend) -> Result<()> {
         }
 
         match (selection.action, selected_item) {
+            (Some(ClipKeybindAction::Edit), Some(ClipMainItem::Entry(entry))) => {
+                if let Err(error) = super::edit::run(&entry.0) {
+                    FzfWrapper::message(&format!("Could not edit clipboard entry: {error:#}"))?;
+                }
+            }
             (Some(ClipKeybindAction::Delete), Some(ClipMainItem::Entry(entry))) => {
                 history::delete(&entry.0.id)?;
                 emit(
@@ -261,7 +272,7 @@ pub fn run(backend: ClipBackend) -> Result<()> {
             (Some(ClipKeybindAction::EnableCapture), _) => {
                 service::enable(backend)?;
             }
-            (Some(ClipKeybindAction::Delete), _) | (None, None) => {}
+            (Some(ClipKeybindAction::Delete | ClipKeybindAction::Edit), _) | (None, None) => {}
             (None, Some(selection)) => match selection {
                 ClipMainItem::Entry(entry) => {
                     return history::restore(&entry.0);
@@ -322,8 +333,13 @@ mod tests {
         let stopped = clip_keybinds(false).unwrap();
         let active = clip_keybinds(true).unwrap();
 
-        assert!(stopped.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
-        assert!(!active.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
+        assert!(stopped.iter().any(|bind| bind.key.as_str() == "alt-e"));
+        assert!(!active.iter().any(|bind| bind.key.as_str() == "alt-e"));
+        for binds in [&stopped, &active] {
+            assert!(binds.iter().any(
+                |bind| bind.key.as_str() == "ctrl-e" && bind.action == ClipKeybindAction::Edit
+            ));
+        }
         assert!(active.iter().any(|bind| bind.key.as_str() == "ctrl-d"));
         assert!(active.iter().any(|bind| bind.key.as_str() == "ctrl-o"));
     }
