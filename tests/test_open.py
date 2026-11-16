@@ -492,12 +492,19 @@ if (root / 'cancel-immediately').exists():
 rows = sys.stdin.read()
 with (root / 'instantmenu.jsonl').open('a') as stream:
     stream.write(json.dumps({'args': sys.argv[1:], 'rows': rows}) + '\n')
-if '--bind' not in sys.argv:
+confirmation = '--bind' not in sys.argv and 'confirmation' in sys.argv
+if '--bind' not in sys.argv and not confirmation:
     sys.exit(0)  # Error message dialog.
 queue = root / 'instantmenu-actions.json'
 actions = json.loads(queue.read_text())
 action = actions.pop(0)
 queue.write_text(json.dumps(actions))
+if confirmation:
+    answer = action['confirm']
+    if answer == 'cancel':
+        sys.exit(1)
+    print(answer)
+    sys.exit(0)
 if action.get('cancel'):
     print('instantmenu: warning: --width auto requires measuring all 300 items; use a fixed width for large lists', file=sys.stderr)
     sys.exit(1)
@@ -672,11 +679,37 @@ graphical([{'cancel': True}], path=root)
 assert not any(arg.startswith('ctrl-x:') for arg in menus()[-1]['args'])
 assert root.stat().st_mode == directory_mode
 
-# Invalid programs report a launch error instead of launching a handler.
+# Unrecognized formats require confirmation before changing permissions.
 invalid_program = root / 'invalid-program'
 invalid_program.write_text('not an executable format\n')
 invalid_program.chmod(0o640)
-graphical([{'key': 'ctrl-x'}], path=invalid_program, status=1)
+for answer in ['no', 'cancel']:
+    start = len(menus())
+    graphical([{'key': 'ctrl-x'}, {'confirm': answer}, {'cancel': True}], path=invalid_program)
+    assert 'unlikely to execute successfully' in menus()[start + 1]['rows']
+    assert 'no recognized executable header' in menus()[start + 1]['rows']
+    assert invalid_program.stat().st_mode & 0o777 == 0o640
+
+# Confirmation can also be cancelled in the terminal, returning to Open With.
+picker = Picker(invalid_program)
+picker.wait_for('Open With')
+picker.send(b'\x18')
+picker.wait_for('unlikely to execute successfully')
+assert invalid_program.stat().st_mode & 0o777 == 0o640
+checkpoint = len(picker.output)
+picker.send(b'\x1b')
+# Wait for the replacement picker to draw; the VT reconstruction can retain
+# Open With text from the menu underneath the confirmation.
+deadline = time.monotonic() + 10
+while b'Open With' not in picker.output[checkpoint:]:
+    picker.read()
+    assert time.monotonic() < deadline, picker.screen()
+picker.finish()
+assert invalid_program.stat().st_mode & 0o777 == 0o640
+
+# An explicit Yes still attempts execution and reports the actual launch error.
+graphical([{'key': 'ctrl-x'}, {'confirm': 'yes'}], path=invalid_program, status=1)
+assert invalid_program.stat().st_mode & 0o777 == 0o740
 assert 'Failed to execute' in menus()[-1]['rows']
 assert history.read_bytes() == old_history
 assert (root / 'defaults.jsonl').read_bytes() == old_defaults

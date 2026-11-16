@@ -1,4 +1,5 @@
 //! Interactive Open With picker. Discovery and preview work never run on the UI thread.
+mod executable;
 mod menu;
 mod model;
 

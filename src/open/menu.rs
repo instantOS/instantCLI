@@ -155,6 +155,19 @@ pub(super) enum Backend {
 }
 
 impl Backend {
+    fn confirm_execution(self, path: &Path, reason: &str) -> Result<bool> {
+        use crate::menu_utils::ConfirmResult;
+        let message = format!(
+            "This file is unlikely to execute successfully.\n{reason}\n\nFile: {}\nMake it executable and try anyway?",
+            path.display()
+        );
+        let response = match self {
+            Self::Terminal => FzfWrapper::confirm(&message)?,
+            Self::Instantmenu => crate::menu::instantmenu::InstantmenuBackend::confirm(&message)?,
+        };
+        Ok(response == ConfirmResult::Yes)
+    }
+
     fn pick_executable(self) -> Result<DialogOutcome<PathBuf>> {
         let start = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/usr/bin"));
         match self {
@@ -191,6 +204,11 @@ pub(super) fn choose(path: &Path, backend: Backend) -> Result<Option<Choice>> {
         };
         if matches!(selection.action, Some(OpenAction::RunFile)) {
             if path.is_file() {
+                if let Some(reason) = super::executable::warning(path)?
+                    && !backend.confirm_execution(path, &reason)?
+                {
+                    continue;
+                }
                 return Ok(Some(Choice::RunFile));
             }
             status = "Only regular files can be executed".into();
