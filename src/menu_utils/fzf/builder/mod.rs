@@ -20,7 +20,6 @@
 //! with a per-row preview manifest, so both static collections and live
 //! streams support them, while child-process command sources stay compact.
 
-mod checkbox;
 mod checklist;
 mod dialogs;
 mod padded;

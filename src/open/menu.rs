@@ -4,9 +4,11 @@ use anyhow::{Context, Result, bail};
 
 use super::model::{self, Choice, DiscoveryBatch};
 use crate::applications::app_info::ApplicationInfo;
+use crate::applications::system::set_default_app;
 use crate::common::shell::{current_exe_command, shell_quote};
 use crate::menu_utils::{
-    DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder, MenuItem,
+    DialogOutcome, FilePickerBuilder, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder,
+    MenuItem, MenuKey, MenuKeybind,
 };
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -137,7 +139,59 @@ fn entries(
     rows
 }
 
+#[derive(Clone, Copy)]
+enum OpenAction {
+    SetDefault,
+    CustomExecutable,
+}
+
 pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
+    let mut status = String::new();
+    loop {
+        let Some(selection) = choose_action(path, &status)? else {
+            return Ok(None);
+        };
+        if matches!(selection.action, Some(OpenAction::CustomExecutable)) {
+            if let DialogOutcome::Submitted(path) = FilePickerBuilder::new()
+                .start_dir(dirs::home_dir().unwrap_or_else(|| PathBuf::from("/usr/bin")))
+                .hint("Choose an executable to open the item")
+                .pick_one()?
+            {
+                match which::which(&path) {
+                    Ok(executable) => return Ok(Some(Choice::Executable(executable))),
+                    Err(error) => {
+                        status = format!("Cannot execute {}: {error}", path.display());
+                    }
+                }
+            }
+            continue;
+        }
+        let Some(item) = selection.items.into_iter().next() else {
+            continue;
+        };
+        match item {
+            MenuItem::Entry(OpenEntry::App { app, mime, .. }) => {
+                if matches!(selection.action, Some(OpenAction::SetDefault)) {
+                    set_default_app(&mime, &app.desktop_id)
+                        .context("Failed to set default application")?;
+                    status = format!(
+                        "Default set to {}",
+                        app.name.as_deref().unwrap_or(&app.desktop_id)
+                    );
+                } else {
+                    return Ok(Some(Choice::Desktop { app: *app, mime }));
+                }
+            }
+            MenuItem::Entry(OpenEntry::Error(error)) if selection.action.is_none() => bail!(error),
+            _ => {}
+        }
+    }
+}
+
+fn choose_action(
+    path: &Path,
+    status: &str,
+) -> Result<Option<crate::menu_utils::MenuSelection<MenuItem<OpenEntry>, OpenAction>>> {
     let (sender, receiver) = crossbeam_channel::bounded(128);
     let worker_path = path.to_owned();
     std::thread::Builder::new()
@@ -168,30 +222,34 @@ pub(super) fn choose(path: &Path) -> Result<Option<Choice>> {
         })
         .context("Failed to start application discovery")?;
 
+    let keybinds = [
+        MenuKeybind::new(
+            MenuKey::new("ctrl-d")?,
+            "set default",
+            OpenAction::SetDefault,
+        ),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-e")?,
+            "custom executable",
+            OpenAction::CustomExecutable,
+        ),
+    ];
     let outcome = FzfWrapper::builder()
         .prompt("Search applications")
         .header(
             HeaderBuilder::new(NerdFont::ExternalLink, "Open With")
                 .field("File", path.to_string_lossy())
+                .subtitle(status)
                 .build(),
         )
         .responsive_layout()
         .stream(receiver)
         .padded()
-        .checkbox("Use as default for this file type", false)
-        .hint("use as default")
+        .keybinds(&keybinds)
         .select()?;
     match outcome {
         DialogOutcome::Cancelled => Ok(None),
-        DialogOutcome::Submitted((selection, use_default)) => match selection.into_single()? {
-            MenuItem::Entry(OpenEntry::App { app, mime, .. }) => Ok(Some(Choice {
-                app: *app,
-                mime,
-                use_default,
-            })),
-            MenuItem::Entry(OpenEntry::Error(error)) => bail!(error),
-            MenuItem::Separator(_) => bail!("Menu submitted a non-selectable separator"),
-        },
+        DialogOutcome::Submitted(selection) => Ok(Some(selection)),
     }
 }
 

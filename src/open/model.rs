@@ -23,10 +23,9 @@ pub(super) struct DiscoveryBatch {
     pub warning: Option<String>,
 }
 
-pub(super) struct Choice {
-    pub app: ApplicationInfo,
-    pub mime: String,
-    pub use_default: bool,
+pub(super) enum Choice {
+    Desktop { app: ApplicationInfo, mime: String },
+    Executable(PathBuf),
 }
 
 fn history_path() -> PathBuf {

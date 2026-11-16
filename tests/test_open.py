@@ -57,7 +57,14 @@ if args[:2] == ['query', 'filetype']:
             stream.read()
     print('image/png' if args[2].endswith('.png') else 'text/plain')
 elif args[:2] == ['query', 'default']:
-    print('viewer.desktop' if args[2] == 'image/png' else 'editor.desktop')
+    default = 'viewer.desktop' if args[2] == 'image/png' else 'editor.desktop'
+    log = root / 'defaults.jsonl'
+    if log.exists():
+        for line in log.read_text().splitlines():
+            desktop, mime = json.loads(line)
+            if mime == args[2]:
+                default = desktop
+    print(default)
 elif args[0] == 'default':
     with (root / 'defaults.jsonl').open('a') as file:
         file.write(json.dumps(args[1:]) + '\\n')
@@ -264,19 +271,16 @@ supplied = subprocess.run(
 assert "application/x-ins-test" in supplied.stdout
 assert probe_log.read_text().splitlines() == ["probe"]
 
-# The UI, checkbox and search work while MIME detection cannot finish.
+# The UI and search work while MIME detection cannot finish.
 gate = root / "mime-gate"
 os.mkfifo(gate)
 picker = Picker()
 picker.wait_for("Open With")
 assert "Current default" not in picker.screen()
-picker.send(b"\x04")
-picker.wait_for("[✓] Use as default")
 picker.send(b"Second")
 with gate.open("w") as stream:
     stream.write("continue")
 picker.wait_for("Desktop ID: second.desktop")
-assert "[✓] Use as default" in picker.screen()
 picker.scroll_preview_to("File preview contents")
 picker.finish()
 gate.unlink()
@@ -294,20 +298,17 @@ assert not history.exists()
 assert not launches()
 
 # A blocked association-cache read must not delay the default, its preview,
-# keyboard focus, or the checkbox. Release discovery only after verifying them.
+# or keyboard focus. Release discovery only after verifying them.
 cache = applications / "mimeinfo.cache"
 os.mkfifo(cache)
 picker = Picker()
 picker.wait_for("Desktop ID: editor.desktop")
 picker.wait_focused("Default Editor")
-picker.send(b"\x04")
-picker.wait_for("[✓] Use as default")
 with cache.open("w") as stream:
     stream.write("[MIME Cache]\ntext/plain=editor.desktop;second.desktop;terminal.desktop;broken.desktop;\n")
 picker.wait_for("Recommended")
 picker.send(b"Second")
 picker.wait_for("Desktop ID: second.desktop")
-assert "[✓] Use as default" in picker.screen()
 picker.finish()
 cache.unlink()
 cache.write_text("[MIME Cache]\ntext/plain=editor.desktop;second.desktop;terminal.desktop;broken.desktop;\n")
@@ -317,7 +318,8 @@ picker = Picker()
 picker.wait_for("Current default")
 assert picker.screen().count("Ctrl D") == 1, picker.screen()
 assert "toggle checkbox" not in picker.screen()
-assert "use as default" in picker.screen(), picker.screen()
+assert "set default" in picker.screen(), picker.screen()
+assert "Use as default for this file type" not in picker.screen()
 picker.scroll_preview_to("File preview contents")
 assert b"Hidden Application" not in picker.output
 picker.finish()
@@ -329,8 +331,6 @@ assert not launches()
 picker = Picker()
 picker.wait_for("Desktop ID: editor.desktop")
 assert b"\xe2\x81\xa0" not in picker.output, "Query contains the old invisible marker"
-picker.send(b"\x04")
-picker.wait_for("[✓] Use as default")
 selected_row = next(i for i, line in enumerate(picker.screen().splitlines())
                     if "▌" in line and "Default Editor" in line[:picker.width // 2])
 picker.send(f"\x1b[<64;12;{selected_row + 1}M".encode())  # Wheel up over the list.
@@ -339,42 +339,50 @@ picker.send(b"\r")
 picker.double_click_separator("Current default")
 picker.send(b"Second")
 picker.wait_for("Desktop ID: second.desktop")
-assert "[✓] Use as default" in picker.screen(), "Checkbox state was lost"
 assert not launches()
 assert not history.exists()
 assert not (root / "defaults.jsonl").exists()
 picker.finish()
 
-# Native footer checkbox; default app is preselected.
-picker = Picker()
-picker.wait_for("Current default")
-picker.finish(b"\x04\r")
-await_launches(1)
-assert launches()[0] == ["editor", str(file)]
-assert json.loads((root / "defaults.jsonl").read_text()) == ["editor.desktop", "text/plain"]
-
-# NoDisplay handlers are selectable; ordinary launches don't alter defaults.
+# Ctrl+D saves the selected application immediately, without launching or history.
 picker = Picker()
 picker.wait_for("Current default")
 picker.send(b"Second")
 picker.wait_for("Desktop ID: second.desktop")
 picker.send(b"\x04")
-picker.wait_for("[✓] Use as default")
-picker.send(b"\x04")
-picker.wait_for("[ ] Use as default")
+picker.wait_for("Default set to Second Editor")
+picker.wait_focused("Second Editor")
+assert json.loads((root / "defaults.jsonl").read_text()) == ["second.desktop", "text/plain"]
+assert not launches()
+assert not history.exists()
+picker.finish()
+
+# Enter opens the new default; ordinary launches don't alter defaults.
+picker = Picker()
+picker.wait_for("Desktop ID: second.desktop")
 picker.finish(b"\r")
-await_launches(2)
-assert launches()[1] == ["second", str(file)]
+await_launches(1)
+assert launches()[0] == ["second", str(file)]
 assert len((root / "defaults.jsonl").read_text().splitlines()) == 1
 entries = json.loads(history.read_text())["entries"]
 assert "text/plain\nsecond.desktop" in entries
+
+picker = Picker()
+picker.wait_for("Current default")
+picker.send(b"Default Editor")
+picker.wait_for("Desktop ID: editor.desktop")
+picker.finish(b"\r")
+await_launches(2)
+assert launches()[1] == ["editor", str(file)]
+assert len((root / "defaults.jsonl").read_text().splitlines()) == 1
 
 # Padded menus use the existing responsive preview layout on narrow terminals.
 picker = Picker(width=70)
 picker.wait_for("Current default")
 assert picker.screen().count("Ctrl D") == 1, picker.screen()
 assert "toggle checkbox" not in picker.screen()
-assert "use as default" in picker.screen(), picker.screen()
+assert "set default" in picker.screen(), picker.screen()
+assert "Use as default for this file type" not in picker.screen()
 picker.scroll_preview_to("File preview contents")
 picker.finish()
 
@@ -389,7 +397,7 @@ picker = Picker()
 picker.wait_for("Current default")
 picker.send(b"Broken")
 picker.wait_for("Desktop ID: broken.desktop")
-picker.finish(b"\x04\r", status=1)
+picker.finish(b"\r", status=1)
 assert history.read_bytes() == old_history
 assert len((root / "defaults.jsonl").read_text().splitlines()) == 1
 assert len(launches()) == 2
@@ -405,6 +413,50 @@ while not terminal_record.exists() and time.monotonic() < deadline:
     time.sleep(0.02)
 assert json.loads(terminal_record.read_text()) == ["--", str(launcher), "terminal", str(file)]
 terminal_record.unlink()
+
+# Ctrl+E uses the shared Yazi chooser, including cancel and invalid executable paths.
+custom = executable("custom executable; $literal", """
+import json, os, sys
+from pathlib import Path
+(Path(os.environ['TEST_ROOT']) / 'custom.json').write_text(json.dumps(sys.argv[1:]))
+""")
+executable("yazi", """
+import os, sys
+from pathlib import Path
+root = Path(os.environ['TEST_ROOT'])
+(root / 'yazi-hint').write_text(os.environ['INS_MENU_PICKER_HINT'])
+selection = root / 'yazi-selection'
+if selection.exists():
+    Path(sys.argv[sys.argv.index('--chooser-file') + 1]).write_text(selection.read_text())
+""")
+picker = Picker()
+picker.wait_for("Current default")
+picker.send(b"\x05")
+deadline = time.monotonic() + 5
+while not (root / 'yazi-hint').exists() and time.monotonic() < deadline:
+    picker.read()
+assert (root / 'yazi-hint').read_text() == "Choose an executable to open the item"
+picker.wait_for("Current default")
+picker.finish()
+
+(root / 'yazi-selection').write_text(str(file))
+picker = Picker()
+picker.wait_for("Current default")
+picker.send(b"\x05")
+picker.wait_for("Cannot execute")
+picker.finish()
+
+old_history = history.read_bytes()
+(root / 'yazi-selection').write_text(str(custom))
+picker = Picker()
+picker.wait_for("Current default")
+picker.finish(b"\x05")
+deadline = time.monotonic() + 5
+while not (root / 'custom.json').exists() and time.monotonic() < deadline:
+    time.sleep(0.02)
+assert json.loads((root / 'custom.json').read_text()) == [str(file)]
+assert history.read_bytes() == old_history
+assert len((root / "defaults.jsonl").read_text().splitlines()) == 1
 
 # --gui starts a graphical terminal without requiring an existing TTY.
 subprocess.run([binary, "open", "--gui", str(file)], check=True, capture_output=True)

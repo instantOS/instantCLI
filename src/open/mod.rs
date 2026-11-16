@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 
 use crate::applications::desktop::load_desktop_details;
-use crate::applications::system::set_default_app;
 
 #[derive(clap::Args, Debug)]
 pub(crate) struct OpenArgs {
@@ -42,21 +41,35 @@ pub(crate) fn run(args: &OpenArgs) -> Result<()> {
     let Some(choice) = menu::choose(&path)? else {
         return Ok(());
     };
-    let desktop_path = choice
-        .app
+    let (app, mime) = match choice {
+        model::Choice::Desktop { app, mime } => (app, mime),
+        model::Choice::Executable(executable) => {
+            let mut command = std::process::Command::new(&executable);
+            command.arg(&path);
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                command.process_group(0);
+            }
+            command
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .with_context(|| format!("Failed to open file with {}", executable.display()))?;
+            return Ok(());
+        }
+    };
+    let desktop_path = app
         .path
         .as_ref()
         .context("Application has no desktop file")?;
     load_desktop_details(desktop_path)?
         .open_file(&path)
-        .with_context(|| format!("Failed to open file with {}", choice.app.desktop_id))?;
+        .with_context(|| format!("Failed to open file with {}", app.desktop_id))?;
     // Persist only launches that were successfully handed to the application.
-    if let Err(error) = model::record(&choice.mime, &choice.app.desktop_id) {
+    if let Err(error) = model::record(&mime, &app.desktop_id) {
         eprintln!("Warning: could not remember application usage: {error:#}");
-    }
-    if choice.use_default {
-        set_default_app(&choice.mime, &choice.app.desktop_id)
-            .context("File opened, but setting the default application failed")?;
     }
     Ok(())
 }
