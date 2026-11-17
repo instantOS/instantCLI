@@ -51,7 +51,7 @@ impl StepOutcome {
 /// Optionality is about flow placement, not relevance: optional steps are
 /// configured through Advanced Options in the install flow and asked inline
 /// in the setup flow. Whether a step applies to the current answers at all
-/// is [`WizardStep::should_ask`]'s job.
+/// is [`WizardStep::is_relevant`]'s job.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AskPolicy {
     /// Always ask; the wizard never answers this step on its own.
@@ -158,7 +158,14 @@ pub trait WizardStep: Send + Sync {
     /// enforce reads at runtime. The step graph validates every declared
     /// dependency and its ordering, so implementations must keep
     /// [`WizardStep::depends_on`] in sync with their predicates and validators.
-    fn should_ask(&self, _context: &InstallContext) -> bool {
+    fn is_relevant(&self, _context: &InstallContext) -> bool {
+        true
+    }
+
+    /// Whether loaded provider data offers an interactive question to ask.
+    /// Called after required data is ready. Unlike relevance, availability
+    /// never invalidates a saved answer and is not used during config imports.
+    fn is_available(&self, _context: &InstallContext) -> bool {
         true
     }
 
@@ -233,7 +240,7 @@ pub trait WizardStep: Send + Sync {
     ///
     /// When any dependency changes, the engine removes this step's answer or
     /// completion marker transitively so it runs again. Declare every state
-    /// that `run`, `should_ask`, `ask_policy`, `preselect_answer`, or
+    /// that `run`, `is_relevant`, `is_available`, `ask_policy`, `preselect_answer`, or
     /// `validate` reads for decision-making. Dependencies that are not part of the
     /// current wizard's step list are permitted (e.g. pre-seeded contexts)
     /// but must still appear earlier in the list when they are present.

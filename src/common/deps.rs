@@ -121,6 +121,26 @@ pub static ARCH_INSTALL_SCRIPTS: Dependency = Dependency {
     ],
 };
 
+/// The Artix installation toolchain: `basestrap`, `artix-chroot` and
+/// `fstabgen`.
+///
+/// Artix ships these as `artools-base` instead of `arch-install-scripts`. The
+/// three binaries are the direct counterparts of `pacstrap`, `arch-chroot` and
+/// `genfstab`, so the same single-package reasoning as
+/// [`ARCH_INSTALL_SCRIPTS`] applies.
+pub static ARTOOLS_BASE: Dependency = Dependency {
+    name: "artools-base",
+    packages: &[PackageDefinition::new(
+        "artools-base",
+        PackageManager::Pacman,
+    )],
+    tests: &[
+        InstallTest::WhichSucceeds("basestrap"),
+        InstallTest::WhichSucceeds("artix-chroot"),
+        InstallTest::WhichSucceeds("fstabgen"),
+    ],
+};
+
 // =============================================================================
 // System Upgrade
 // =============================================================================
@@ -183,3 +203,40 @@ pub static SMARTMONTOOLS: Dependency = Dependency {
     ],
     tests: &[InstallTest::WhichSucceeds("smartctl")],
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tested_commands(dependency: &Dependency) -> Vec<&'static str> {
+        dependency
+            .tests
+            .iter()
+            .filter_map(|test| match test {
+                InstallTest::WhichSucceeds(command) => Some(*command),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn artix_tools_cover_basestrap_chroot_and_fstab() {
+        assert_eq!(ARTOOLS_BASE.name, "artools-base");
+        assert_eq!(ARTOOLS_BASE.packages.len(), 1);
+        assert_eq!(ARTOOLS_BASE.packages[0].package_name, "artools-base");
+        assert_eq!(ARTOOLS_BASE.packages[0].manager, PackageManager::Pacman);
+        assert_eq!(
+            tested_commands(&ARTOOLS_BASE),
+            ["basestrap", "artix-chroot", "fstabgen"]
+        );
+    }
+
+    #[test]
+    fn arch_install_scripts_still_use_the_arch_toolchain() {
+        assert_eq!(ARCH_INSTALL_SCRIPTS.name, "arch-install-scripts");
+        assert_eq!(
+            tested_commands(&ARCH_INSTALL_SCRIPTS),
+            ["pacstrap", "arch-chroot", "genfstab"]
+        );
+    }
+}

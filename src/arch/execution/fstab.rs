@@ -1,17 +1,20 @@
 use super::CommandRunner;
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-pub fn generate_fstab(executor: &dyn CommandRunner) -> Result<()> {
+pub fn generate_fstab(executor: &dyn CommandRunner, linux_variant: ArchLinuxVariant) -> Result<()> {
     println!("Generating fstab...");
 
-    let output_opt = executor.run_with_output(Command::new("genfstab").arg("-U").arg("/mnt"))?;
+    let fstab_command = linux_variant.fstab_command();
+    let output_opt = executor.run_with_output(Command::new(fstab_command).arg("-U").arg("/mnt"))?;
 
     if let Some(output) = output_opt {
-        let content = String::from_utf8(output.stdout).context("genfstab output is not UTF-8")?;
+        let content = String::from_utf8(output.stdout)
+            .with_context(|| format!("{fstab_command} output is not UTF-8"))?;
         let mut probe_uuid = |device: &str| {
             // Probe the device directly: lsblk/udev can still have no UUID for
-            // freshly formatted swap, causing genfstab -U to emit /dev/vdb1.
+            // freshly formatted swap, causing `-U` to emit /dev/vdb1.
             let output = executor
                 .run_with_output(
                     Command::new("blkid").args(["-p", "-s", "UUID", "-o", "value", "--", device]),
@@ -82,6 +85,19 @@ fn stable_swap_sources(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arch::arch_linux_variant::ArtixInitSystem;
+    use crate::arch::execution::mock::MockRunner;
+
+    #[test]
+    fn the_fstab_generator_follows_the_variant() {
+        let runner = MockRunner::new();
+        generate_fstab(&runner, ArchLinuxVariant::Arch).unwrap();
+        assert_eq!(runner.command_log(), vec!["genfstab -U /mnt".to_string()]);
+
+        let runner = MockRunner::new();
+        generate_fstab(&runner, ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)).unwrap();
+        assert_eq!(runner.command_log(), vec!["fstabgen -U /mnt".to_string()]);
+    }
 
     #[test]
     fn host_swap_devices_and_files_do_not_enter_the_target_fstab() {

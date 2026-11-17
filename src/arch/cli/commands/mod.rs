@@ -29,7 +29,7 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
     // from another distribution and must not warn that their host is wrong.
     if !os.in_family(&OperatingSystem::Arch) && matches!(command, ArchCommands::Setup { .. }) {
         eprintln!(
-            "Warning: You appear to be running on {}, but this command is intended for Arch Linux.",
+            "Warning: You appear to be running on {}, but this command is intended for Arch Linux or Artix Linux.",
             os
         );
     }
@@ -198,7 +198,7 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
                 crate::ui::nerd_font::NerdFont::Monitor,
             )
             .description(
-                "Displays a graphical boot animation and hides console kernel logs during system startup.",
+                "Displays a graphical boot animation and hides console kernel logs during system startup. Artix configuration is not implemented by this installer.",
             )
             .optional_default_yes(),
         ),
@@ -218,11 +218,11 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::StepId::MinimalMode,
-                "Enable Minimal Mode (Vanilla Arch Install)?",
+                "Enable Minimal Mode (Vanilla Arch/Artix Install)?",
                 crate::ui::nerd_font::NerdFont::Package,
             )
             .description(
-                "Installs a clean, vanilla Arch Linux system skipping instantOS packages, default apps, and custom theming.",
+                "Installs a clean, vanilla Arch Linux or Artix Linux system skipping instantOS packages, default apps, and custom theming.",
             )
             .optional(),
         ),
@@ -320,8 +320,12 @@ mod tests {
             let answer = context.get_answer(&step.id()).cloned().unwrap_or_default();
             let phases = [
                 (
-                    "should_ask",
-                    read_audit::audited(&**step, || step.should_ask(&context)).1,
+                    "is_available",
+                    read_audit::audited(&**step, || step.is_available(&context)).1,
+                ),
+                (
+                    "is_relevant",
+                    read_audit::audited(&**step, || step.is_relevant(&context)).1,
                 ),
                 (
                     "ask_policy",

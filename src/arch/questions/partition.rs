@@ -189,7 +189,7 @@ impl WizardStep for PartitionSelectorQuestion {
         }
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         context.partitioning_method() == Some(crate::arch::engine::PartitioningMethod::Manual)
     }
 

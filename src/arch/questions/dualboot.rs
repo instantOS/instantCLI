@@ -104,7 +104,7 @@ impl WizardStep for DualBootPartitionQuestion {
         Some("Select a partition to resize for Linux")
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         context.partitioning_method() == Some(crate::arch::engine::PartitioningMethod::DualBoot)
     }
 
@@ -243,7 +243,7 @@ impl WizardStep for DualBootSizeQuestion {
         Some("Choose how much space to allocate for Linux")
     }
 
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         context.partitioning_method() == Some(crate::arch::engine::PartitioningMethod::DualBoot)
     }
 

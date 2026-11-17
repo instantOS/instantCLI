@@ -24,11 +24,11 @@ pub fn prepare_disk(
     context: &InstallContext,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
-    let disk = plan.storage.disk();
+    let disk = plan.storage().disk();
     // Recheck source protection at the mutation boundary, including plans
     // imported without the wizard and device aliases.
     crate::arch::disks::ensure_not_running_disk(disk.as_str())?;
-    if plan.storage.encryption().is_some() {
+    if plan.storage().encryption().is_some() {
         crate::arch::bootstrap::ensure_encryption_names_available()?;
     }
 
@@ -41,7 +41,7 @@ pub fn prepare_disk(
     //
     // Retain the plan's original conflict as well as the fresh check above:
     // a disk protected when the plan was built must stay protected.
-    if let Some(conflict) = plan.environment.target() {
+    if let Some(conflict) = plan.environment().target() {
         anyhow::bail!(
             "{}",
             crate::arch::host::running_disk_message(disk.as_str(), conflict)
@@ -63,7 +63,7 @@ pub fn prepare_disk(
     // Dispatch on the structural storage plan. There is deliberately no
     // default: adding a storage strategy requires handling it here, and an
     // incomplete or unrecognized wizard answer cannot reach this layer.
-    match &plan.storage {
+    match &plan.storage() {
         StoragePlan::DualBoot {
             filesystem, target, ..
         } => {

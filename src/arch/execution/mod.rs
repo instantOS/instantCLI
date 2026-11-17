@@ -3,6 +3,7 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::ui::nerd_font::NerdFont;
 
 pub mod base;
@@ -11,10 +12,10 @@ pub mod config;
 pub mod disk;
 pub mod fstab;
 pub mod package_source;
-pub mod packages;
 pub mod pacman;
 pub mod paths;
 pub mod post;
+pub mod services;
 pub mod setup;
 pub mod signing;
 pub mod state;
@@ -29,10 +30,13 @@ pub fn is_chroot() -> bool {
     if crate::arch::bootstrap::is_environment() {
         return false;
     }
-    // A simple check is to compare the device/inode of / and /proc/1/root
-    // If they are different, we are in a chroot.
-    // If /proc is not mounted, this might fail, but in our context it should be.
-
+    // A simple check is to compare the device/inode of / and /proc/1/root.
+    // If they are different, we are in a chroot. If /proc is not mounted this
+    // fails open, but in our context it should be.
+    //
+    // `artix-chroot` runs the command under `unshare --fork --pid`, so PID 1
+    // inside the chroot is the installer itself and `/proc/1/root` is the
+    // same root as `/`. The PID-1 command name distinguishes that case.
     use std::os::unix::fs::MetadataExt;
 
     let root_meta = match std::fs::metadata("/") {
@@ -45,7 +49,17 @@ pub fn is_chroot() -> bool {
         Err(_) => return false, // Assume not chroot if we can't stat /proc/1/root
     };
 
-    root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino()
+    if root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino() {
+        return true;
+    }
+
+    let pid1_comm = std::fs::read_to_string("/proc/1/comm").unwrap_or_default();
+    pid1_indicates_chroot(&pid1_comm)
+}
+
+/// Whether PID 1 is the installer launched by a PID-namespaced chroot.
+fn pid1_indicates_chroot(comm: &str) -> bool {
+    matches!(comm.trim(), "ins-install" | "chroot")
 }
 
 /// Abstraction over command execution, used to make the execution layer testable.
@@ -401,8 +415,6 @@ pub async fn execute_installation(
 
     let content = std::fs::read_to_string(&config_path)?;
     let context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
-    let configuration_sha256 =
-        crate::arch::installation_identity::configuration_fingerprint(&content);
 
     // Exec bypasses the wizard, so nothing has validated the answers a saved
     // (possibly hand-edited) config contains. Fail loudly rather than acting
@@ -412,20 +424,36 @@ pub async fn execute_installation(
         .context("Refusing to execute an invalid configuration")?;
     let plan = crate::arch::engine::InstallPlan::try_from(&context)
         .context("Refusing to execute an incomplete or inconsistent installation plan")?;
-    let intent_sha256 = crate::arch::installation_identity::fingerprint(&context)?;
+    let configuration_sha256 = crate::arch::installation_identity::configuration_fingerprint(
+        &content,
+        plan.linux_variant(),
+    );
+    let intent_sha256 =
+        crate::arch::installation_identity::fingerprint(&context, plan.linux_variant())?;
 
-    println!("Loaded configuration for user: {}", plan.username.as_str());
+    println!(
+        "Loaded configuration for user: {}",
+        plan.username().as_str()
+    );
     println!(
         "Install environment: {}; target is {}.",
-        plan.environment.host().label(),
-        plan.environment.target_label()
+        plan.environment().host().label(),
+        plan.environment().target_label()
     );
+
+    if !plan.linux_variant().supports_offline_installation() && install_mode.is_offline() {
+        anyhow::bail!(
+            "Offline installation is not supported on {}. Boot an online Artix live ISO \
+             or install with network access.",
+            plan.linux_variant().label()
+        );
+    }
 
     let is_disk_execution = step
         .as_deref()
         .is_none_or(|name| name.eq_ignore_ascii_case("disk"));
     if is_disk_execution && !dry_run && !is_chroot() {
-        if plan.environment.may_probe_for_existing_install() {
+        if plan.environment().may_probe_for_existing_install() {
             if let Some(existing) = crate::arch::installation_identity::find_matching_installation(
                 &plan,
                 &intent_sha256,
@@ -442,7 +470,7 @@ pub async fn execute_installation(
             println!(
                 "Skipping the already-installed check: the install target is {}, so reading \
                  installation markers from it would read the running system.",
-                plan.environment.target_label()
+                plan.environment().target_label()
             );
         }
     }
@@ -506,7 +534,7 @@ pub async fn execute_installation(
                     && let Err(ce) = crate::arch::offline::cleanup_target(
                         &executor,
                         install_mode,
-                        plan.mirror_region.as_deref(),
+                        plan.mirror_region().as_deref(),
                     )
                 {
                     println!("Warning: Offline cleanup after failed install failed: {ce}");
@@ -552,7 +580,7 @@ pub async fn execute_installation(
             crate::arch::offline::cleanup_target(
                 &executor,
                 install_mode,
-                plan.mirror_region.as_deref(),
+                plan.mirror_region().as_deref(),
             )?;
 
             let marker = crate::arch::installation_identity::write_completed_marker(
@@ -617,12 +645,12 @@ async fn execute_step(
             "Step {:?} requires chroot, setting up and entering...",
             step
         );
-        setup_chroot(executor, config_path)?;
+        setup_chroot(executor, config_path, plan.linux_variant())?;
 
         // Re-enter the installer in the target with its copied questions file.
         let step_name = format!("{:?}", step).to_lowercase();
 
-        let mut cmd = std::process::Command::new("arch-chroot");
+        let mut cmd = std::process::Command::new(plan.linux_variant().chroot_command());
         cmd.arg(paths::CHROOT_MOUNT)
             .arg("/usr/bin/ins-install")
             .arg("arch")
@@ -631,7 +659,7 @@ async fn execute_step(
             .arg("--questions-file")
             .arg(paths::CONFIG_FILE);
 
-        if !plan.environment.host().etc_is_ephemeral() {
+        if !plan.environment().host().etc_is_ephemeral() {
             cmd.env(crate::arch::bootstrap::PRESERVE_FIRMWARE, "1");
         }
 
@@ -656,8 +684,8 @@ async fn execute_step(
         }
 
         // The step's real runtime was reported by the inner invocation inside
-        // the chroot; here the whole arch-chroot round trip only goes to the
-        // log file to keep the terminal free of double reports.
+        // the chroot; here the whole chroot round trip only goes to the log
+        // file to keep the terminal free of double reports.
         executor.log(&format!(
             "Step {:?} (via chroot) took {:.1}s",
             step,
@@ -679,7 +707,7 @@ async fn execute_step(
     match step {
         InstallStep::Disk => disk::prepare_disk(plan, context, executor)?,
         InstallStep::Base => base::install_base(plan, executor).await?,
-        InstallStep::Fstab => fstab::generate_fstab(executor)?,
+        InstallStep::Fstab => fstab::generate_fstab(executor, plan.linux_variant())?,
         InstallStep::Config => config::install_config(plan, executor).await?,
         InstallStep::Bootloader => bootloader::install_bootloader(plan, executor).await?,
         InstallStep::Post => post::install_post(plan, executor).await?,
@@ -710,8 +738,19 @@ async fn execute_step(
     Ok(())
 }
 
-fn setup_chroot(executor: &dyn CommandRunner, config_path: &std::path::Path) -> Result<()> {
-    println!("Setting up chroot environment...");
+fn setup_chroot(
+    executor: &dyn CommandRunner,
+    config_path: &std::path::Path,
+    linux_variant: ArchLinuxVariant,
+) -> Result<()> {
+    println!(
+        "Setting up chroot environment for {}...",
+        linux_variant.chroot_command()
+    );
+
+    if !executor.dry_run() {
+        linux_variant.verify_root(std::path::Path::new(paths::CHROOT_MOUNT))?;
+    }
 
     let current_exe = std::env::current_exe()?;
     let target_bin = paths::chroot_path("/usr/bin/ins-install");
@@ -854,6 +893,7 @@ mod tests {
 
     use super::CommandRunner;
     use super::mock::MockRunner;
+    use super::pid1_indicates_chroot;
 
     /// A runner whose commands always fail, to exercise best-effort handling.
     struct AlwaysFails;
@@ -893,5 +933,14 @@ mod tests {
 
         assert!(runner.run_best_effort(&mut cmd, "test nicety"));
         assert_eq!(runner.command_log(), vec!["true --version".to_string()]);
+    }
+
+    #[test]
+    fn pid_namespaced_chroot_recognizes_the_installer() {
+        assert!(pid1_indicates_chroot("ins-install\n"));
+        assert!(pid1_indicates_chroot("chroot"));
+        assert!(!pid1_indicates_chroot("systemd"));
+        assert!(!pid1_indicates_chroot("openrc-init"));
+        assert!(!pid1_indicates_chroot(""));
     }
 }

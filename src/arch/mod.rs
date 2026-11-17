@@ -1,4 +1,5 @@
 pub mod annotations;
+pub mod arch_linux_variant;
 pub mod bootstrap;
 pub mod cli;
 pub mod config;

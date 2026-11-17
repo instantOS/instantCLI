@@ -186,7 +186,7 @@ impl WizardStep for BtrfsCompressionQuestion {
     }
 
     /// Only relevant when the root filesystem is btrfs.
-    fn should_ask(&self, context: &InstallContext) -> bool {
+    fn is_relevant(&self, context: &InstallContext) -> bool {
         RootFilesystem::selected_or_default(context).is_btrfs()
     }
 

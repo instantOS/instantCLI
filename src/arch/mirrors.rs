@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::engine::DataKey;
 
 /// Fallback URL containing all HTTPS mirrors (commented out)
@@ -36,15 +37,6 @@ pub struct MirrorRegionCodesKey;
 impl DataKey for MirrorRegionCodesKey {
     type Value = HashMap<String, String>;
     const NAME: &'static str = "mirror_region_codes";
-}
-
-/// Key to track whether mirror regions fetch failed
-/// When true, the MirrorRegionQuestion should be skipped
-pub struct MirrorRegionsFetchFailed;
-
-impl DataKey for MirrorRegionsFetchFailed {
-    type Value = bool;
-    const NAME: &'static str = "mirror_regions_fetch_failed";
 }
 
 // ============================================================================
@@ -372,13 +364,15 @@ impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
         vec![
             KeyId::of::<MirrorRegionsKey>(),
             KeyId::of::<MirrorRegionCodesKey>(),
-            KeyId::of::<MirrorRegionsFetchFailed>(),
         ]
     }
 
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
+        let linux_variant =
+            ArchLinuxVariant::detect().context("could not detect the installation variant")?;
         provide_mirrorlist(
             context,
+            linux_variant,
             crate::arch::offline::mode(),
             bundled_region_codes(),
         )
@@ -388,9 +382,19 @@ impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
 
 async fn provide_mirrorlist(
     context: &crate::arch::engine::InstallContext,
+    linux_variant: ArchLinuxVariant,
     mode: crate::arch::offline::Mode,
     bundled: Option<HashMap<String, String>>,
 ) -> Result<()> {
+    if linux_variant.is_artix() {
+        // Artix keeps the live system's Artix mirrorlist. archlinux.org's
+        // regions describe Arch repositories only. Publish no choices rather
+        // than recording this as a network failure.
+        context.set::<MirrorRegionsKey>(Vec::new());
+        context.set::<MirrorRegionCodesKey>(HashMap::new());
+        return Ok(());
+    }
+
     if mode.is_offline() {
         provide_bundled_regions(context, bundled);
         return Ok(());
@@ -408,7 +412,6 @@ fn publish_regions(
     names.sort();
     context.set::<MirrorRegionsKey>(names);
     context.set::<MirrorRegionCodesKey>(regions);
-    context.set::<MirrorRegionsFetchFailed>(false);
 }
 
 /// Offline: serve the build-time region snapshot so the question is still
@@ -429,7 +432,7 @@ fn provide_bundled_regions(
         None => {
             println!("Offline install: bundle carries no region snapshot; selection skipped.");
             context.set::<MirrorRegionsKey>(Vec::new());
-            context.set::<MirrorRegionsFetchFailed>(true);
+            context.set::<MirrorRegionCodesKey>(HashMap::new());
         }
     }
 }
@@ -440,9 +443,9 @@ async fn provide_fetched_regions(context: &crate::arch::engine::InstallContext) 
         Err(e) => {
             eprintln!("Failed to fetch mirror regions: {}", e);
             eprintln!("Mirror region selection will be skipped; fallback mirrorlist will be used.");
-            // Set empty list - the question will be skipped via should_ask()
+            // Set empty list - the question will be skipped via is_available()
             context.set::<MirrorRegionsKey>(Vec::new());
-            context.set::<MirrorRegionsFetchFailed>(true);
+            context.set::<MirrorRegionCodesKey>(HashMap::new());
         }
     }
     Ok(())
@@ -456,12 +459,16 @@ mod tests {
     async fn offline_provider_skips_the_fetch_and_hides_the_question() {
         // Without a snapshot, degrade exactly like a failed fetch.
         let context = crate::arch::engine::InstallContext::new();
-        provide_mirrorlist(&context, crate::arch::offline::Mode::Strict, None)
-            .await
-            .unwrap();
+        provide_mirrorlist(
+            &context,
+            ArchLinuxVariant::Arch,
+            crate::arch::offline::Mode::Strict,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(context.get::<MirrorRegionsKey>(), Some(Vec::new()));
-        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(true));
 
         // With a snapshot, the question is asked from bundle data alone —
         // never the network.
@@ -470,6 +477,7 @@ mod tests {
         codes.insert("Germany".to_string(), "de".to_string());
         provide_mirrorlist(
             &context,
+            ArchLinuxVariant::Arch,
             crate::arch::offline::Mode::Opportunistic,
             Some(codes),
         )
@@ -480,7 +488,25 @@ mod tests {
             context.get::<MirrorRegionsKey>(),
             Some(vec!["Germany".to_string()])
         );
-        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(false));
+    }
+
+    #[tokio::test]
+    async fn artix_skips_the_archlinux_org_region_fetch() {
+        use crate::arch::arch_linux_variant::ArtixInitSystem;
+
+        // Online mode would otherwise perform the archlinux.org request; the
+        // early return must keep this test off the network.
+        let context = crate::arch::engine::InstallContext::new();
+        provide_mirrorlist(
+            &context,
+            ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC),
+            crate::arch::offline::Mode::Online,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(context.get::<MirrorRegionsKey>(), Some(Vec::new()));
     }
 
     #[test]
@@ -502,7 +528,6 @@ mod tests {
                 .and_then(|m| m.get("Germany").cloned()),
             Some("de".to_string())
         );
-        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(false));
     }
 
     #[test]
@@ -510,7 +535,6 @@ mod tests {
         let context = crate::arch::engine::InstallContext::new();
         provide_bundled_regions(&context, None);
         assert_eq!(context.get::<MirrorRegionsKey>(), Some(Vec::new()));
-        assert_eq!(context.get::<MirrorRegionsFetchFailed>(), Some(true));
     }
 
     #[test]

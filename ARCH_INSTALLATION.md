@@ -29,8 +29,9 @@ versions and keyrings can lag behind current Arch packages; the bootstrap
 provides a single, current Arch toolchain and trust database.
 
 The interactive installer checks HTTPS connectivity and offers network
-configuration on the source host before preparing Arch. If `nmtui` is absent,
-configure the connection using the host's network settings and select Retry.
+configuration on the source host before preparing Arch, using `nmtui`,
+`connmanctl`, or `iwctl` in that order of preference. If none is available,
+configure the connection using the host's network settings and select Check again.
 The bootstrap shares that connection; it does not run a network configuration
 UI or expose the host's NetworkManager sockets. If connectivity fails during
 preparation or installation, fix it on the source host and rerun the same

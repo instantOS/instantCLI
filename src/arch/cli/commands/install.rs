@@ -4,6 +4,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::arch::cli::ArchCommands;
+use crate::arch::host::HostProfile;
 
 use super::super::utils::ensure_root;
 use super::ask::{AskOutcome, handle_ask_command};
@@ -37,18 +38,77 @@ fn confirm_battery_power() -> Result<bool> {
     ))
 }
 
+/// A network configuration tool the live environment may ship.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NetworkSetupTool {
+    Nmtui,
+    Connmanctl,
+    Iwctl,
+}
+
+impl NetworkSetupTool {
+    fn binary(self) -> &'static str {
+        match self {
+            Self::Nmtui => "nmtui",
+            Self::Connmanctl => "connmanctl",
+            Self::Iwctl => "iwctl",
+        }
+    }
+
+    fn action_label(self) -> &'static str {
+        match self {
+            Self::Nmtui => "Open nmtui",
+            Self::Connmanctl => "Open connmanctl",
+            Self::Iwctl => "Open iwctl",
+        }
+    }
+}
+
+/// The first available network tool, in preference order.
+///
+/// `available` is injected so the order is testable without touching the
+/// machine's installed binaries.
+fn select_network_setup_tool(available: impl Fn(&str) -> bool) -> Option<NetworkSetupTool> {
+    [
+        NetworkSetupTool::Nmtui,
+        NetworkSetupTool::Connmanctl,
+        NetworkSetupTool::Iwctl,
+    ]
+    .into_iter()
+    .find(|tool| available(tool.binary()))
+}
+
+fn run_network_setup_tool(tool: NetworkSetupTool) -> Result<()> {
+    let status = std::process::Command::new(tool.binary()).status()?;
+    if !status.success() {
+        eprintln!(
+            "{} exited unsuccessfully; internet connectivity will be checked again.",
+            tool.binary()
+        );
+    }
+    Ok(())
+}
+
+fn wait_for_manual_connection() -> Result<()> {
+    println!("No supported network configuration tool was found.");
+    println!("Connect to a network manually, then press Enter to check again.");
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(())
+}
+
 async fn ensure_interactive_internet() -> Result<bool> {
     use crate::menu_utils::{ConfirmResult, FzfWrapper};
 
     // Offline installs never block on connectivity: the bundle covers the
-    // packages, so nmtui stays an offer the user may take or leave.
+    // packages, so the network prompt stays an offer the user may take or
+    // leave.
     let offline = crate::arch::offline::mode().is_offline();
 
-    // Test the protocol the installer actually needs. ICMP can be blocked on
-    // a working connection, and must not prevent an HTTPS installation.
+    // Check HTTPS: ICMP may be blocked on a working connection.
     while !crate::arch::network::available().await? {
-        let has_nmtui = which::which("nmtui").is_ok();
-        let (prompt, no_text) = if offline && has_nmtui {
+        let tool = select_network_setup_tool(|binary| which::which(binary).is_ok());
+        let (prompt, no_text) = if offline && tool.is_some() {
             (
                 "No internet connection was detected. The offline bundle covers this installation.\n\nOpen the network configuration anyway?",
                 "Continue without network",
@@ -58,7 +118,7 @@ async fn ensure_interactive_internet() -> Result<bool> {
                 "Cannot reach Arch Linux over HTTPS. The offline bundle covers this installation. Configure networking using this system's settings if needed, then retry, or continue without network.",
                 "Continue without network",
             )
-        } else if has_nmtui {
+        } else if tool.is_some() {
             (
                 "No internet connection was detected. instantOS installation requires internet.\n\nOpen the network configuration now?",
                 "Abort installation",
@@ -72,7 +132,7 @@ async fn ensure_interactive_internet() -> Result<bool> {
 
         let choice = FzfWrapper::builder()
             .confirm(prompt)
-            .yes_text(if has_nmtui { "Open nmtui" } else { "Retry" })
+            .yes_text(tool.map_or("Check again", NetworkSetupTool::action_label))
             .no_text(no_text)
             .confirm_dialog()?;
 
@@ -85,13 +145,9 @@ async fn ensure_interactive_internet() -> Result<bool> {
             return Ok(false);
         }
 
-        if has_nmtui {
-            let status = std::process::Command::new("nmtui").status()?;
-            if !status.success() {
-                eprintln!(
-                    "nmtui exited unsuccessfully; internet connectivity will be checked again."
-                );
-            }
+        match tool {
+            Some(tool) => run_network_setup_tool(tool)?,
+            None => wait_for_manual_connection()?,
         }
     }
 
@@ -114,24 +170,24 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    let profile = crate::arch::host::HostProfile::detect()?;
+    let profile = HostProfile::detect()?;
     // The source already performed these checks before launching a bootstrap.
     // Network configuration belongs to the source's desktop/service manager;
     // neither is exposed in the disposable Arch environment.
-    if profile != crate::arch::host::HostProfile::Bootstrap {
+    if profile != HostProfile::Bootstrap {
         if !confirm_battery_power()? {
             println!("Installation aborted.");
             return Ok(());
         }
 
         // Network configuration must run as the desktop user. Keep this before
-        // privilege escalation and re-check after every nmtui session.
+        // privilege escalation and re-check after every network configuration session.
         if !ensure_interactive_internet().await? {
             return Ok(());
         }
     }
 
-    if profile == crate::arch::host::HostProfile::ForeignDistro {
+    if profile == HostProfile::ForeignDistro {
         ensure_root()?;
         return crate::arch::bootstrap::launch(crate::arch::bootstrap::Request::Install { debug })
             .await;
@@ -149,7 +205,7 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
             "{} {}",
             "Error:".red().bold(),
             format!(
-                "Arch Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
+                "Arch Linux or Artix Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
                 system_info.architecture
             )
             .red()
@@ -195,6 +251,28 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_tools_are_preferred_in_order() {
+        assert_eq!(
+            select_network_setup_tool(|_| true),
+            Some(NetworkSetupTool::Nmtui),
+            "nmtui wins when everything is installed"
+        );
+        assert_eq!(
+            select_network_setup_tool(|binary| binary != "nmtui"),
+            Some(NetworkSetupTool::Connmanctl)
+        );
+        assert_eq!(
+            select_network_setup_tool(|binary| binary == "iwctl"),
+            Some(NetworkSetupTool::Iwctl)
+        );
+        assert_eq!(
+            select_network_setup_tool(|_| false),
+            None,
+            "no tool falls back to the manual prompt"
+        );
+    }
 
     #[test]
     fn the_wizard_uses_a_host_relative_configuration_path() {

@@ -315,10 +315,25 @@ fn chroot(root: &Path) -> Command {
         "HOME=/root",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin",
         "LANG=C.UTF-8",
+        // The minimal bootstrap may not contain /sbin/init for variant detection.
+        "INS_ARCH_LINUX_VARIANT=arch",
         "INS_INSTALL_PRESERVE_FIRMWARE=1",
     ]);
     if let Ok(term) = std::env::var("TERM") {
         command.arg(format!("TERM={term}"));
     }
     command
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bootstrap_selects_arch_without_requiring_an_installed_init_system() {
+        let command = chroot(Path::new("/bootstrap"));
+        let args: Vec<_> = command.get_args().collect();
+        assert!(args.windows(2).any(|pair| pair == ["/usr/bin/env", "-i"]));
+        assert!(args.iter().any(|arg| *arg == "INS_ARCH_LINUX_VARIANT=arch"));
+    }
 }
