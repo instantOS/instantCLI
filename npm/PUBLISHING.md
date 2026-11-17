@@ -8,6 +8,8 @@ The `npm` job in `.github/workflows/release.yml` reuses the two musl archives fr
 - `@instantos/cli` (provides the `ins` executable)
 
 Versions come from Cargo.toml and must match the checked-out `vVERSION` tag.
+The release metadata job passes that tag to npm for both tag-triggered and
+branch-triggered releases.
 Binary packages publish first with exact version dependencies in the launcher.
 Stable versions use `latest`; prereleases use `next`. Rerunning a failed job skips
 versions already published. npm versions are immutable: corrections to a
@@ -23,13 +25,12 @@ published package require a new release version.
    2FA** for unattended CI publishing, use a short expiry, and avoid IP
    restrictions incompatible with GitHub-hosted runners.
 3. Add the token as the repository Actions secret **`NPM_TOKEN`**. No npm
-   username/password or new GitHub token is needed. Existing release-plz and
-   GitHub release credentials remain in use.
-4. After these changes are merged, create the next release normally. For an
-   existing tag containing these workflow files, Actions → Release → Run
-   workflow → choose that tag also works. Running against a branch does not
-   publish npm packages. The existing release workflow's version check requires
-   a tag; this change does not alter that behavior.
+   username/password or additional GitHub token is needed.
+4. Merge the generated release PR as described in [release maintenance](../RELEASING.md).
+   The same workflow creates the GitHub release and publishes npm packages.
+   To retry, rerun the failed jobs, or run Actions → Release → Run workflow
+   against the release tag. A manual run on a branch creates a release for
+   that commit's Cargo version, including npm publication.
 
 All three names must be available or already owned by the publishing account.
 If `@instantos/cli` is unavailable, update the scope/names in `build-packages.py`,

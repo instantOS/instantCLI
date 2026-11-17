@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use super::{PreviewContext, PreviewId};
 use crate::ui::preview::PreviewWriter;
 
-const PREVIEW_CACHE_VERSION: u32 = 4;
+const PREVIEW_CACHE_VERSION: u32 = 5;
 
 pub(super) fn get_or_render<F>(id: PreviewId, ctx: &PreviewContext, render: F) -> Result<String>
 where
@@ -112,11 +112,10 @@ fn cache_path(id: PreviewId, ctx: &PreviewContext) -> Result<Option<PathBuf>> {
     hasher.update(id.to_string().as_bytes());
     hasher.update([0]);
     hasher.update(key.as_bytes());
-    if cache_depends_on_dimensions(id) {
-        hasher.update([0]);
-        hasher.update(ctx.columns.unwrap_or_default().to_le_bytes());
-        hasher.update(ctx.lines.unwrap_or_default().to_le_bytes());
-    }
+    // Structured previews wrap to their pane width, including package and MIME previews.
+    hasher.update([0]);
+    hasher.update(ctx.columns.unwrap_or_default().to_le_bytes());
+    hasher.update(ctx.lines.unwrap_or_default().to_le_bytes());
     let digest = hex::encode(hasher.finalize());
 
     Ok(Some(
@@ -133,33 +132,6 @@ pub(crate) fn invalidate(id: PreviewId) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn cache_depends_on_dimensions(id: PreviewId) -> bool {
-    !matches!(
-        id,
-        PreviewId::Package
-            | PreviewId::InstalledPackage
-            | PreviewId::Apt
-            | PreviewId::Dnf
-            | PreviewId::Zypper
-            | PreviewId::Pacman
-            | PreviewId::Snap
-            | PreviewId::Pkg
-            | PreviewId::Flatpak
-            | PreviewId::Aur
-            | PreviewId::Cargo
-            | PreviewId::MimeType
-            | PreviewId::DefaultImageViewer
-            | PreviewId::DefaultVideoPlayer
-            | PreviewId::DefaultAudioPlayer
-            | PreviewId::DefaultArchiveManager
-            | PreviewId::DefaultBrowser
-            | PreviewId::DefaultTextEditor
-            | PreviewId::DefaultEmail
-            | PreviewId::DefaultFileManager
-            | PreviewId::DefaultPdfViewer
-    )
 }
 
 fn preview_cache_dir() -> Result<PathBuf> {
@@ -224,6 +196,7 @@ mod tests {
         }
 
         let ctx = PreviewContext {
+            mime_type: None,
             key: Some("abc".to_string()),
             columns: Some(80),
             lines: Some(24),
@@ -247,13 +220,15 @@ mod tests {
     }
 
     #[test]
-    fn flatpak_cache_key_ignores_dimensions() {
+    fn formatted_cache_keys_include_pane_dimensions() {
         let ctx_a = PreviewContext {
+            mime_type: None,
             key: Some("flathub|org.mozilla.firefox".to_string()),
             columns: Some(80),
             lines: Some(24),
         };
         let ctx_b = PreviewContext {
+            mime_type: None,
             key: Some("flathub|org.mozilla.firefox".to_string()),
             columns: Some(120),
             lines: Some(40),
@@ -265,7 +240,7 @@ mod tests {
         let path_a = cache_path(PreviewId::Flatpak, &ctx_a).unwrap().unwrap();
         let path_b = cache_path(PreviewId::Flatpak, &ctx_b).unwrap().unwrap();
 
-        assert_eq!(path_a.file_name(), path_b.file_name());
+        assert_ne!(path_a.file_name(), path_b.file_name());
     }
 
     #[test]
@@ -293,6 +268,7 @@ mod tests {
             std::env::set_var("INS_PREVIEW_CACHE_DIR", temp.path());
         }
         let ctx = PreviewContext {
+            mime_type: None,
             key: Some("example".to_string()),
             columns: None,
             lines: None,

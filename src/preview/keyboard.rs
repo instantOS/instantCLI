@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde::Deserialize;
 
 use crate::common::compositor::niri;
-use crate::preview::helpers::{push_raw_lines, truncate_label};
+use crate::preview::helpers::{push_text_lines, truncate_label};
 use crate::settings::definitions::keyboard::{
     current_gnome_layouts, current_vconsole_keymap, current_x11_layout, current_x11_layouts,
 };
@@ -35,7 +35,7 @@ pub(crate) fn render_keyboard_layout_preview() -> Result<String> {
         ]
     };
 
-    builder = push_raw_lines(builder, &lines)
+    builder = push_text_lines(builder, &lines)
         .blank()
         .text("Info")
         .text("Wayland compositors can expose multiple active layouts.")
@@ -53,8 +53,8 @@ pub(crate) fn render_tty_keymap_preview() -> Result<String> {
         .subtext("Console keymap for virtual terminals.")
         .blank()
         .text("Current State")
-        .raw(&format!("Keymap: {keymap}"))
-        .raw("File: /etc/vconsole.conf")
+        .field("Keymap", &keymap)
+        .field("File", "/etc/vconsole.conf")
         .blank()
         .text("Info")
         .text("Applies to virtual consoles and login TTYs.")
@@ -88,10 +88,10 @@ pub(crate) fn render_login_screen_layout_preview() -> Result<String> {
         .subtext("X11 layout used by GDM/LightDM login screens.")
         .blank()
         .text("Current State")
-        .raw(&format!("Layout: {layout}"));
+        .field("Layout", &layout);
 
     if let Some(source) = source {
-        builder = builder.raw(&format!("Source: {source}"));
+        builder = builder.field("Source", &source);
     }
 
     builder = builder

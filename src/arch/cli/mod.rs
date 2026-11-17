@@ -15,6 +15,12 @@ pub enum DualbootCommands {
 pub enum ArchCommands {
     /// Start the Arch Linux installation wizard
     Install,
+    /// Internal entry point for the private Arch bootstrap namespace
+    #[command(hide = true)]
+    BootstrapEnter {
+        #[arg(long)]
+        root: std::path::PathBuf,
+    },
     /// List all available questions
     List,
     /// Ask a specific question

@@ -10,12 +10,13 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use sudo::RunningAs;
 
 const REPO_OWNER: &str = "instantOS";
 const REPO_NAME: &str = "instantCLI";
 const BIN_NAME: &str = "ins";
-const CRATE_NAME: &str = "ins";
+const REPO_URL: &str = "https://github.com/instantOS/instantCLI";
 const GITHUB_API_URL: &str = "https://api.github.com/repos";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,17 +120,6 @@ struct GitHubRelease {
     assets: Vec<GitHubAsset>,
 }
 
-#[derive(serde::Deserialize, Debug)]
-struct CratesIoResponse {
-    #[serde(rename = "crate")]
-    krate: CrateInfo,
-}
-
-#[derive(serde::Deserialize, Debug)]
-struct CrateInfo {
-    max_version: String,
-}
-
 /// Fetch the latest release from GitHub that has binaries available
 async fn fetch_latest_release_with_binaries(
     target: &str,
@@ -181,34 +171,33 @@ async fn fetch_latest_release_with_binaries(
     ))
 }
 
-/// Fetch the latest published crate version from crates.io
-async fn fetch_latest_crate_version(crate_name: &str) -> Result<String> {
-    let url = format!("https://crates.io/api/v1/crates/{}", crate_name);
-
-    let client = reqwest::Client::builder()
+/// Cargo installs follow stable GitHub releases and build their exact source tag.
+async fn fetch_latest_release() -> Result<GitHubRelease> {
+    let url = format!(
+        "{}/{}/{}/releases/latest",
+        GITHUB_API_URL, REPO_OWNER, REPO_NAME
+    );
+    reqwest::Client::builder()
         .user_agent(format!("{}/{}", BIN_NAME, env!("CARGO_PKG_VERSION")))
-        .build()
-        .context("Failed to create HTTP client")?;
-
-    let response = client
-        .get(&url)
+        .build()?
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .context("Failed to fetch crate information")?;
-
-    if !response.status().is_success() {
-        return Err(anyhow!(
-            "crates.io API returned status: {}",
-            response.status()
-        ));
-    }
-
-    let crate_info: CratesIoResponse = response
+        .context("Failed to fetch GitHub release information")?
+        .error_for_status()
+        .context("GitHub release request failed")?
         .json()
         .await
-        .context("Failed to parse crate information")?;
+        .context("Failed to parse GitHub release information")
+}
 
-    Ok(crate_info.krate.max_version)
+fn cargo_update_command(tag: &str) -> Command {
+    let mut command = Command::new("cargo");
+    command.args([
+        "install", "--git", REPO_URL, "--tag", tag, "--locked", "--force", BIN_NAME,
+    ]);
+    command
 }
 
 /// Compare version strings
@@ -385,8 +374,6 @@ async fn verify_checksum(archive_path: &Path, sha_url: Option<&str>) -> Result<(
 
 /// Extract the archive
 fn extract_archive(archive_path: &Path, dest_dir: &Path) -> Result<()> {
-    use std::process::Command;
-
     let filename = archive_path.to_string_lossy();
 
     if filename.ends_with(".tar.zst") {
@@ -444,8 +431,6 @@ fn find_binary_in_dir(search_dir: &Path, bin_name: &str) -> Result<PathBuf> {
 /// Install the binary (with or without sudo)
 /// Uses a two-phase approach to avoid "Text file busy" error
 fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> Result<()> {
-    use std::process::Command;
-
     // Create a temporary path alongside the target for atomic replacement
     let temp_target = target_path.with_extension("new");
 
@@ -506,19 +491,19 @@ fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> R
 
 async fn self_update_via_cargo(current_version: &str) -> Result<()> {
     use std::io::ErrorKind;
-    use std::process::Command;
 
     emit(
         Level::Info,
         "self_update.cargo.detected",
         &format!(
-            "{} Detected Cargo installation; checking crates.io...",
+            "{} Detected Cargo installation; checking GitHub releases...",
             char::from(NerdFont::Package)
         ),
         None,
     );
 
-    let latest_version = fetch_latest_crate_version(CRATE_NAME).await?;
+    let release = fetch_latest_release().await?;
+    let latest_version = release.tag_name.trim_start_matches('v');
 
     emit(
         Level::Info,
@@ -541,7 +526,7 @@ async fn self_update_via_cargo(current_version: &str) -> Result<()> {
         None,
     );
 
-    if !is_newer_version(current_version, &latest_version) {
+    if !is_newer_version(current_version, latest_version) {
         emit(
             Level::Success,
             "self_update.up_to_date",
@@ -577,18 +562,15 @@ async fn self_update_via_cargo(current_version: &str) -> Result<()> {
         Level::Info,
         "self_update.cargo.installing",
         &format!(
-            "{} Running cargo install --force {}...",
+            "{} Installing {} from GitHub tag {}...",
             char::from(NerdFont::Package),
-            CRATE_NAME
+            BIN_NAME,
+            release.tag_name
         ),
         None,
     );
 
-    let status = Command::new("cargo")
-        .arg("install")
-        .arg("--force")
-        .arg(CRATE_NAME)
-        .status();
+    let status = cargo_update_command(&release.tag_name).status();
 
     match status {
         Ok(status) => {
@@ -607,9 +589,11 @@ async fn self_update_via_cargo(current_version: &str) -> Result<()> {
                 None,
             );
             println!(
-                "   {}: cargo install --force {}",
+                "   {}: cargo install --git {} --tag {} --locked --force {}",
                 "Example".bright_black(),
-                CRATE_NAME
+                REPO_URL,
+                release.tag_name,
+                BIN_NAME
             );
             return Ok(());
         }
@@ -811,4 +795,22 @@ pub async fn self_update() -> Result<()> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cargo_update_builds_the_selected_github_release() {
+        let command = cargo_update_command("v0.15.0");
+        assert_eq!(command.get_program(), "cargo");
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            args,
+            [
+                "install", "--git", REPO_URL, "--tag", "v0.15.0", "--locked", "--force", "ins"
+            ]
+        );
+    }
 }

@@ -26,7 +26,9 @@ pub enum HostProfile {
     RunningInstantOs,
     /// A running Artix system (any of its supported init systems).
     RunningArtix,
-    /// Any other distribution. Not supported for installation yet.
+    /// A disposable Arch bootstrap launched from another Linux distribution.
+    Bootstrap,
+    /// Any other distribution. Installation requires launching the bootstrap.
     ForeignDistro,
 }
 
@@ -60,6 +62,9 @@ impl HostProfile {
     /// carries an Arch `os-release`, so asking the distribution first would
     /// classify a live session as a running Arch system.
     fn detect_uncached() -> Self {
+        if crate::arch::bootstrap::is_environment() {
+            return Self::Bootstrap;
+        }
         if crate::common::distro::is_live_iso() {
             return Self::LiveIso;
         }
@@ -81,7 +86,11 @@ impl HostProfile {
     pub fn supports_installation(self) -> bool {
         matches!(
             self,
-            Self::LiveIso | Self::RunningArch | Self::RunningInstantOs | Self::RunningArtix
+            Self::LiveIso
+                | Self::RunningArch
+                | Self::RunningInstantOs
+                | Self::RunningArtix
+                | Self::Bootstrap
         )
     }
 
@@ -91,6 +100,7 @@ impl HostProfile {
             Self::RunningArch => "a running Arch Linux system",
             Self::RunningInstantOs => "a running instantOS system",
             Self::RunningArtix => "a running Artix Linux system",
+            Self::Bootstrap => "an isolated Arch bootstrap environment",
             Self::ForeignDistro => "this distribution",
         }
     }
@@ -282,6 +292,8 @@ mod tests {
     fn a_running_arch_host_supports_installation_but_not_reconfiguration() {
         assert!(HostProfile::RunningArch.supports_installation());
         assert!(HostProfile::RunningArtix.supports_installation());
+        assert!(HostProfile::Bootstrap.supports_installation());
+        assert!(!HostProfile::Bootstrap.etc_is_ephemeral());
         assert!(!HostProfile::ForeignDistro.supports_installation());
     }
 

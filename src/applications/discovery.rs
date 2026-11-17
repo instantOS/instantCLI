@@ -1,6 +1,6 @@
-//! Fresh application discovery for `ins launch`.
+//! Desktop paths, application availability, and launcher discovery.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,8 +12,10 @@ use crate::common::desktop_entry::DesktopEntry;
 /// precedence order; the first desktop file for an ID masks every later one,
 /// including when that first entry is `Hidden=true`.
 pub fn discover_launch_items(include_path: bool) -> Vec<LaunchItem> {
-    let mut items = Vec::new();
-    let mut desktop_ids = HashSet::new();
+    discover_items(include_path)
+}
+
+fn discover_items(include_path: bool) -> Vec<LaunchItem> {
     let current_desktops = current_desktops();
     let path_dirs = env::split_paths(&env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
     let (path_executables, executable_names) = if include_path {
@@ -23,18 +25,12 @@ pub fn discover_launch_items(include_path: bool) -> Vec<LaunchItem> {
         (Vec::new(), None)
     };
 
-    for data_dir in super::get_xdg_data_dirs() {
+    let mut scan = DesktopScan::new(&current_desktops, &path_dirs, executable_names.as_ref());
+    for data_dir in crate::applications::data_dirs() {
         let applications = data_dir.join("applications");
-        discover_desktop_directory(
-            &applications,
-            &applications,
-            &mut desktop_ids,
-            &current_desktops,
-            &path_dirs,
-            executable_names.as_ref(),
-            &mut items,
-        );
+        scan.directory(&applications, &applications);
     }
+    let mut items = scan.items;
 
     if !path_executables.is_empty() {
         let desktop_names = items
@@ -99,15 +95,69 @@ fn discover_path_executables(path_dirs: &[PathBuf]) -> (Vec<String>, HashSet<Str
     (names, seen)
 }
 
-fn discover_desktop_directory(
-    root: &Path,
-    directory: &Path,
-    seen_ids: &mut HashSet<String>,
-    current_desktops: &HashSet<String>,
-    path_dirs: &[PathBuf],
-    executable_names: Option<&HashSet<String>>,
-    items: &mut Vec<LaunchItem>,
-) {
+struct DesktopScan<'a> {
+    seen_ids: HashSet<String>,
+    current_desktops: &'a HashSet<String>,
+    path_dirs: &'a [PathBuf],
+    executable_names: Option<&'a HashSet<String>>,
+    items: Vec<LaunchItem>,
+}
+
+impl<'a> DesktopScan<'a> {
+    fn new(
+        current_desktops: &'a HashSet<String>,
+        path_dirs: &'a [PathBuf],
+        executable_names: Option<&'a HashSet<String>>,
+    ) -> Self {
+        Self {
+            seen_ids: HashSet::new(),
+            current_desktops,
+            path_dirs,
+            executable_names,
+            items: Vec::new(),
+        }
+    }
+
+    fn directory(&mut self, root: &Path, directory: &Path) {
+        visit_desktop_paths(root, directory, &mut |id, path| {
+            if !self.seen_ids.insert(id.clone()) {
+                return;
+            }
+
+            let Ok(content) = fs::read_to_string(&path) else {
+                return;
+            };
+            let Some(entry) = DesktopEntry::parse(&content) else {
+                return;
+            };
+            if !handler_available(&entry, self.path_dirs, self.executable_names) || entry.no_display
+            {
+                return;
+            }
+            if !visible_on_desktops(entry.only_show_in, entry.not_show_in, self.current_desktops) {
+                return;
+            }
+            self.items.push(LaunchItem::DesktopApp {
+                id,
+                name: entry.name.unwrap_or_default().to_string(),
+                path,
+            });
+        });
+    }
+}
+
+/// Enumerate paths without opening desktop files. The first ID wins even if invalid.
+pub(crate) fn desktop_paths(roots: &[PathBuf]) -> HashMap<String, PathBuf> {
+    let mut paths = HashMap::new();
+    for root in roots {
+        visit_desktop_paths(root, root, &mut |id, path| {
+            paths.entry(id).or_insert(path);
+        });
+    }
+    paths
+}
+
+fn visit_desktop_paths(root: &Path, directory: &Path, visit: &mut impl FnMut(String, PathBuf)) {
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
@@ -116,61 +166,63 @@ fn discover_desktop_directory(
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
-            discover_desktop_directory(
-                root,
-                &path,
-                seen_ids,
-                current_desktops,
-                path_dirs,
-                executable_names,
-                items,
-            );
-            continue;
+            visit_desktop_paths(root, &path, visit);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("desktop") {
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            let id = relative
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("-");
+            visit(id, path);
         }
-        if path.extension().and_then(|extension| extension.to_str()) != Some("desktop") {
-            continue;
-        }
-        let Ok(relative) = path.strip_prefix(root) else {
-            continue;
-        };
-        let id = relative
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("-");
-        if !seen_ids.insert(id.clone()) {
-            continue;
-        }
-
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        let Some(entry) = DesktopEntry::parse(&content) else {
-            continue;
-        };
-        if entry.hidden || entry.no_display {
-            continue;
-        }
-        if entry.entry_type != Some("Application") {
-            continue;
-        }
-        if entry.exec.is_none_or(str::is_empty) {
-            continue;
-        }
-        if let Some(try_exec) = entry.try_exec
-            && !command_exists(try_exec, path_dirs, executable_names)
-        {
-            continue;
-        }
-        if !visible_on_desktops(entry.only_show_in, entry.not_show_in, current_desktops) {
-            continue;
-        }
-        items.push(LaunchItem::DesktopApp {
-            id,
-            name: entry.name.unwrap_or_default().to_string(),
-            path,
-        });
     }
+}
+
+/// Resolve a known ID without scanning unrelated directories or parsing other apps.
+/// Hyphens can represent directory boundaries; try them in the same sorted order
+/// as the full walk, so nested and flat IDs have identical precedence.
+pub(crate) fn desktop_path(roots: &[PathBuf], id: &str) -> Option<PathBuf> {
+    if !id.ends_with(".desktop") || id.contains('/') || id.contains('\\') {
+        return None;
+    }
+    roots.iter().find_map(|root| resolve_desktop_path(root, id))
+}
+
+fn resolve_desktop_path(directory: &Path, id: &str) -> Option<PathBuf> {
+    for (offset, _) in id.match_indices('-') {
+        let prefix = &id[..offset];
+        if prefix.is_empty() || prefix == "." || prefix == ".." {
+            continue;
+        }
+        let nested = directory.join(prefix);
+        if nested.is_dir()
+            && let Some(path) = resolve_desktop_path(&nested, &id[offset + 1..])
+        {
+            return Some(path);
+        }
+    }
+    let path = directory.join(id);
+    // Broken links and unreadable entries still mask lower-priority entries.
+    if path.is_dir() {
+        return None;
+    }
+    fs::symlink_metadata(&path).ok().map(|_| path)
+}
+
+pub(crate) fn handler_available(
+    entry: &DesktopEntry<'_>,
+    path_dirs: &[PathBuf],
+    executable_names: Option<&HashSet<String>>,
+) -> bool {
+    !entry.hidden
+        && entry.entry_type == Some("Application")
+        && entry.exec.is_some_and(|exec| !exec.is_empty())
+        && entry
+            .try_exec
+            .is_none_or(|command| command_exists(command, path_dirs, executable_names))
 }
 
 fn current_desktops() -> HashSet<String> {
@@ -264,11 +316,11 @@ mod tests {
         )
         .unwrap();
 
-        let mut seen = HashSet::new();
-        let mut items = Vec::new();
         let current = HashSet::new();
-        discover_desktop_directory(&high, &high, &mut seen, &current, &[], None, &mut items);
-        discover_desktop_directory(&low, &low, &mut seen, &current, &[], None, &mut items);
+        let mut scan = DesktopScan::new(&current, &[], None);
+        scan.directory(&high, &high);
+        scan.directory(&low, &low);
+        let items = scan.items;
         assert!(items.is_empty());
     }
 
@@ -284,17 +336,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut seen = HashSet::new();
-        let mut items = Vec::new();
-        discover_desktop_directory(
-            root.path(),
-            root.path(),
-            &mut seen,
-            &HashSet::new(),
-            &[],
-            None,
-            &mut items,
-        );
+        let current = HashSet::new();
+        let mut scan = DesktopScan::new(&current, &[], None);
+        scan.directory(root.path(), root.path());
+        let items = scan.items;
         assert!(matches!(
             &items[0],
             LaunchItem::DesktopApp { id, path: actual, .. }

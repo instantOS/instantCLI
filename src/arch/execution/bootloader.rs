@@ -44,6 +44,12 @@ fn install_grub_uefi(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result
         .arg("--bootloader-id=GRUB")
         .arg("--recheck"); // Ensure GRUB is properly installed
 
+    if std::env::var_os(crate::arch::bootstrap::PRESERVE_FIRMWARE).is_some() {
+        // A spare drive must boot independently without replacing the source
+        // machine's boot order. Install the standard EFI fallback executable.
+        cmd.args(["--removable", "--no-nvram"]);
+    }
+
     executor.run(&mut cmd)?;
 
     Ok(())
@@ -341,6 +347,36 @@ fn add_grub_kernel_param(content: &str, param: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[serial_test::serial]
+    fn a_spare_drive_uses_the_efi_fallback_without_changing_firmware() {
+        let key = crate::arch::bootstrap::PRESERVE_FIRMWARE;
+        let previous = std::env::var_os(key);
+        let runner = crate::arch::execution::mock::MockRunner::new();
+        let plan = crate::arch::engine::test_install_plan();
+        // Tests run sequentially; restore the process environment before
+        // asserting, including when command construction returns an error.
+        unsafe {
+            std::env::set_var(key, "1");
+        }
+        let spare = install_grub_uefi(&plan, &runner);
+        unsafe {
+            std::env::remove_var(key);
+        }
+        let live = install_grub_uefi(&plan, &runner);
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+        spare.unwrap();
+        live.unwrap();
+        let commands = runner.command_log();
+        assert!(commands[0].contains("--removable") && commands[0].contains("--no-nvram"));
+        assert!(!commands[1].contains("--removable") && !commands[1].contains("--no-nvram"));
+    }
 
     #[test]
     fn encrypted_root_is_unlocked_by_linux_not_grub() {

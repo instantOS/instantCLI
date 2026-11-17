@@ -73,6 +73,7 @@ mod tests {
             HostProfile::RunningArch,
             HostProfile::RunningInstantOs,
             HostProfile::RunningArtix,
+            HostProfile::Bootstrap,
         ] {
             assert!(ensure_exec_host(profile, false, false).is_ok());
         }

@@ -97,7 +97,7 @@ fn wait_for_manual_connection() -> Result<()> {
     Ok(())
 }
 
-fn ensure_interactive_internet() -> Result<bool> {
+async fn ensure_interactive_internet() -> Result<bool> {
     use crate::menu_utils::{ConfirmResult, FzfWrapper};
 
     // Offline installs never block on connectivity: the bundle covers the
@@ -105,16 +105,27 @@ fn ensure_interactive_internet() -> Result<bool> {
     // leave.
     let offline = crate::arch::offline::mode().is_offline();
 
-    while !crate::common::network::check_internet() {
+    // Check HTTPS: ICMP may be blocked on a working connection.
+    while !crate::arch::network::available().await? {
         let tool = select_network_setup_tool(|binary| which::which(binary).is_ok());
-        let (prompt, no_text) = if offline {
+        let (prompt, no_text) = if offline && tool.is_some() {
             (
                 "No internet connection was detected. The offline bundle covers this installation.\n\nOpen the network configuration anyway?",
                 "Continue without network",
             )
-        } else {
+        } else if offline {
+            (
+                "Cannot reach Arch Linux over HTTPS. The offline bundle covers this installation. Configure networking using this system's settings if needed, then retry, or continue without network.",
+                "Continue without network",
+            )
+        } else if tool.is_some() {
             (
                 "No internet connection was detected. instantOS installation requires internet.\n\nOpen the network configuration now?",
+                "Abort installation",
+            )
+        } else {
+            (
+                "Cannot reach Arch Linux over HTTPS. Configure the connection using this system's network settings, then retry.",
                 "Abort installation",
             )
         };
@@ -143,22 +154,6 @@ fn ensure_interactive_internet() -> Result<bool> {
     Ok(true)
 }
 
-/// Explain supported hosts and the disk restriction on running systems.
-fn unsupported_host_message(distro: &str) -> String {
-    format!(
-        "instantOS can be installed from the live ISO or from a running Arch Linux, Artix Linux \
-         or instantOS system — but not yet from {distro}.\n\
-         \n\
-         Two ways forward:\n\
-           •  Boot the instantOS or Artix live ISO on this machine and run the installer from there.\n\
-           •  Install Arch Linux or Artix Linux first, boot it, then run `ins arch install` to put \
-         instantOS on a different disk.\n\
-         \n\
-         From a running system, the disk you are running from cannot be used — the installer \
-         refuses it and says so."
-    )
-}
-
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // The installer is interactive. Graphical launchers should normally open a
@@ -175,15 +170,27 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    if !confirm_battery_power()? {
-        println!("Installation aborted.");
-        return Ok(());
+    let profile = HostProfile::detect()?;
+    // The source already performed these checks before launching a bootstrap.
+    // Network configuration belongs to the source's desktop/service manager;
+    // neither is exposed in the disposable Arch environment.
+    if profile != HostProfile::Bootstrap {
+        if !confirm_battery_power()? {
+            println!("Installation aborted.");
+            return Ok(());
+        }
+
+        // Network configuration must run as the desktop user. Keep this before
+        // privilege escalation and re-check after every network configuration session.
+        if !ensure_interactive_internet().await? {
+            return Ok(());
+        }
     }
 
-    // Network configuration must run as the desktop user. Keep this before
-    // privilege escalation and re-check after every nmtui session.
-    if !ensure_interactive_internet()? {
-        return Ok(());
+    if profile == HostProfile::ForeignDistro {
+        ensure_root()?;
+        return crate::arch::bootstrap::launch(crate::arch::bootstrap::Request::Install { debug })
+            .await;
     }
 
     // Installation state and answers live below /etc, so escalate before
@@ -192,19 +199,6 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     ensure_root()?;
 
     let system_info = crate::arch::engine::SystemInfo::detect();
-
-    let profile = HostProfile::detect().unwrap_or_else(|error| {
-        eprintln!("Warning: could not classify this system: {error:#}");
-        HostProfile::ForeignDistro
-    });
-    if !profile.supports_installation() {
-        eprintln!(
-            "{} {}",
-            "Error:".red().bold(),
-            unsupported_host_message(&system_info.distro).red()
-        );
-        return Ok(());
-    }
 
     if system_info.architecture != "x86_64" {
         eprintln!(
@@ -257,34 +251,6 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_distro_refusal_names_both_supported_hosts() {
-        let rendered = unsupported_host_message("Ubuntu");
-
-        assert!(rendered.contains("Ubuntu"));
-        assert!(rendered.contains("live ISO"), "one supported host named");
-        assert!(
-            rendered.contains("Arch Linux"),
-            "the Arch host is named: {rendered}"
-        );
-        assert!(
-            rendered.contains("Artix Linux"),
-            "the Artix host is named: {rendered}"
-        );
-        assert!(
-            rendered.contains("Artix live ISO"),
-            "the Artix live ISO is named: {rendered}"
-        );
-        assert!(
-            rendered.contains("ins arch install"),
-            "the command for the second way forward"
-        );
-        assert!(
-            rendered.contains("different disk"),
-            "and the scope limit of the running-system path: {rendered}"
-        );
-    }
 
     #[test]
     fn network_tools_are_preferred_in_order() {

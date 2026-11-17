@@ -89,11 +89,14 @@ impl FzfSelectable for &str {
 ///
 /// Use with `FzfBuilder::items(...).select_menu()` to build menus with grouped
 /// sections.
-/// Separators are rendered as dimmed lines and navigation keys skip over them.
+/// Separators are rendered as dimmed lines and cannot be confirmed as actions.
+/// Padded menus allow focus on separators while ignoring Enter and double-click;
+/// compact menus use match-based navigation to skip them.
 ///
 /// **Best suited for short, static menus** (e.g. home/action menus) where
 /// visual grouping aids discoverability. Avoid in long, dynamically filtered
-/// lists — raw mode keeps all items visible (dimmed) which clutters large sets.
+/// lists with compact presentation — raw mode keeps nonmatches visible. Padded
+/// menus use ordinary fuzzy filtering without modifying the query.
 #[derive(Clone, Debug)]
 pub enum MenuItem<T: Clone> {
     Entry(T),
@@ -552,6 +555,23 @@ impl<A> MenuKeybind<A> {
             key,
             label: label.into(),
             action,
+        }
+    }
+}
+
+/// A displayed shortcut handled inside the renderer (rather than a submitted action).
+/// Keys are display labels, so standard controls such as Enter and Esc are valid.
+#[derive(Debug, Clone)]
+pub struct MenuHint {
+    pub key: String,
+    pub label: String,
+}
+
+impl MenuHint {
+    pub fn new(key: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            label: label.into(),
         }
     }
 }

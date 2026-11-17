@@ -4,8 +4,10 @@ use anyhow::{Context, Result};
 use ksni::TrayMethods;
 
 use super::{
-    RecorderState, get_state_file, process_is_alive, read_recorder_state, show_notification,
-    stop_recording, stop_recording_action,
+    recorder::{
+        RecorderState, get_state_file, process_is_alive, read_recorder_state, stop_recording,
+    },
+    show_notification, stop_recording_action,
 };
 
 struct RecordingTray {

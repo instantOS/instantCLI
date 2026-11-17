@@ -10,7 +10,10 @@ pub(crate) fn query_default_app(mime_type: &str) -> Result<Option<String>> {
         .context("Failed to execute xdg-mime query")?;
 
     if !output.status.success() {
-        return Ok(None);
+        anyhow::bail!(
+            "xdg-mime query failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
 
     let default_app = String::from_utf8_lossy(&output.stdout).trim().to_string();

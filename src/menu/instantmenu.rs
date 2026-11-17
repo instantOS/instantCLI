@@ -131,9 +131,14 @@ impl InstantmenuCmd {
 /// prompt (with the multi-select hint), keybinds, frecency. Shared by the
 /// GUI backend and the keybind path so both stay in lockstep.
 pub(crate) fn choice_flags(options: &ChoiceOptions) -> Vec<String> {
+    choice_flags_with_width(options, "auto")
+}
+
+/// Streaming application catalogs use a fixed width to avoid measuring every item.
+pub(crate) fn choice_flags_with_width(options: &ChoiceOptions, width: &str) -> Vec<String> {
     let mut cmd =
         InstantmenuCmd::framed()
-            .width("auto")
+            .width(width)
             .insensitive()
             .prompt(if options.allow_multiple {
                 format!("{} (ctrl+return adds more)", options.prompt)

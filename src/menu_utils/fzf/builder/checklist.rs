@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use std::process::Output;
 
 use super::shared::{
-    FzfCommandOptions, apply_fzf_command_options, base_fzf_command, default_header_text,
-    run_fzf_with_input,
+    FzfCommandOptions, apply_fzf_command_options, base_fzf_command, run_fzf_with_input,
 };
 use super::{ChecklistBuilder, ChecklistEntry};
 use crate::menu_utils::fzf::preview::PreviewUtils;
@@ -174,19 +173,24 @@ impl ChecklistBuilder {
         cmd.arg("--tiebreak=index");
         cmd.arg("--layout=reverse");
         cmd.arg("--print-query");
+        let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
+        let has_preview = !matches!(
+            preview_strategy,
+            crate::menu_utils::fzf::preview::PreviewStrategy::None
+        );
+        super::super::preview::configure_controls(&mut cmd, has_preview);
         apply_fzf_command_options(
             &mut cmd,
             &self.shared,
             FzfCommandOptions {
                 prompt_suffix: Some(" > "),
-                header: default_header_text(&self.shared),
+                header: self.shared.header_with_hints::<()>(&[]),
                 include_additional_args: true,
                 cursor,
                 responsive_layout: true,
             },
         );
 
-        let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
         let display_data: Vec<ItemDisplayData> = entries
             .iter()
             .map(|entry| ItemDisplayData {

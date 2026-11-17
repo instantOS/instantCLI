@@ -12,7 +12,7 @@ pub fn generate_fstab(executor: &dyn CommandRunner, linux_variant: ArchLinuxVari
     if let Some(output) = output_opt {
         let content = String::from_utf8(output.stdout)
             .with_context(|| format!("{fstab_command} output is not UTF-8"))?;
-        let content = stable_swap_sources(&content, |device| {
+        let mut probe_uuid = |device: &str| {
             // Probe the device directly: lsblk/udev can still have no UUID for
             // freshly formatted swap, causing `-U` to emit /dev/vdb1.
             let output = executor
@@ -21,7 +21,17 @@ pub fn generate_fstab(executor: &dyn CommandRunner, linux_variant: ArchLinuxVari
                 )?
                 .context("Swap UUID probe produced no output")?;
             String::from_utf8(output.stdout).context("Swap UUID is not UTF-8")
-        })?;
+        };
+        let content = stable_swap_sources(&content, &mut probe_uuid)?;
+        let content = if let Some(devices) = crate::arch::bootstrap::swap_devices()? {
+            let sources = devices
+                .iter()
+                .map(|device| Ok(format!("UUID={}", probe_uuid(device)?.trim())))
+                .collect::<Result<std::collections::HashSet<_>>>()?;
+            target_swaps_only(&content, &sources)
+        } else {
+            content
+        };
         use std::io::Write;
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -37,6 +47,16 @@ pub fn generate_fstab(executor: &dyn CommandRunner, linux_variant: ArchLinuxVari
 
     println!("Fstab generated.");
     Ok(())
+}
+
+fn target_swaps_only(content: &str, sources: &std::collections::HashSet<String>) -> String {
+    content
+        .split_inclusive('\n')
+        .filter(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            fields.len() < 3 || fields[2] != "swap" || sources.contains(fields[0])
+        })
+        .collect()
 }
 
 fn stable_swap_sources(
@@ -77,6 +97,18 @@ mod tests {
         let runner = MockRunner::new();
         generate_fstab(&runner, ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC)).unwrap();
         assert_eq!(runner.command_log(), vec!["fstabgen -U /mnt".to_string()]);
+    }
+
+    #[test]
+    fn host_swap_devices_and_files_do_not_enter_the_target_fstab() {
+        let content = "UUID=root / ext4 defaults 0 1\nUUID=host none swap defaults 0 0\n/swapfile none swap defaults 0 0\nUUID=target none swap defaults 0 0\n";
+        assert_eq!(
+            target_swaps_only(
+                content,
+                &std::collections::HashSet::from(["UUID=target".into()])
+            ),
+            "UUID=root / ext4 defaults 0 1\nUUID=target none swap defaults 0 0\n"
+        );
     }
 
     #[test]

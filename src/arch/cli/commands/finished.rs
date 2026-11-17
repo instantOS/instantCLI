@@ -294,12 +294,24 @@ pub(super) async fn handle_finished_command() -> Result<()> {
             crate::menu_utils::DialogOutcome::Submitted(item) => match item.option {
                 FinishedMenuOption::Reboot => {
                     println!("Rebooting...");
-                    std::process::Command::new("reboot").spawn()?;
+                    if crate::arch::bootstrap::is_environment() {
+                        crate::arch::bootstrap::request_power_action(
+                            crate::arch::bootstrap::PowerAction::Reboot,
+                        )?;
+                    } else {
+                        std::process::Command::new("reboot").spawn()?;
+                    }
                     break;
                 }
                 FinishedMenuOption::Shutdown => {
                     println!("Shutting down...");
-                    std::process::Command::new("poweroff").spawn()?;
+                    if crate::arch::bootstrap::is_environment() {
+                        crate::arch::bootstrap::request_power_action(
+                            crate::arch::bootstrap::PowerAction::Poweroff,
+                        )?;
+                    } else {
+                        std::process::Command::new("poweroff").spawn()?;
+                    }
                     break;
                 }
                 FinishedMenuOption::Continue => {

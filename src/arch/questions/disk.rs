@@ -277,6 +277,8 @@ impl WizardStep for DiskQuestion {
 
     fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         let target = DiskPath::parse(answer).map_err(|error| error.to_string())?;
+        crate::arch::bootstrap::ensure_available(target.as_str())
+            .map_err(|error| error.to_string())?;
 
         Self::validate_running_relation(
             &target,
@@ -560,6 +562,7 @@ impl WizardStep for RunCfdiskStep {
         }
 
         loop {
+            crate::arch::disks::ensure_not_running_disk(disk_path)?;
             println!("Starting cfdisk on {}...", disk_path);
             println!("Please create your partitions and write changes before exiting.");
 

@@ -1,6 +1,6 @@
 # Maintainer: paperbenni <paperbenni@gmail.com>
 pkgname=ins
-pkgver=0.14.25
+pkgver=0.15.1
 pkgrel=1
 pkgdesc="A powerful command-line tool for managing dotfiles, system diagnostics, and instantOS configurations"
 arch=('x86_64')
@@ -13,7 +13,7 @@ depends=('glibc' 'gcc-libs' 'fzf' 'git' 'sqlite')
 makedepends=('rust')
 checkdepends=('ntfs-3g' 'ntfsprogs' 'ffmpeg')
 optdepends=(
-    'instantmenu: for the assist emoji picker'
+    'instantmenu: for graphical menus and INS Open'
     'restic: for backup functionality'
     'kitty: default terminal for scratchpad'
     'ntfsprogs: for NTFS partition resize detection (dual-boot)'

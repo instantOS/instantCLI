@@ -1,5 +1,6 @@
-use crate::dot::config::DotfileConfig;
+use crate::dot::config::{DotfileConfig, Repo};
 use crate::dot::db::Database;
+use crate::dot::dotfilerepo::DotfileRepo;
 use crate::dot::repo::DotfileRepositoryManager;
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
@@ -7,13 +8,25 @@ use crate::ui::preview::PreviewBuilder;
 
 /// Build preview for a repository in the main menu
 pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database) -> String {
-    let repo_manager = DotfileRepositoryManager::new(config, db);
-
-    let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
-        Some(rc) => rc,
-        None => return format!("Repository '{}' not found in config", repo_name),
+    let Some((index, repo_config)) = config
+        .repos
+        .iter()
+        .enumerate()
+        .find(|(_, r)| r.name == repo_name)
+    else {
+        return format!("Repository '{}' not found in config", repo_name);
     };
+    let repo_info = DotfileRepositoryManager::new(config, db).get_repository_info(repo_name);
+    render_repo_preview(repo_config, index + 1, config, &repo_info)
+}
 
+pub(super) fn render_repo_preview(
+    repo_config: &Repo,
+    priority: usize,
+    config: &DotfileConfig,
+    repo_info: &anyhow::Result<DotfileRepo>,
+) -> String {
+    let repo_name = &repo_config.name;
     let mut builder = PreviewBuilder::new().title(colors::SKY, repo_name).blank();
 
     // Show external repo status if applicable
@@ -48,12 +61,6 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
     }
 
     // Priority
-    let priority = config
-        .repos
-        .iter()
-        .position(|r| r.name == repo_name)
-        .map(|i| i + 1)
-        .unwrap_or(0);
     let total_repos = config.repos.len();
 
     if priority > 0 {
@@ -96,7 +103,7 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
     }
 
     // Try to get more info from DotfileRepo
-    if let Ok(dotfile_repo) = repo_manager.get_repository_info(repo_name) {
+    if let Ok(dotfile_repo) = repo_info {
         let subdir_summary = config.repo_subdir_summary(repo_config);
         let defaults_disabled = subdir_summary.defaults_disabled;
 
@@ -183,6 +190,12 @@ pub fn build_repo_preview(repo_name: &str, config: &DotfileConfig, db: &Database
                 &format!("Local: {}", tilde_path),
             );
         }
+    } else if let Err(error) = repo_info {
+        builder = builder.blank().line(
+            colors::YELLOW,
+            Some(NerdFont::Warning),
+            &format!("Repository information unavailable: {error:#}"),
+        );
     }
 
     builder.build_string()

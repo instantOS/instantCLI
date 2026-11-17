@@ -11,11 +11,11 @@ use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 use crate::ui::preview::FzfPreview;
 
-use super::app_info::{ApplicationInfo, ApplicationInfoCache};
-use super::mime_cache::{MimeDatabase, get_apps_for_mime, load_mime_database};
 use super::mime_info::{MimeTypeInfo, get_all_mime_types, get_mime_type_info};
 use super::mime_sets::{ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
-use super::system::{query_default_app, set_default_app, set_default_apps};
+use crate::applications::app_info::{ApplicationInfo, ApplicationInfoCache};
+use crate::applications::mime_cache::{MimeDatabase, get_apps_for_mime, load_mime_database};
+use crate::applications::system::{query_default_app, set_default_app, set_default_apps};
 
 pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     if which::which("xdg-mime").is_err() {
@@ -103,6 +103,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
             info.is_default = current_default_id == Some(desktop_id.as_str());
             info
         })
+        .filter(|info| info.path.is_some())
         .collect();
 
     let initial_index = app_infos.iter().position(|info| info.is_default);
@@ -240,6 +241,7 @@ fn manage_default_app_for_mimes(
                 info.is_default = current_default.as_deref() == Some(desktop_id.as_str());
                 info
             })
+            .filter(|info| info.path.is_some())
             .collect();
 
         for app_info in &app_infos {

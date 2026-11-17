@@ -3,7 +3,6 @@ use std::io::Write;
 use std::process::{Command, Output};
 
 use super::SharedConfig;
-use crate::menu_utils::fzf::types::Header;
 use crate::menu_utils::fzf::utils::{extract_icon_padding, handle_fzf_spawn_error};
 use crate::menu_utils::process::tracked_spawn;
 
@@ -47,10 +46,6 @@ pub(super) fn apply_fzf_command_options(
         cmd.arg(layout.preview_window);
         cmd.arg("--margin").arg(layout.margin);
     }
-}
-
-pub(super) fn default_header_text(shared: &SharedConfig) -> Option<String> {
-    shared.header.as_ref().map(Header::to_fzf_string)
 }
 
 pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Output> {

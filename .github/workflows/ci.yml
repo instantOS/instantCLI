@@ -68,3 +68,11 @@ jobs:
           node-version: '24'
       - name: Test offline packaging and installation
         run: python3 npm/test-packaging.py
+  release-automation:
+    name: Test release preparation and tagging
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Test release automation
+        run: python3 .github/scripts/test-release.py

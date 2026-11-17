@@ -12,16 +12,12 @@ use super::FzfBuilder;
 use super::SharedConfig;
 use super::shared::{
     FzfCommandOptions, apply_fzf_command_options, base_fzf_command, build_padded_item_from_lines,
-    default_header_text, run_fzf_with_input,
+    run_fzf_with_input,
 };
 use crate::menu_utils::fzf::types::{
     DialogOutcome, FzfPreview, FzfSelectable, InitialCursor, MenuKeybind, MenuSelection,
 };
 use crate::menu_utils::fzf::wrapper::{finish_menu_child, fzf_was_cancelled, spawn_menu_child};
-
-/// Invisible marker used to keep non-selectable padded rows visible while fzf
-/// navigation only visits actual menu actions.
-const SELECTABLE_MARKER: &str = "\u{2060}";
 
 /// Horizontal offset that keeps the hidden `\x1f`-delimited keyword field
 /// off-screen on typical terminals.
@@ -69,49 +65,24 @@ impl FzfBuilder {
             .iter()
             .any(|item| !item.fzf_search_keywords().is_empty());
 
-        let input_text = prepare_padded_input(&items, has_non_selectable);
+        let input_text = prepare_padded_input(&items);
         let has_preview = items
             .iter()
             .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
-        let preview_manifest = if has_preview {
-            Some(prepare_padded_preview_manifest(&items)?)
-        } else {
-            None
-        };
-
-        let result = loop {
-            let cmd = configure_padded_cmd(
-                &self.shared,
-                preview_manifest.as_ref().map(tempfile::NamedTempFile::path),
-                has_keywords,
-                has_non_selectable,
-                keybinds,
-                allow_multiple,
-            );
-            let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
-
-            if fzf_was_cancelled(&output)? {
-                break DialogOutcome::Cancelled;
-            }
-            if !output.status.success() {
-                break DialogOutcome::Cancelled;
-            }
-
-            let response = parse_padded_response(&output.stdout, &items, keybinds)?;
-            match response {
-                DialogOutcome::Submitted(selection)
-                    if selection.action.is_some() || !selection.items.is_empty() =>
-                {
-                    break DialogOutcome::Submitted(selection);
-                }
-                DialogOutcome::Cancelled => break DialogOutcome::Cancelled,
-                DialogOutcome::Submitted(_) => {}
-            }
-            // Pointer selection can still land on a raw, non-matching row.
-            // Reopen instead of returning a header as if it were an action.
-        };
-
-        Ok(result)
+        let manifest = prepare_padded_manifest(&items)?;
+        let cmd = configure_padded_cmd(
+            &self.shared,
+            manifest.path(),
+            has_preview,
+            has_keywords,
+            keybinds,
+            allow_multiple,
+        );
+        let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
+        if fzf_was_cancelled(&output)? || !output.status.success() {
+            return Ok(DialogOutcome::Cancelled);
+        }
+        parse_padded_response(&output.stdout, &items, keybinds)
     }
 
     /// Run a padded menu whose items arrive over a channel.
@@ -129,9 +100,9 @@ impl FzfBuilder {
     /// previews cannot be known when fzf is spawned. Rows without keywords
     /// simply carry an empty keyword field.
     ///
-    /// The cursor is positioned against the initial rows only. A submit
-    /// whose indices all landed on padding rows cannot be reopened against
-    /// a closed stream, so it resolves to [`DialogOutcome::Cancelled`].
+    /// Selectability is carried in the row manifest, independently of the query.
+    /// Enter and double-click ignore separator-only confirmations inside fzf,
+    /// preserving the live stream, query and any footer state.
     pub(crate) fn run_padded_stream<'a, T, A>(
         mut self,
         initial_items: Vec<T>,
@@ -158,8 +129,6 @@ impl FzfBuilder {
                 resp, items, keybinds,
             ));
         }
-
-        let mark_selectable = true;
 
         // The cursor can only land on rows fzf already has, so preselecting
         // snaps to the nearest selectable initial row.
@@ -192,11 +161,11 @@ impl FzfBuilder {
 
         let cmd = configure_padded_cmd(
             &self.shared,
-            Some(manifest.path()),
+            manifest.path(),
+            true,
             // Keyword delimiter and no-hscroll are harmless for rows without
             // keywords and protect late keyword rows.
             true,
-            mark_selectable,
             keybinds,
             allow_multiple,
         );
@@ -213,7 +182,7 @@ impl FzfBuilder {
         for record in store
             .items
             .iter()
-            .map(|item| build_padded_record(item, false, mark_selectable))
+            .map(|item| build_padded_record(item, false))
         {
             stdin.write_all(record.as_bytes())?;
             stdin.write_all(b"\0")?;
@@ -226,9 +195,13 @@ impl FzfBuilder {
         let pump_store = Arc::new(Mutex::new(store));
         let pump_items = Arc::clone(&pump_store);
         let (cancel_tx, cancel_rx) = crossbeam_channel::bounded::<()>(1);
+        // Keep the NamedTempFile owned by the menu session. The producer can
+        // finish long before the user stops requesting previews; moving it
+        // into the pump would unlink the manifest as soon as the stream ends.
+        let manifest_writer = manifest.as_file().try_clone()?;
         let pump = thread::spawn(move || {
             let mut stdin = stdin;
-            let mut manifest = manifest;
+            let mut manifest = manifest_writer;
             loop {
                 let first = select! {
                     recv(cancel_rx) -> _ => break,
@@ -258,7 +231,7 @@ impl FzfBuilder {
                     }
                     guard.seen_keys.insert(key);
                     manifest_batch.push_str(&manifest_entry(&item));
-                    record_batch.push_str(&build_padded_record(&item, false, mark_selectable));
+                    record_batch.push_str(&build_padded_record(&item, false));
                     record_batch.push('\0');
                     guard.items.push(item);
                 }
@@ -290,16 +263,7 @@ impl FzfBuilder {
         let guard = pump_store
             .lock()
             .map_err(|_| anyhow::anyhow!("padded streaming item store poisoned"))?;
-        match parse_padded_response(&output.stdout, &guard.items, keybinds)? {
-            DialogOutcome::Submitted(selection)
-                if selection.action.is_some() || !selection.items.is_empty() =>
-            {
-                Ok(DialogOutcome::Submitted(selection))
-            }
-            // A pointer selection on a padding row yields an empty submit;
-            // unlike the static menu there is nothing to reopen.
-            _ => Ok(DialogOutcome::Cancelled),
-        }
+        parse_padded_response(&output.stdout, &guard.items, keybinds)
     }
 }
 
@@ -333,46 +297,37 @@ fn nearest_selectable_index<T: FzfSelectable>(
         .rposition(FzfSelectable::fzf_is_selectable)
 }
 
-fn prepare_padded_input<T: FzfSelectable>(items: &[T], mark_selectable: bool) -> String {
+fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
     let has_previews = items
         .iter()
         .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
 
     items
         .iter()
-        .map(|item| build_padded_record(item, has_previews, mark_selectable))
+        .map(|item| build_padded_record(item, has_previews))
         .collect::<Vec<_>>()
         .join("\0")
 }
 
 /// Render one item as a complete multiline NUL record.
 ///
-/// With `mark_selectable`, selectable rows carry the invisible marker that
-/// the `--raw` query filters for. `has_previews` only chooses how far the
-/// hidden keyword field sits off-screen; it never changes what is searched.
-fn build_padded_record<T: FzfSelectable>(
-    item: &T,
-    has_previews: bool,
-    mark_selectable: bool,
-) -> String {
+/// `has_previews` only chooses how far the hidden keyword field sits off-screen;
+/// selectability lives in the manifest rather than in the user's search query.
+fn build_padded_record<T: FzfSelectable>(item: &T, has_previews: bool) -> String {
     let display = item.fzf_display_text();
     let keywords = item.fzf_search_keywords().join(" ");
 
-    let mut middle_line = if keywords.is_empty() {
+    let middle_line = if keywords.is_empty() {
         format!("  {display}")
     } else if has_previews {
         format!("  {display}{HIDDEN_PADDING}\x1f{keywords}")
     } else {
         format!("  {display}{EXTRA_WIDE_PADDING}\x1f{keywords}")
     };
-    if mark_selectable && item.fzf_is_selectable() {
-        middle_line = format!("{SELECTABLE_MARKER}{middle_line}");
-    }
-
     build_padded_item_from_lines(&display, &middle_line)
 }
 
-/// One preview-manifest line: kind, base64 content, base64 item key. The
+/// One row-manifest line: preview kind, base64 content/key, and selectability. The
 /// line's position in the file must match the row's fzf input index.
 fn manifest_entry<T: FzfSelectable>(item: &T) -> String {
     let (kind, content) = match item.fzf_preview() {
@@ -381,15 +336,14 @@ fn manifest_entry<T: FzfSelectable>(item: &T) -> String {
         FzfPreview::None => ("N", String::new()),
     };
     format!(
-        "{kind}\t{}\t{}\n",
+        "{kind}\t{}\t{}\t{}\n",
         general_purpose::STANDARD.encode(content),
-        general_purpose::STANDARD.encode(item.fzf_key())
+        general_purpose::STANDARD.encode(item.fzf_key()),
+        u8::from(item.fzf_is_selectable())
     )
 }
 
-fn prepare_padded_preview_manifest<T: FzfSelectable>(
-    items: &[T],
-) -> Result<tempfile::NamedTempFile> {
+fn prepare_padded_manifest<T: FzfSelectable>(items: &[T]) -> Result<tempfile::NamedTempFile> {
     let mut manifest = tempfile::NamedTempFile::new()?;
     for item in items {
         manifest.write_all(manifest_entry(item).as_bytes())?;
@@ -399,13 +353,14 @@ fn prepare_padded_preview_manifest<T: FzfSelectable>(
 
 fn configure_padded_cmd<A>(
     shared: &SharedConfig,
-    preview_manifest: Option<&std::path::Path>,
+    manifest: &std::path::Path,
+    has_preview: bool,
     has_keywords: bool,
-    has_non_selectable: bool,
     keybinds: &[MenuKeybind<A>],
     allow_multiple: bool,
 ) -> Command {
     let mut cmd = base_fzf_command();
+    super::super::preview::configure_controls(&mut cmd, has_preview);
 
     cmd.arg("--read0");
     cmd.arg("--ansi");
@@ -413,6 +368,8 @@ fn configure_padded_cmd<A>(
     cmd.arg("--layout=reverse");
     cmd.arg("--tiebreak=index");
     cmd.arg("--info=inline-right");
+    // A source-position initial cursor must not carry over into filtered results.
+    cmd.arg("--bind=change:first");
 
     if has_keywords {
         cmd.arg("--delimiter=\x1f").arg("--no-hscroll");
@@ -422,46 +379,42 @@ fn configure_padded_cmd<A>(
         cmd.arg("--multi");
     }
 
-    // Do not parse the rendered multiline records. Emit a small response
-    // envelope containing fzf's stable input indices instead.
-    cmd.arg("--bind")
-        .arg("enter:become(printf '%s\\n' submit {+n})");
+    if let Some(query) = &shared.initial_query {
+        cmd.arg("--query").arg(query);
+    }
+    // Validate before exiting fzf. Reopening would discard an active stream and query.
+    let submit = padded_submit_command(manifest);
+    for key in ["enter", "double-click"] {
+        cmd.arg("--bind").arg(format!("{key}:transform:{submit}"));
+    }
     for bind in keybinds {
         let token = general_purpose::STANDARD.encode(bind.key.as_str());
+        // Including {q} lets fzf execute the action even without a matching
+        // row. Its shell-quoted value is discarded; only row indices are output.
         cmd.arg("--bind").arg(format!(
-            "{}:become(printf '%s\\n' action {token} {{+n}})",
+            "{}:become(: {{q}}; printf '%s\\n' action {token} {{+n}})",
             bind.key
         ));
     }
 
-    if has_non_selectable {
-        cmd.arg("--raw")
-            .arg(format!("--query={SELECTABLE_MARKER}"))
-            .arg("--gutter-raw= ")
-            .arg("--bind")
-            .arg(
-                [
-                    "up:up-match",
-                    "down:down-match",
-                    "ctrl-p:up-match",
-                    "ctrl-n:down-match",
-                    "ctrl-k:up-match",
-                    "ctrl-j:down-match",
-                    "result:best",
-                ]
-                .join(","),
-            );
-    }
-
-    if let Some(manifest) = preview_manifest {
+    if has_preview {
         cmd.arg("--preview").arg(padded_preview_command(manifest));
+    }
+    if shared.initial_cursor.is_none() {
+        // Focus the first real row as soon as it arrives, then stop adjusting.
+        // The manifest can be ahead of fzf's reader; only consider loaded rows.
+        // With a search, keep fzf's own ranking and focused result.
+        cmd.arg("--bind").arg(format!(
+            "result:transform:if [ -n {{q}} ]; then printf 'unbind(result)'; else awk -F '\\t' -v loaded=\"$FZF_TOTAL_COUNT\" 'NR > loaded {{ exit }} $4 == 1 {{ printf \"pos(%d)+unbind(result)\", NR; exit }}' {}; fi",
+            crate::common::shell::shell_quote(&manifest.to_string_lossy())
+        ));
     }
 
     let cursor = shared
         .initial_cursor
         .as_ref()
         .map(|InitialCursor::Index(index)| *index);
-    let header = padded_header_text(shared, keybinds);
+    let header = shared.header_with_hints(keybinds);
     apply_fzf_command_options(
         &mut cmd,
         shared,
@@ -477,18 +430,22 @@ fn configure_padded_cmd<A>(
     cmd
 }
 
-fn padded_header_text<A>(shared: &SharedConfig, keybinds: &[MenuKeybind<A>]) -> Option<String> {
-    let hint = (!keybinds.is_empty())
-        .then(|| super::super::keybind::render_hint(keybinds, shared.responsive_layout));
-    match (default_header_text(shared), hint) {
-        (Some(mut header), Some(hint)) => {
-            header.push('\n');
-            header.push_str(&hint);
-            Some(header)
-        }
-        (Some(header), None) => Some(header),
-        (None, hint) => hint,
-    }
+/// Emit a native fzf action only when the submitted set contains selectable rows.
+/// Numeric input indices are the complete protocol; labels never become shell code.
+fn padded_submit_command(manifest: &std::path::Path) -> String {
+    let manifest = crate::common::shell::shell_quote(&manifest.to_string_lossy());
+    format!(
+        r#"accepted_indices=''
+for row_index in {{+n}}; do
+    case "$row_index" in ''|*[!0-9]*) continue;; esac
+    if [ "$(sed -n "$((row_index + 1))p" {manifest} | cut -f4)" = 1 ]; then
+        accepted_indices="$accepted_indices $row_index"
+    fi
+done
+if [ -n "$accepted_indices" ]; then
+    printf 'become(printf "%%s\\n" submit%s)' "$accepted_indices"
+fi"#
+    )
 }
 
 fn parse_padded_response<T: FzfSelectable + Clone, A: Clone>(
@@ -498,9 +455,9 @@ fn parse_padded_response<T: FzfSelectable + Clone, A: Clone>(
 ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
     let text = String::from_utf8_lossy(stdout);
     let mut lines = text.lines();
-    let Some(kind) = lines.next() else {
-        return Ok(DialogOutcome::Cancelled);
-    };
+    let kind = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("fzf returned an empty padded response"))?;
     let action = match kind {
         "submit" => None,
         "action" => {
@@ -535,6 +492,9 @@ fn parse_padded_response<T: FzfSelectable + Clone, A: Clone>(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    if action.is_none() && selected.is_empty() {
+        anyhow::bail!("fzf submitted no selectable padded rows");
+    }
     Ok(DialogOutcome::Submitted(MenuSelection {
         items: selected,
         action,
@@ -698,7 +658,7 @@ mod mock_tests {
             },
         ];
 
-        let manifest = super::prepare_padded_preview_manifest(&items).unwrap();
+        let manifest = super::prepare_padded_manifest(&items).unwrap();
         assert!(manifest.path().is_file());
 
         let rows = std::fs::read_to_string(manifest.path()).unwrap();
@@ -725,7 +685,7 @@ mod mock_tests {
                 preview: FzfPreview::None,
             },
         ];
-        let manifest = super::prepare_padded_preview_manifest(&items).unwrap();
+        let manifest = super::prepare_padded_manifest(&items).unwrap();
         let command = super::padded_preview_command(manifest.path());
 
         let run_row = |index: usize| {
@@ -843,6 +803,122 @@ mod mock_tests {
     }
 
     #[test]
+    fn guarded_submit_ignores_headers_and_filters_them_out_of_multi_selection() {
+        let items = [
+            Item {
+                label: "header",
+                selectable: false,
+            },
+            Item {
+                label: "first",
+                selectable: true,
+            },
+            Item {
+                label: "separator",
+                selectable: false,
+            },
+            Item {
+                label: "second",
+                selectable: true,
+            },
+        ];
+        let manifest = super::prepare_padded_manifest(&items).unwrap();
+        let callback = super::padded_submit_command(manifest.path());
+        let transform = |indices: &str| {
+            let output = std::process::Command::new("bash")
+                .arg("-c")
+                .arg(callback.replace("{+n}", indices))
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap()
+        };
+        for indices in ["0", "2", "0 2", "", "-1", "99"] {
+            assert!(transform(indices).is_empty(), "{indices}");
+        }
+        for (indices, expected) in [("1", "submit\n1\n"), ("0 1 2 3", "submit\n1\n3\n")] {
+            let action = transform(indices);
+            let command = action
+                .strip_prefix("become(")
+                .and_then(|action| action.strip_suffix(')'))
+                .unwrap();
+            let output = std::process::Command::new("bash")
+                .arg("-c")
+                .arg(command)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            assert_eq!(output.stdout, expected.as_bytes());
+        }
+        assert!(super::parse_padded_response::<_, ()>(b"submit\n0\n", &items, &[]).is_err());
+    }
+
+    #[test]
+    fn padded_query_is_ordinary_text_and_initial_focus_skips_the_heading() {
+        let items = [
+            Item {
+                label: "header",
+                selectable: false,
+            },
+            Item {
+                label: "app",
+                selectable: true,
+            },
+        ];
+        let manifest = super::prepare_padded_manifest(&items).unwrap();
+        let builder = super::FzfBuilder::new().query("app");
+        let command = super::configure_padded_cmd(
+            &builder.shared,
+            manifest.path(),
+            false,
+            false,
+            &[] as &[MenuKeybind<()>],
+            false,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(args.windows(2).any(|pair| pair == ["--query", "app"]));
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg == "--raw" || arg.contains('\u{2060}'))
+        );
+        assert!(!super::prepare_padded_input(&items).contains('\u{2060}'));
+        assert!(
+            args.iter()
+                .any(|arg| arg.starts_with("double-click:transform:"))
+        );
+        let load = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("result:transform:"))
+            .unwrap();
+        for (query, loaded, expected) in [
+            ("''", "1", ""),
+            ("''", "2", "pos(2)+unbind(result)"),
+            ("'app'", "2", "unbind(result)"),
+        ] {
+            let output = std::process::Command::new("bash")
+                .arg("-c")
+                .arg(load.replace("{q}", query))
+                .env("FZF_TOTAL_COUNT", loaded)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.stdout, expected.as_bytes());
+        }
+    }
+
+    #[test]
     fn padded_command_enables_multi_and_emits_framed_actions() {
         let builder = super::FzfBuilder::new();
         let binds = [MenuKeybind::new(
@@ -850,21 +926,25 @@ mod mock_tests {
             "edit",
             (),
         )];
-        let command =
-            super::configure_padded_cmd(&builder.shared, None, false, false, &binds, true);
+        let manifest = super::prepare_padded_manifest(&["one".to_owned()]).unwrap();
+        let command = super::configure_padded_cmd(
+            &builder.shared,
+            manifest.path(),
+            false,
+            false,
+            &binds,
+            true,
+        );
         let args = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
 
         assert!(args.iter().any(|arg| arg == "--multi"));
-        assert!(
-            args.iter()
-                .any(|arg| arg == "enter:become(printf '%s\\n' submit {+n})")
-        );
+        assert!(args.iter().any(|arg| arg.starts_with("enter:transform:")));
         let encoded = general_purpose::STANDARD.encode("ctrl-e");
         assert!(args.iter().any(|arg| {
-            arg == &format!("ctrl-e:become(printf '%s\\n' action {encoded} {{+n}})")
+            arg == &format!("ctrl-e:become(: {{q}}; printf '%s\\n' action {encoded} {{+n}})")
         }));
     }
 }

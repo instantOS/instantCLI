@@ -76,12 +76,22 @@ pub fn format_luks(
     }
 
     println!("Opening LUKS container...");
+    if !executor.dry_run() {
+        crate::arch::bootstrap::record(crate::arch::bootstrap::Resource::CryptMapping(
+            "cryptlvm".into(),
+        ))?;
+    }
     let mut cmd_open = Command::new("cryptsetup");
     cmd_open.arg("open").arg(&p2).arg("cryptlvm").arg("-");
     executor.run_with_input(&mut cmd_open, password)?;
 
     println!("Setting up LVM...");
     executor.run(Command::new("pvcreate").arg("/dev/mapper/cryptlvm"))?;
+    if !executor.dry_run() {
+        crate::arch::bootstrap::record(crate::arch::bootstrap::Resource::VolumeGroup(
+            "instantOS".into(),
+        ))?;
+    }
     executor.run(Command::new("vgcreate").args(["instantOS", "/dev/mapper/cryptlvm"]))?;
 
     executor.run(Command::new("lvcreate").args([
@@ -123,7 +133,7 @@ pub fn mount_luks(
     };
     executor.run(Command::new("mount").args(["--mkdir", "-t", boot_type, &p1, "/mnt/boot"]))?;
 
-    executor.run(Command::new("swapon").arg("/dev/instantOS/swap"))?;
+    super::activate_swap("/dev/instantOS/swap", executor)?;
 
     Ok(())
 }

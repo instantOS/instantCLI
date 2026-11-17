@@ -45,6 +45,7 @@ pub(crate) struct SharedConfig {
     pub initial_cursor: Option<InitialCursor>,
     pub initial_query: Option<String>,
     pub responsive_layout: bool,
+    pub hints: Vec<MenuHint>,
 }
 
 impl SharedConfig {
@@ -57,11 +58,26 @@ impl SharedConfig {
             initial_cursor: None,
             initial_query: None,
             responsive_layout: false,
+            hints: Vec::new(),
         }
     }
 
     pub(crate) fn args(&self) -> impl Iterator<Item = &String> {
         self.default_args.iter().chain(self.user_args.iter())
+    }
+
+    pub(crate) fn header_with_hints<A>(&self, keybinds: &[MenuKeybind<A>]) -> Option<String> {
+        let hint = (!keybinds.is_empty() || !self.hints.is_empty())
+            .then(|| super::keybind::render_hint(keybinds, &self.hints, self.responsive_layout));
+        match (self.header.as_ref().map(Header::to_fzf_string), hint) {
+            (Some(mut header), Some(hint)) => {
+                header.push('\n');
+                header.push_str(&hint);
+                Some(header)
+            }
+            (Some(header), None) => Some(header),
+            (None, hint) => hint,
+        }
     }
 
     fn with_dialog_args(mut self, defaults: Vec<String>) -> Self {
@@ -508,6 +524,20 @@ impl ChecklistBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn header_hints_only_describe_menu_specific_actions() {
+        let mut builder = FzfBuilder::new().header(Header::default("Choose an item"));
+        builder
+            .shared
+            .hints
+            .push(MenuHint::new("Ctrl D", "use as default"));
+        let header = builder.shared.header_with_hints::<()>(&[]).unwrap();
+        assert_eq!(header.matches("use as default").count(), 1);
+        assert!(!header.contains("preview"));
+        assert!(!header.contains("Enter"));
+        assert!(!header.contains("Esc"));
+    }
 
     #[test]
     fn dialog_transitions_replace_defaults_but_preserve_user_args() {

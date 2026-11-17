@@ -82,6 +82,8 @@ pub enum PreviewId {
     Partition,
     #[value(name = "file-suggestion")]
     FileSuggestion,
+    #[value(name = "desktop-application")]
+    DesktopApplication,
     #[value(name = "package")]
     Package,
     #[value(name = "installed-package")]
@@ -194,9 +196,14 @@ impl GameSavePreviewPayload {
     }
 }
 
-pub fn handle_preview_command(id: PreviewId, key: Option<String>) -> Result<()> {
+pub fn handle_preview_command(
+    id: PreviewId,
+    key: Option<String>,
+    mime_type: Option<String>,
+) -> Result<()> {
     let ctx = PreviewContext {
         key,
+        mime_type,
         columns: env_usize("FZF_PREVIEW_COLUMNS"),
         lines: env_usize("FZF_PREVIEW_LINES"),
     };
@@ -396,6 +403,7 @@ fn stream_default_app(
 
 pub(crate) struct PreviewContext {
     key: Option<String>,
+    mime_type: Option<String>,
     #[allow(dead_code)]
     columns: Option<usize>,
     #[allow(dead_code)]
@@ -446,6 +454,10 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::DotRepository => dot_repository::render_dot_repository_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),
         PreviewId::FileSuggestion => file::render_file_suggestion_preview(ctx),
+        PreviewId::DesktopApplication => match ctx.key() {
+            Some(key) => crate::applications::app_info::render_application_preview(key),
+            None => anyhow::bail!("Application preview requires a desktop entry"),
+        },
         PreviewId::Setting => render_setting_preview(ctx),
         PreviewId::SystemdService => render_systemd_service_preview(ctx),
         PreviewId::GameSave => game_save::render_game_save_preview(ctx),

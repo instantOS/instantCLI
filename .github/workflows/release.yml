@@ -1,6 +1,12 @@
 name: Release
 on:
   push:
+    branches:
+      - main
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - CHANGELOG.md
     tags:
       - "v*"
   workflow_dispatch:
@@ -9,8 +15,42 @@ defaults:
     shell: bash
 permissions:
   contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
+  metadata:
+    name: Prepare release metadata
+    runs-on: ubuntu-26.04
+    container:
+      image: ubuntu:26.04
+    if: ${{ github.repository_owner == 'instantOS' }}
+    permissions:
+      contents: write
+    outputs:
+      should_release: ${{ steps.metadata.outputs.should_release }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Determine release tag
+        id: metadata
+        run: bash scripts/ci/determine-release.sh
   build:
+    needs: metadata
+    if: needs.metadata.outputs.should_release == 'true'
     name: Build release artifacts
     runs-on: ubuntu-26.04
     container:
@@ -43,18 +83,7 @@ jobs:
           echo "triple=$target" >> "$GITHUB_OUTPUT"
       - name: Extract version
         id: vars
-        run: |
-          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
-          if [[ -z "$version" ]]; then
-            echo "Failed to determine version from Cargo.toml" >&2
-            exit 1
-          fi
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [[ -n "$tag_version" && "$tag_version" != "$version" ]]; then
-            echo "Tag version $tag_version does not match Cargo.toml version $version" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/extract-version.sh "$GITHUB_REF_NAME"
       - name: Build release binary
         run: |
           WORKSPACE="$PWD"
@@ -95,6 +124,8 @@ jobs:
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
   cross-compile:
+    needs: metadata
+    if: needs.metadata.outputs.should_release == 'true'
     name: Cross-compile ${{ matrix.target }}
     runs-on: ubuntu-26.04
     container:
@@ -173,13 +204,7 @@ jobs:
           ndk-version: r27c
       - name: Extract version
         id: vars
-        run: |
-          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
-          if [[ -z "$version" ]]; then
-            echo "Failed to determine version from Cargo.toml" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/extract-version.sh "$GITHUB_REF_NAME"
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -220,6 +245,8 @@ jobs:
             artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz
             artifacts/${{ matrix.pkg }}-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
+    needs: metadata
+    if: needs.metadata.outputs.should_release == 'true'
     name: Build Arch package
     runs-on: ubuntu-26.04
     container:
@@ -233,13 +260,7 @@ jobs:
           packages: pacman-contrib fzf sqlite sudo
       - name: Extract version
         id: vars
-        run: |
-          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
-          if [[ -z "$version" ]]; then
-            echo "Failed to determine version from Cargo.toml" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/extract-version.sh "$GITHUB_REF_NAME"
       - name: Sync PKGBUILD version
         env:
           VERSION: ${{ steps.vars.outputs.version }}
@@ -273,7 +294,8 @@ jobs:
     runs-on: ubuntu-26.04
     container:
       image: ubuntu:26.04
-    needs: build
+    needs: [metadata, build]
+    if: needs.metadata.outputs.should_release == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -281,13 +303,7 @@ jobs:
         run: apt-get update && apt-get install -y dpkg-dev
       - name: Extract version
         id: vars
-        run: |
-          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
-          if [[ -z "$version" ]]; then
-            echo "Failed to determine version from Cargo.toml" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/extract-version.sh "$GITHUB_REF_NAME"
       - name: Download native build artifact
         uses: actions/download-artifact@v8
         with:
@@ -318,7 +334,8 @@ jobs:
   apk:
     name: Build Alpine package (${{ matrix.arch }})
     runs-on: ubuntu-26.04
-    needs: cross-compile
+    needs: [metadata, cross-compile]
+    if: needs.metadata.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -328,13 +345,7 @@ jobs:
         uses: actions/checkout@v7
       - name: Extract version
         id: vars
-        run: |
-          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
-          if [[ -z "$version" ]]; then
-            echo "Failed to determine version from Cargo.toml" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/extract-version.sh "$GITHUB_REF_NAME"
       - name: Download musl build artifact
         uses: actions/download-artifact@v8
         with:
@@ -384,6 +395,7 @@ jobs:
     container:
       image: ubuntu:26.04
     needs:
+      - metadata
       - build
       - cross-compile
       - pkgbuild
@@ -391,15 +403,25 @@ jobs:
       - apk
     permissions:
       contents: write
+    if: needs.metadata.outputs.should_release == 'true'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      - name: Extract release notes
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: bash scripts/ci/extract-release-notes.sh "$VERSION" > release-notes.md
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.metadata.outputs.tag }}
+          name: ${{ needs.metadata.outputs.tag }}
+          body_path: release-notes.md
           files: dist/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -407,18 +429,21 @@ jobs:
     name: Publish npm packages
     runs-on: ubuntu-26.04
     needs:
+      - metadata
       - cross-compile
       - release
-    if: github.repository == 'instantOS/instantCLI' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'instantOS/instantCLI' && needs.metadata.outputs.should_release == 'true'
     permissions:
       contents: read
       id-token: write
     concurrency:
-      group: npm-${{ github.ref }}
+      group: npm-${{ needs.metadata.outputs.tag }}
       cancel-in-progress: false
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -431,7 +456,9 @@ jobs:
           path: npm-artifacts
           merge-multiple: true
       - name: Stage npm packages
-        run: python3 npm/build-packages.py --artifacts npm-artifacts --output target/npm --tag "$GITHUB_REF_NAME"
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: python3 npm/build-packages.py --artifacts npm-artifacts --output target/npm --tag "$RELEASE_TAG"
       - name: Smoke test Linux x64 binary
         run: |
           target/npm/cli-linux-x64/bin/ins --version

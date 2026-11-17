@@ -1,5 +1,8 @@
 # Non-live installation for `ins arch` — feasibility report
 
+> Historical design report. See [ARCH_INSTALLATION.md](ARCH_INSTALLATION.md) for
+> the implemented environment model and supported foreign-host installation.
+
 **Date:** 2026-09-26
 **Scope:** Can `ins arch` install instantOS from an already-running operating system
 (Arch, instantOS, Ubuntu) instead of from the instantOS live ISO? And is the

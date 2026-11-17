@@ -31,18 +31,18 @@ pub(crate) fn render_timezone_preview(ctx: &PreviewContext) -> Result<String> {
         .field("Timezone", tz)
         .blank()
         .line(colors::TEAL, None, "Current Time")
-        .raw(&format!("  {current_local}"))
-        .raw(&format!("  {day_line}"))
+        .indented_line(colors::TEXT, None, &current_local)
+        .indented_line(colors::SUBTEXT0, None, &day_line)
         .blank()
         .line(colors::TEAL, None, "UTC Offset")
-        .raw(&format!("  {offset}"))
+        .indented_line(colors::TEXT, None, &offset)
         .blank()
         .line(colors::TEAL, None, "Formats")
-        .raw(&format!("  12-hour: {twelve_hour}"))
-        .raw(&format!("  24-hour: {twenty_four}"))
+        .field_indented("12-hour", &twelve_hour)
+        .field_indented("24-hour", &twenty_four)
         .blank()
         .line(colors::TEAL, None, "Local System Time")
-        .raw(&format!("  {local_system}"));
+        .indented_line(colors::TEXT, None, &local_system);
 
     Ok(builder.build_string())
 }

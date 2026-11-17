@@ -1,4 +1,0 @@
-[workspace]
-git_release_enable = true
-git_release_body = "{{ changelog }}"
-publish_no_verify = true

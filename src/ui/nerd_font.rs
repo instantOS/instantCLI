@@ -234,6 +234,7 @@ pub enum NerdFont {
     InfoCircle,
 
     // Application and Workspace
+    Application,
     Workspace,
     WorkspaceTrusted,
     WorkspaceUntrusted,
@@ -357,6 +358,7 @@ impl NerdFont {
             Self::Circle | Self::Disc => 'o',
             Self::Bullet | Self::DotFile => '.',
             Self::Hash => '#',
+            Self::Application => 'A',
             Self::Refresh
             | Self::Sync
             | Self::Sync2
@@ -587,11 +589,12 @@ impl NerdFont {
             Self::InfoCircle => '',   // fa-circle-info
 
             // Application and Workspace
-            Self::Workspace => '',          // cod-workspace-unknown
-            Self::WorkspaceTrusted => '',   // cod-workspace-trusted
-            Self::WorkspaceUntrusted => '', // cod-workspace-untrusted
-            Self::RootFolder => '',         // cod-root-folder
-            Self::FolderLibrary => '',      // cod-folder-library
+            Self::Application => '\u{f08c6}', // md-application
+            Self::Workspace => '',           // cod-workspace-unknown
+            Self::WorkspaceTrusted => '',    // cod-workspace-trusted
+            Self::WorkspaceUntrusted => '',  // cod-workspace-untrusted
+            Self::RootFolder => '',          // cod-root-folder
+            Self::FolderLibrary => '',       // cod-folder-library
 
             // Dotfile Specific
             Self::DotFile => '',      // oct-dot

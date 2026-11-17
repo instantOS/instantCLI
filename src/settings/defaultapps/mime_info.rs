@@ -1,6 +1,6 @@
+use crate::applications::mime_cache::MimeDatabase;
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::preview::{PreviewId, preview_command};
-use crate::settings::defaultapps::mime_cache::MimeDatabase;
 use crate::ui::prelude::*;
 
 /// Information about a MIME type for display purposes

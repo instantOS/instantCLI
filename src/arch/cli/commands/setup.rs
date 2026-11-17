@@ -22,7 +22,7 @@ fn ensure_setup_host(profile: HostProfile) -> Result<()> {
             Ok(())
         }
         HostProfile::LiveIso => anyhow::bail!("This command cannot be run on a live CD/ISO."),
-        HostProfile::ForeignDistro => anyhow::bail!(
+        HostProfile::ForeignDistro | HostProfile::Bootstrap => anyhow::bail!(
             "`ins arch setup` is only supported on Arch Linux, Artix Linux and instantOS. \
              This system is {}.",
             profile.label()
@@ -175,6 +175,8 @@ mod tests {
     fn setup_refuses_live_and_foreign_hosts() {
         let live = ensure_setup_host(HostProfile::LiveIso).unwrap_err();
         assert!(live.to_string().contains("live CD/ISO"), "{live}");
+
+        assert!(ensure_setup_host(HostProfile::Bootstrap).is_err());
 
         let foreign = ensure_setup_host(HostProfile::ForeignDistro).unwrap_err();
         assert!(

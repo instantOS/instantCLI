@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 
 mod all_menu;
+mod applications;
 mod arch;
 mod assist;
 mod autostart;
@@ -19,6 +20,7 @@ mod launch;
 mod menu;
 mod menu_utils;
 mod notify;
+mod open;
 mod pass;
 mod preview;
 mod resolvething;
@@ -141,6 +143,8 @@ enum Commands {
         #[command(subcommand)]
         command: DevCommands,
     },
+    /// Choose an application to open a file or directory
+    Open(open::OpenArgs),
     /// Application launcher
     Launch(launch::LaunchArgs),
     /// Password-store integration backed by `pass`
@@ -192,6 +196,9 @@ enum Commands {
         /// Optional key for preview context (selection key)
         #[arg(long)]
         key: Option<String>,
+        /// Known MIME type for a file preview, avoiding repeat detection
+        #[arg(long)]
+        mime_type: Option<String>,
     },
     /// Scratchpad terminal management
     Scratchpad {
@@ -333,6 +340,9 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
             })?;
         }
         Some(Commands::Display) => display::run()?,
+        Some(Commands::Open(args)) => {
+            open::run(args)?;
+        }
         Some(Commands::Launch(args)) => {
             let exit_code = run_async(launch::handle_launch_command(args.clone()))?;
             std::process::exit(exit_code);
@@ -379,8 +389,8 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
                 "Error handling clip command",
             )?;
         }
-        Some(Commands::Preview { id, key }) => {
-            preview::handle_preview_command(*id, key.clone())?;
+        Some(Commands::Preview { id, key, mime_type }) => {
+            preview::handle_preview_command(*id, key.clone(), mime_type.clone())?;
         }
         Some(Commands::Scratchpad { command }) => {
             let compositor = common::compositor::CompositorType::detect();

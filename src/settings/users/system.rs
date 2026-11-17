@@ -341,11 +341,7 @@ fn is_sudoers_included_file(path: &Path) -> bool {
         return false;
     };
 
-    if name.starts_with('.') || name.ends_with('~') || name.contains('.') {
-        return false;
-    }
-
-    true
+    !(name.starts_with('.') || name.ends_with('~') || name.contains('.'))
 }
 
 /// Check if a group exists on the system

@@ -164,8 +164,14 @@ fn detect_vm_type_from_dmi() -> Option<String> {
 
 impl SystemInfo {
     pub fn detect() -> Self {
+        Self::detect_with_network(crate::common::network::check_internet())
+    }
+
+    /// Install flows supply their HTTPS probe; hardware detection stays
+    /// synchronous and does not perform a second, conflicting ICMP probe.
+    pub fn detect_with_network(internet_connected: bool) -> Self {
         let mut info = SystemInfo {
-            internet_connected: crate::common::network::check_internet(),
+            internet_connected,
             ..Default::default()
         };
 

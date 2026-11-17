@@ -3,6 +3,13 @@
 //! Provides a fluent API for generating styled preview text with consistent
 //! formatting across all FZF-based menus.
 //!
+//! Structured content shares a text column, with icons hanging in a gutter to
+//! its left. Use `field_indented`, `indented_line` and `bullet` for nested content
+//! instead of adding spaces at call sites. Continuations align with their text
+//! or field value, and rules follow the pane width (`FZF_PREVIEW_COLUMNS`, or
+//! an explicit builder width). `raw` and `shell` deliberately bypass this layout
+//! for preformatted output and terminal graphics.
+//!
 //! The builder can output:
 //! - Static text via [`PreviewBuilder::build`] for inline previews
 //! - Shell script bodies via [`PreviewBuilder::build_shell_script`] for `preview_command()`
@@ -12,8 +19,10 @@ use std::io::{BufWriter, Stdout, Write};
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::shell::shell_quote;
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::text::{display_width, strip_ansi, wrap_ansi};
 
 /// Preview content for FZF items.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -28,11 +37,9 @@ pub enum FzfPreview {
 /// ANSI reset sequence
 const RESET: &str = "\x1b[0m";
 
-/// Standard separator for preview headers
-const SEPARATOR: &str = "───────────────────────────────────";
-
-/// Light separator for subsections
-const LIGHT_SEPARATOR: &str = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄";
+/// Icons hang to the left of one shared text column. Nested content adds two cells.
+pub(crate) const TEXT_COLUMN: usize = 4;
+const NEST_INDENT: usize = 2;
 
 /// A line in the preview - either static text or a shell command for dynamic content.
 #[derive(Clone)]
@@ -56,6 +63,8 @@ enum PreviewSink {
 
 pub struct PreviewWriter {
     sink: PreviewSink,
+    columns: usize,
+    line_count: usize,
 }
 
 /// Builder for creating styled FZF preview text.
@@ -96,6 +105,15 @@ pub struct PreviewBuilder {
     writer: PreviewWriter,
 }
 
+fn preview_columns() -> usize {
+    std::env::var("FZF_PREVIEW_COLUMNS")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|&columns| columns > 0)
+        .map(usize::from)
+        .unwrap_or(80)
+}
+
 impl PreviewWriter {
     /// Create a preview writer in **collect** mode.
     ///
@@ -103,6 +121,8 @@ impl PreviewWriter {
     pub fn collect() -> Self {
         Self {
             sink: PreviewSink::Collect(vec![PreviewLine::Static(String::new())]),
+            columns: preview_columns(),
+            line_count: 1,
         }
     }
 
@@ -117,6 +137,8 @@ impl PreviewWriter {
         let _ = writer.flush();
         Self {
             sink: PreviewSink::Stream(writer),
+            columns: preview_columns(),
+            line_count: 1,
         }
     }
 
@@ -128,10 +150,13 @@ impl PreviewWriter {
         let _ = writer.flush();
         Self {
             sink: PreviewSink::StreamAndCollect(writer, vec![PreviewLine::Static(String::new())]),
+            columns: preview_columns(),
+            line_count: 1,
         }
     }
 
     fn push_static(&mut self, s: String) {
+        self.line_count += s.split('\n').count();
         match &mut self.sink {
             PreviewSink::Collect(lines) => lines.push(PreviewLine::Static(s)),
             PreviewSink::Stream(writer) => {
@@ -146,123 +171,142 @@ impl PreviewWriter {
         }
     }
 
-    /// Add a styled header with icon and title.
-    ///
-    /// Creates a header section with:
-    /// - Icon + title in accent color (mauve)
-    /// - Separator line below
-    /// - Blank line after
-    pub fn header(&mut self, icon: NerdFont, title: &str) -> &mut Self {
-        let mauve = hex_to_ansi_fg(colors::MAUVE);
-        let surface = hex_to_ansi_fg(colors::SURFACE1);
-        self.push_static(format!("{mauve}{}  {title}{RESET}", char::from(icon)));
-        self.push_static(format!("{surface}{SEPARATOR}{RESET}"));
-        self.push_static(String::new());
-        self
+    /// Emit structured content with a hanging prefix and aligned continuation lines.
+    fn structured(&mut self, prefix: &str, content: &str, column: usize) {
+        let width = self.columns.saturating_sub(column).max(1);
+        let continuation = " ".repeat(column);
+        let lines = wrap_ansi(content, width);
+        let text = lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| {
+                format!("{}{line}", if index == 0 { prefix } else { &continuation })
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        self.push_static(format!("{text}{RESET}"));
     }
 
-    /// Add primary text line in the standard text color.
-    pub fn text(&mut self, content: &str) -> &mut Self {
-        let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.push_static(format!("{text_color}{content}{RESET}"));
-        self
+    fn colored(&mut self, color: &str, content: &str, column: usize) {
+        let prefix = format!("{}{}", " ".repeat(column), hex_to_ansi_fg(color));
+        self.structured(&prefix, content, column);
     }
 
-    /// Add secondary/muted text line in subtext color.
-    pub fn subtext(&mut self, content: &str) -> &mut Self {
-        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-        self.push_static(format!("{subtext}{content}{RESET}"));
-        self
-    }
-
-    /// Add a labeled field line (e.g., "Status: Active").
-    ///
-    /// The label appears in subtext color, the value in text color.
-    pub fn field(&mut self, label: &str, value: &str) -> &mut Self {
-        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-        let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.push_static(format!(
-            "{subtext}{label}:{RESET} {text_color}{value}{RESET}"
-        ));
-        self
-    }
-
-    /// Add an indented field line (for nested information).
-    pub fn field_indented(&mut self, label: &str, value: &str) -> &mut Self {
-        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-        let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.push_static(format!(
-            "  {subtext}{label}:{RESET} {text_color}{value}{RESET}"
-        ));
-        self
-    }
-
-    /// Add an icon + colored text line.
-    ///
-    /// # Arguments
-    /// * `color` - Hex color string (e.g., `colors::TEAL`)
-    /// * `icon` - Optional NerdFont icon
-    /// * `content` - The text content
-    pub fn line(&mut self, color: &str, icon: Option<NerdFont>, content: &str) -> &mut Self {
-        let fg = hex_to_ansi_fg(color);
-        let icon_str = icon
-            .map(|i| format!("{}  ", char::from(i)))
+    fn icon_line(&mut self, color: &str, icon: Option<NerdFont>, content: &str, nested: bool) {
+        let column = TEXT_COLUMN + if nested { NEST_INDENT } else { 0 };
+        let start = if nested { TEXT_COLUMN } else { 0 };
+        let icon = icon
+            .map(char::from)
+            .map(|icon| icon.to_string())
             .unwrap_or_default();
-        self.push_static(format!("{fg}{icon_str}{content}{RESET}"));
+        let prefix = format!(
+            "{}{}{icon}{}",
+            " ".repeat(start),
+            hex_to_ansi_fg(color),
+            " ".repeat(column.saturating_sub(start + display_width(&icon)))
+        );
+        self.structured(&prefix, content, column);
+    }
+
+    /// Icon and title share the body's text column; the rule fills the available width.
+    pub fn header(&mut self, icon: NerdFont, title: &str) -> &mut Self {
+        self.icon_line(colors::MAUVE, Some(icon), title, false);
+        self.rule('─');
+        self.blank()
+    }
+
+    /// Primary text. Explicit newlines and wrapped lines keep the same text column.
+    pub fn text(&mut self, content: &str) -> &mut Self {
+        self.colored(colors::TEXT, content, TEXT_COLUMN);
         self
     }
 
-    /// Add a light separator line.
+    pub fn subtext(&mut self, content: &str) -> &mut Self {
+        self.colored(colors::SUBTEXT0, content, TEXT_COLUMN);
+        self
+    }
+
+    pub fn field(&mut self, label: &str, value: &str) -> &mut Self {
+        self.field_at(label, value, TEXT_COLUMN);
+        self
+    }
+
+    pub fn field_indented(&mut self, label: &str, value: &str) -> &mut Self {
+        self.field_at(label, value, TEXT_COLUMN + NEST_INDENT);
+        self
+    }
+
+    fn field_at(&mut self, label: &str, value: &str, column: usize) {
+        let value_column = column + display_width(&strip_ansi(label)) + 2;
+        if value_column + 4 > self.columns {
+            self.colored(colors::SUBTEXT0, &format!("{label}:"), column);
+            self.colored(colors::TEXT, value, column + NEST_INDENT);
+        } else {
+            let prefix = format!(
+                "{}{}{label}:{RESET} {}",
+                " ".repeat(column),
+                hex_to_ansi_fg(colors::SUBTEXT0),
+                hex_to_ansi_fg(colors::TEXT)
+            );
+            self.structured(&prefix, value, value_column);
+        }
+    }
+
+    pub fn line(&mut self, color: &str, icon: Option<NerdFont>, content: &str) -> &mut Self {
+        self.icon_line(color, icon, content, false);
+        self
+    }
+
+    fn rule(&mut self, character: char) {
+        let width = self.columns.saturating_sub(TEXT_COLUMN).max(1);
+        self.push_static(format!(
+            "{}{}{}{RESET}",
+            " ".repeat(TEXT_COLUMN),
+            hex_to_ansi_fg(colors::SURFACE1),
+            character.to_string().repeat(width)
+        ));
+    }
+
     pub fn separator(&mut self) -> &mut Self {
-        let surface = hex_to_ansi_fg(colors::SURFACE1);
-        self.push_static(format!("{surface}{LIGHT_SEPARATOR}{RESET}"));
+        self.rule('┄');
         self
     }
 
-    /// Add a blank line.
     pub fn blank(&mut self) -> &mut Self {
         self.push_static(String::new());
         self
     }
 
-    /// Add a bold title in the specified color.
     pub fn title(&mut self, color: &str, content: &str) -> &mut Self {
-        let fg = hex_to_ansi_fg(color);
-        let bold = "\x1b[1m";
-        self.push_static(format!("{bold}{fg}{content}{RESET}"));
+        let prefix = format!(
+            "{}\x1b[1m{}",
+            " ".repeat(TEXT_COLUMN),
+            hex_to_ansi_fg(color)
+        );
+        self.structured(&prefix, content, TEXT_COLUMN);
         self
     }
 
-    /// Add raw text without any coloring.
+    /// Verbatim escape hatch for preformatted output and graphics; bypasses layout.
     pub fn raw(&mut self, content: &str) -> &mut Self {
         self.push_static(content.to_string());
         self
     }
 
-    /// Add an indented line with icon and color.
     pub fn indented_line(
         &mut self,
         color: &str,
         icon: Option<NerdFont>,
         content: &str,
     ) -> &mut Self {
-        let fg = hex_to_ansi_fg(color);
-        let icon_str = icon
-            .map(|i| format!("{} ", char::from(i)))
-            .unwrap_or_default();
-        self.push_static(format!("  {fg}{icon_str}{content}{RESET}"));
+        self.icon_line(color, icon, content, true);
         self
     }
 
-    /// Add a bullet list item.
     pub fn bullet(&mut self, content: &str) -> &mut Self {
-        let text_color = hex_to_ansi_fg(colors::TEXT);
-        let bullet = char::from(NerdFont::Bullet);
-        self.push_static(format!("{text_color}  {bullet} {content}{RESET}"));
-        self
+        self.indented_line(colors::TEXT, Some(NerdFont::Bullet), content)
     }
 
-    /// Add multiple bullet items from an iterator.
     pub fn bullets<I, S>(&mut self, items: I) -> &mut Self
     where
         I: IntoIterator<Item = S>,
@@ -317,83 +361,29 @@ impl PreviewWriter {
     pub fn build_string(self) -> String {
         match self.sink {
             PreviewSink::Stream(_) => String::new(),
-            PreviewSink::Collect(lines) => lines
+            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => lines
                 .into_iter()
                 .map(|line| match line {
-                    PreviewLine::Static(s) => s,
-                    PreviewLine::Shell(_) => "(dynamic content)".to_string(),
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-            PreviewSink::StreamAndCollect(_, lines) => lines
-                .into_iter()
-                .map(|line| match line {
-                    PreviewLine::Static(s) => s,
-                    PreviewLine::Shell(_) => "(dynamic content)".to_string(),
+                    PreviewLine::Static(text) => text,
+                    PreviewLine::Shell(_) => "(dynamic content)".into(),
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
         }
     }
 
-    /// Build a bash-compatible script body for use with `preview_command()`.
-    ///
-    /// Static lines are converted to echo statements with proper escaping.
-    /// Shell commands are included directly. The preview runner will execute
-    /// the returned script with bash and pass the item's key as `$1`.
-    ///
-    /// Not meaningful in streaming mode (returns empty string).
+    /// Static lines use printf so backslashes, quotes and leading dashes remain literal.
     pub fn build_shell_script(self) -> String {
         match self.sink {
             PreviewSink::Stream(_) => String::new(),
-            PreviewSink::Collect(lines) => {
-                let commands: Vec<String> = lines
-                    .into_iter()
-                    .map(|line| match line {
-                        PreviewLine::Static(s) => {
-                            if s.is_empty() {
-                                "echo".to_string()
-                            } else {
-                                // Convert ANSI escapes (\x1b) to shell format (\e)
-                                // Use double quotes for echo - escape $ ` \ " for shell
-                                let shell_escaped = s
-                                    .replace('\\', "\\\\") // Escape backslashes
-                                    .replace('"', "\\\"") // Escape double quotes
-                                    .replace('$', "\\$") // Escape dollar signs
-                                    .replace('`', "\\`") // Escape backticks
-                                    .replace('\x1b', "\\e"); // Convert ANSI escapes to \e
-                                format!("echo -e \"{shell_escaped}\"")
-                            }
-                        }
-                        PreviewLine::Shell(cmd) => cmd,
-                    })
-                    .collect();
-
-                commands.join("\n")
-            }
-            PreviewSink::StreamAndCollect(_, lines) => {
-                let commands: Vec<String> = lines
-                    .into_iter()
-                    .map(|line| match line {
-                        PreviewLine::Static(s) => {
-                            if s.is_empty() {
-                                "echo".to_string()
-                            } else {
-                                let shell_escaped = s
-                                    .replace('\\', "\\\\")
-                                    .replace('"', "\\\"")
-                                    .replace('$', "\\$")
-                                    .replace('`', "\\`")
-                                    .replace('\x1b', "\\e");
-                                format!("echo -e \"{shell_escaped}\"")
-                            }
-                        }
-                        PreviewLine::Shell(cmd) => cmd,
-                    })
-                    .collect();
-
-                commands.join("\n")
-            }
+            PreviewSink::Collect(lines) | PreviewSink::StreamAndCollect(_, lines) => lines
+                .into_iter()
+                .map(|line| match line {
+                    PreviewLine::Static(text) => format!("printf '%s\\n' {}", shell_quote(&text)),
+                    PreviewLine::Shell(command) => command,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 }
@@ -406,6 +396,14 @@ impl PreviewBuilder {
         Self {
             writer: PreviewWriter::collect(),
         }
+    }
+
+    /// Set the preview pane width when a renderer already has it in its context.
+    pub fn width(mut self, columns: Option<usize>) -> Self {
+        if let Some(columns) = columns {
+            self.writer.columns = columns.max(1);
+        }
+        self
     }
 
     /// Create a new preview builder in **streaming** mode.
@@ -506,6 +504,12 @@ impl PreviewBuilder {
         self
     }
 
+    /// Text rows emitted so far, including wrapped lines and initial padding.
+    /// Dynamic shell commands are not counted. Useful for positioning graphical payloads.
+    pub fn line_count(&self) -> usize {
+        self.writer.line_count
+    }
+
     /// Build the final FzfPreview (static text). See [`PreviewWriter::build`].
     pub fn build(self) -> FzfPreview {
         self.writer.build()
@@ -531,6 +535,95 @@ impl Default for PreviewBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headings_and_body_share_a_text_column_and_nested_fields_are_explicit() {
+        let preview = PreviewBuilder::new()
+            .width(Some(48))
+            .header(NerdFont::Desktop, "QtAV Player")
+            .subtext("QtAV Multimedia Player")
+            .line(colors::TEAL, Some(NerdFont::ChevronRight), "Details")
+            .field_indented("Desktop ID", "Player.desktop")
+            .field_indented("Command", "Player -f %U")
+            .header(NerdFont::Video, "head.mp4")
+            .field("Duration", "00:04")
+            .build_string();
+        let plain = strip_ansi(&preview);
+        for (text, column) in [
+            ("QtAV Player", 4),
+            ("QtAV Multimedia Player", 4),
+            ("Details", 4),
+            ("Desktop ID", 6),
+            ("Command", 6),
+            ("head.mp4", 4),
+            ("Duration", 4),
+        ] {
+            let line = plain.lines().find(|line| line.contains(text)).unwrap();
+            assert_eq!(
+                display_width(&line[..line.find(text).unwrap()]),
+                column,
+                "{line:?}"
+            );
+        }
+        for line in plain.lines().filter(|line| line.contains('─')) {
+            assert_eq!(display_width(line), 48);
+            assert!(line.starts_with("    "));
+        }
+    }
+
+    #[test]
+    fn multiline_values_and_prose_keep_their_continuation_indent() {
+        let preview = PreviewBuilder::new()
+            .width(Some(32))
+            .text("A description that spans several lines\nSecond paragraph")
+            .field("Command", "Player --long-option with spaces\nnext argument")
+            .bullet("A bullet which also needs to wrap across lines");
+        let emitted = preview.line_count();
+        let text = strip_ansi(&preview.build_string());
+        assert_eq!(emitted, text.split('\n').count());
+        assert!(text.lines().all(|line| display_width(line) <= 32));
+        assert!(text.contains("\n             next argument"));
+        assert!(text.contains("\n    Second paragraph"));
+        assert!(
+            text.lines()
+                .filter(|line| !line.is_empty())
+                .all(|line| line.starts_with("    "))
+        );
+    }
+
+    #[test]
+    fn narrow_fields_leave_room_for_values_and_raw_output_is_verbatim() {
+        let text = strip_ansi(
+            &PreviewBuilder::new()
+                .width(Some(24))
+                .field("A long field label", "a long value with multiple words")
+                .raw("verbatim\noutput")
+                .build_string(),
+        );
+        assert!(text.contains("\n      a long value"));
+        assert!(text.ends_with("\nverbatim\noutput"));
+        assert!(text.lines().all(|line| display_width(line) <= 24));
+    }
+
+    #[test]
+    fn shell_and_collected_previews_render_identically() -> anyhow::Result<()> {
+        let make = || {
+            PreviewBuilder::new()
+                .width(Some(40))
+                .header(NerdFont::File, "A 'quoted' filename")
+                .text(r"C:\new\test $literal `command` \n")
+                .field("Value", "first\nsecond")
+                .raw("-n")
+        };
+        let expected = format!("{}\n", make().build_string());
+        let output = std::process::Command::new("bash")
+            .arg("-c")
+            .arg(make().build_shell_script())
+            .output()?;
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout)?, expected);
+        Ok(())
+    }
 
     #[test]
     fn test_basic_preview() {
@@ -585,7 +678,7 @@ mod tests {
             .text("World")
             .build_shell_script();
 
-        assert!(script.contains("echo -e"));
+        assert!(script.contains("printf"));
         assert!(!script.starts_with("bash -c"));
     }
 }

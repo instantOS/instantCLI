@@ -25,8 +25,9 @@ use self::upload_logs::handle_upload_logs;
 pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<()> {
     let os = OperatingSystem::detect();
 
-    // Only warn about non-Arch distros for commands other than Info
-    if !os.in_family(&OperatingSystem::Arch) && !matches!(command, ArchCommands::Info) {
+    // Setup modifies the current Arch system. Install/Exec can bootstrap Arch
+    // from another distribution and must not warn that their host is wrong.
+    if !os.in_family(&OperatingSystem::Arch) && matches!(command, ArchCommands::Setup { .. }) {
         eprintln!(
             "Warning: You appear to be running on {}, but this command is intended for Arch Linux or Artix Linux.",
             os
@@ -49,18 +50,38 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
             }
         }
         ArchCommands::Install => handle_install_command(debug).await,
+        ArchCommands::BootstrapEnter { root } => crate::arch::bootstrap::enter(&root).await,
         ArchCommands::Exec {
             step,
             questions_file,
             dry_run,
-        } => handle_exec_command(
-            steps,
-            step,
-            questions_file.unwrap_or_else(default_questions_file),
-            dry_run,
-        )
-        .await
-        .map(|_| ()),
+        } => {
+            if !dry_run
+                && !crate::arch::execution::is_chroot()
+                && crate::arch::host::HostProfile::detect()?
+                    == crate::arch::host::HostProfile::ForeignDistro
+            {
+                if step.is_some() {
+                    anyhow::bail!(
+                        "Foreign hosts support complete installations only. Run `ins arch exec --questions-file PATH` without a step; individual steps require a persistent Arch installation environment."
+                    );
+                }
+                super::utils::ensure_root()?;
+                return crate::arch::bootstrap::launch(crate::arch::bootstrap::Request::Exec {
+                    questions: questions_file.unwrap_or_else(default_questions_file),
+                    debug,
+                })
+                .await;
+            }
+            handle_exec_command(
+                steps,
+                step,
+                questions_file.unwrap_or_else(default_questions_file),
+                dry_run,
+            )
+            .await
+            .map(|_| ())
+        }
         ArchCommands::UploadLogs { path } => handle_upload_logs(path),
         ArchCommands::Info => handle_info_command(),
         ArchCommands::Dualboot { command } => match command {

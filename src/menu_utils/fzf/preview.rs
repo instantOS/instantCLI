@@ -5,6 +5,16 @@ use std::collections::HashMap;
 
 use super::types::{FzfPreview, FzfSelectable};
 
+/// Standard native controls for every selection menu that renders a preview.
+pub(super) fn configure_controls(command: &mut std::process::Command, has_preview: bool) {
+    if has_preview {
+        command.args([
+            "--bind=ctrl-/:toggle-preview",
+            "--bind=alt-up:preview-up,alt-down:preview-down",
+        ]);
+    }
+}
+
 pub struct PreviewUtils;
 
 /// Content type for mixed previews
@@ -113,6 +123,31 @@ impl PreviewUtils {
             // Mixed text and command previews - track type per item
             // Don't populate text_map since it's not used in Mixed strategy
             Ok(PreviewStrategy::Mixed(mixed_map))
+        }
+    }
+}
+
+#[cfg(test)]
+mod control_tests {
+    use super::*;
+
+    #[test]
+    fn preview_shortcuts_are_enabled_only_with_a_preview() {
+        for has_preview in [false, true] {
+            let mut command = std::process::Command::new("fzf");
+            configure_controls(&mut command, has_preview);
+            let args = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                args.iter().any(|arg| arg.contains("toggle-preview")),
+                has_preview
+            );
+            assert_eq!(
+                args.iter().any(|arg| arg.contains("preview-up")),
+                has_preview
+            );
         }
     }
 }

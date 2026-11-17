@@ -1,23 +1,66 @@
 # InstantCLI
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-# DOCS LIVE AT [instantos.io/docs/ins](https://instantos.io/docs/ins.html)
+**A Swiss Army knife of [instantOS](https://instantos.io) utilities.**
 
-A powerful, Rust-based command-line tool for managing dotfiles,
-system diagnostics, WM keychords, game saves and much more.
+A single utility to manage all your Linux needs (and some more).
 
-## Install with npm
+It includes an Arch Linux installer, dotfile management, a cross-distro and
+cross-WM settings TUI, a clipboard manager, a password manager based on
+[pass](https://www.passwordstore.org/) and much more, all in a single small and
+fast executable.
 
-On Linux x64 or ARM64 with Node.js 18 or newer:
+
+[Documentation](https://instantos.io/docs/ins.html) ·
+[Releases](https://github.com/instantOS/instantCLI/releases)
+
+## Installation
+
+### Recommended: install script
+
+Download and install a prebuilt binary for your system:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh | sh
+ins --help
+```
+[Inspect the script](scripts/install.sh) before running it.
+
+On Arch/instantOS install live media, the script also launches the OS installer. To
+install only the CLI there, pass `--cli-only` to `sh`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh | sh -s -- --cli-only
+```
+
+### Other installation options
+
+**Arch Linux (AUR):**
+
+```sh
+yay -S ins
+```
+
+**Cargo:** requires a Rust toolchain and native build dependencies (see
+[Development](#development)).
+
+```sh
+cargo install --git https://github.com/instantOS/instantCLI --locked ins
+```
+
+**npm:** Linux x64 or ARM64 with Node.js 18 or newer. This installs the binary;
+external tools and desktop integration files must be installed separately.
 
 ```sh
 npm install -g @instantos/cli
-ins --help
 ```
 
-See [npm packaging and CI setup](npm/PUBLISHING.md) for release configuration.
+See the [npm README](npm/README.md) for details.
+
+**Manual download:** prebuilt binaries and Debian/Alpine packages are available
+from [GitHub releases](https://github.com/instantOS/instantCLI/releases).
+
 
 ## Alpine and postmarketOS settings
 
@@ -199,235 +242,124 @@ Dotfile status is content-based: a target containing a known previous source
 version is reported as outdated whenever it differs from the effective source,
 regardless of file modification times.
 
-## Installation
 
-### Quick install
+## Usage
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh | sh
-```
-
-Set `INSTALL_DIR` to override the destination directory. Non-root installs use
-`~/.local/bin` or `~/bin` when either is already in `PATH`, otherwise
-`~/.local/bin`. Root and instantOS live-system installs use `/usr/local/bin`.
-
-Check before you pipe `:)`
-
-### Cargo
-
-```bash
-cargo install ins
-```
-
-### AUR
-
-```bash
-yay -S ins
-```
-
-### From Source
-
-```bash
-# Clone the repository
-git clone https://github.com/your-username/instantCLI.git
-cd instantCLI
-
-# Build and install locally
-just install
-
-# Or install system-wide (requires sudo)
-just rootinstall
-```
-
-### Dependencies
-
-- Rust
-- Git
-- FZF
-- Restic
-- SQLite3
-
-#### Arch
-
-```bash
-sudo pacman -Sy git fzf restic sqlite --needed
-```
-
-#### Ubuntu
-
-```bash
-sudo apt update; sudo apt install -y git fzf restic sqlite3 pkg-config libssl-dev libgit2-dev libsqlite3-dev
-```
-
-#### Alpine / postmarketOS
-
-On musl-based systems the default Rust target is statically linked, so the
-static SQLite library is required in addition to the development headers:
-
-```bash
-sudo apk add git fzf restic sqlite sqlite-dev sqlite-static pkgconfig openssl-dev libgit2-dev
-```
-
-Missing optional tools can be installed through the usual dependency confirmation
-prompt on Alpine and postmarketOS. APK uses `sudo`, or `doas` when `sudo` is
-unavailable; root runs `apk` directly. Package mappings cover Assist tools, the
-video pipeline, password-store/OTP, backups, and supported settings applications.
-APK installs and removals wait up to 60 seconds for its database lock. If an
-interactive dependency installation fails, choose Retry to rerun the failed
-package group or Cancel to stop. Completed groups are not repeated; unattended
-installs report failures without opening a recovery prompt.
-Availability depends on the Alpine branch, architecture, and enabled repositories;
-many desktop tools require `community`. Packages without a verified APK mapping
-retain their existing fallback or are reported as unavailable.
-
-To recheck all explicit APK package names against Alpine's published `main` and
-`community` indexes without installing anything:
+Run `ins --help` to see all commands, or add `--help` to a command for its options:
 
 ```sh
-python3 scripts/verify-apk-dependencies.py
-# Check another release or architecture:
-python3 scripts/verify-apk-dependencies.py --branch edge --arch aarch64
+ins dot --help
+ins game --help
+ins video --help
 ```
 
-The default check targets Alpine v3.24 on both aarch64 and x86_64. Non-obvious
-mappings include `libqrencode-tools` for `qrencode`, `pandoc-cli` for `pandoc`,
-`ntfs-3g-progs` for `ntfsresize`, and `tesseract-ocr-data-eng` for OCR with English
-language data (which also installs the Tesseract engine).
+| Command | What it does |
+| --- | --- |
+| `ins dot` | Manage and apply dotfile repositories |
+| `ins doctor` | Check for system problems and offer fixes |
+| `ins settings` | Browse desktop and system settings |
+| `ins game` | Back up and sync game saves |
+| `ins pass` | Pick passwords and generate one-time codes |
+| `ins notify` | Browse notification history |
+| `ins clip` | Browse clipboard history |
+| `ins launch` | Search and launch applications |
+| `ins open FILE` | Choose an application to open a file |
+| `ins open --instantmenu FILE` | Choose an application in a compact graphical menu |
+| `ins display` | Choose a display layout with instantWM |
+| `ins keyhelp` | Explore instantWM keybindings |
+| `ins assist` | Open quick desktop actions |
+| `ins menu` | Build interactive menus for shell scripts |
+| `ins terminal` | Launch your configured terminal |
+| `ins arch install` | Install Arch Linux, Artix Linux or instantOS |
+| `ins video` | Edit video through text transcripts |
+
+`ins open --instantmenu FILE` requires `instantmenu` and an X11 or Wayland session.
+It shares application ranking and history with the terminal picker: Enter opens,
+Ctrl+D immediately sets the selected application as the default for the file type,
+Ctrl+E chooses a custom executable using the hosted Yazi picker, and Ctrl+X
+makes the opened file executable for its owner and runs it directly (including
+AppImages and scripts). Unrecognized formats, unavailable script interpreters,
+and binaries for other CPU architectures require confirmation before permissions
+change. Ctrl+X is available for regular files only. The graphical
+menu omits previews; `--gui` opens the full terminal picker instead.
+
+Custom executables chosen with Ctrl+E are remembered per MIME type after a successful
+launch and appear alongside desktop applications in the recommended list. Reusing
+one updates its frecency score. Entries expire after 30 days without use; the cache
+keeps at most 20 per MIME type and 100 overall, evicting the least recently used.
+Missing or non-executable programs are pruned when the picker opens. Ctrl+D requires
+a desktop entry.
+
+The `desktop/ins-open.desktop` entry is installed by `just install`, `just rootinstall`,
+and the Arch package. It makes **INS Open** available in file managers' “Open With” dialogs for
+common file types and folders. To install the entry manually:
+
+```sh
+install -Dm644 desktop/ins-open.desktop ~/.local/share/applications/ins-open.desktop
+update-desktop-database ~/.local/share/applications
+```
+
+Choose INS Open as the default in your file manager, or run
+`xdg-mime default ins-open.desktop text/plain` for a specific MIME type. Choosing
+another default with Ctrl+D replaces that association. The chooser excludes its
+own desktop entry to avoid opening itself recursively.
+
+For guides, see the [documentation](https://instantos.io/docs/ins.html),
+[password and OTP guide](https://instantos.io/docs/pass), and
+[Arch installation prerequisites](ARCH_INSTALLATION.md).
+
+### Runtime dependencies
+
+Requirements vary by feature: terminal menus use fzf, dotfile management uses Git,
+and game-save backups use restic. Commands can offer to install missing tools on
+supported distributions. Desktop features may also require instantMENU, clipboard
+utilities, or a notification service.
+
+Rust is only needed when building from source or installing through Cargo.
 
 ## Development
 
-### Building
+Use a Rust toolchain supporting edition 2024, Git, a C toolchain, pkg-config,
+and OpenSSL/SQLite development libraries. On Debian or Ubuntu:
 
-```bash
-# Debug build
-cargo build
-
-# Release build
-cargo build --release
-
-# Run with debug logging
-cargo run -- --debug <command>
+```sh
+sudo apt update
+sudo apt install build-essential git pkg-config libssl-dev libsqlite3-dev
 ```
 
-### Testing
+On Alpine/postmarketOS, also install the static SQLite library:
 
-```bash
-# Run all tests
+```sh
+sudo apk add build-base git pkgconf openssl-dev sqlite-dev sqlite-static
+```
+
+Clone and build:
+
+```sh
+git clone https://github.com/instantOS/instantCLI.git
+cd instantCLI
+cargo build --bin ins
+cargo run -- --help
+```
+
+With `just` installed, `just install` installs the debug binary and desktop
+integration for the current user. `just rootinstall` installs the debug binary
+to `/usr/local/bin` using sudo.
+
+Check changes and run tests:
+
+```sh
+cargo fmt --check
+cargo check
 cargo test
-
-# Run integration tests
 just test
 ```
 
-## Terminal icons
+See [AGENTS.md](AGENTS.md) for repository conventions,
+[installer sources](scripts/install-src/README.md) for work on the install script,
+[release maintenance](RELEASING.md),
+and [npm publishing](npm/PUBLISHING.md).
 
-Linux virtual consoles automatically use single-cell ASCII icon fallbacks,
-including when running tmux on a console. Status and navigation keep meaningful
-symbols (`+`, `x`, `!`, `<`, `>`); decorative icons use `*` beside their label.
-This detection is independent of `INS_COLOR_MODE`.
+## License
 
-Use `INS_ICON_MODE=ascii ins ...` to enable the fallback in any terminal without
-Nerd Fonts, or `INS_ICON_MODE=nerd ins ...` to force the original glyphs.
-Unset the variable (or use `auto`) for automatic detection.
-
-## Menu action bindings
-
-```sh
-printf '%s\n' 'alpha' 'beta' |
-  ins menu choice --bind 'ctrl-e:Edit' --bind 'alt-s:Save'
-```
-
-`ins menu choice --bind KEY:LABEL` registers a global action and a visible key
-hint. Repeat the option for more actions. It works with native instantMENU,
-local fzf (`--backend tui`), and the hosted terminal (`--backend scratchpad`),
-including streamed input and `--multi`. `--items 'alpha beta'` also works.
-Use `--frecency-cache NAME` to retain selection ranking; terminal menus with
-frecency collect input before ranking, as usual.
-
-With any bindings registered, stdout begins with the pressed key, or an empty
-line for normal submission, followed by selected values. Ctrl-E on beta prints
-`ctrl-e\nbeta\n`. Actions also work with no matches and then return only the key.
-Escape returns exit status 2 without a result; success returns 0. The caller
-handles the action; neither keys nor labels execute shell commands. Native
-multi-selection uses Ctrl-Return to accumulate items before the final action.
-Without `--bind`, the existing output format is unchanged.
-
-Keys follow the fzf wrapper's validated menu vocabulary (`ctrl-e`, `alt-s`,
-`ctrl-alt-r`, `f3`, `shift-left`, etc.). Submission, dismissal, and core navigation
-keys are reserved. Labels may contain spaces and colons. Invalid labels, unsafe
-key expressions, and duplicate bindings are rejected before launching a menu.
-Install the updated instantMENU binary when using the native backend. This
-change advances the hosted menu protocol to version 5; the client restarts an
-older scratchpad server through the existing compatibility mechanism.
-
-## Installer TTY fonts
-
-`ins arch install` asks for a console font near the start, before the keyboard
-layout. The standard 8x16 font is preselected and marked Default. Available
-Sun and Terminus fonts appear as suggested choices; “All fonts” lists discovered
-PSF/PSFU fonts, including gzip files, custom fonts, and fonts in subdirectories.
-Sizes and glyph counts are read from the font files.
-
-On a Linux virtual console (also through tmux), moving through the font menu
-changes the font live. Enter reapplies and keeps the selected font for the
-installation; cancelling restores the previous font and Unicode map. In Kitty
-or another graphical terminal, previews describe the choices without changing
-the terminal font.
-
-The selected font and its Unicode table are saved with the installer answers.
-The installer installs `kbd`, copies the selected font to
-`/usr/share/kbd/consolefonts/ins-selected.psf`, and writes `FONT=ins-selected`
-alongside `KEYMAP=` in the installed system's `/etc/vconsole.conf`. This also
-works for custom fonts without an owning package and saved choices whose
-original font files are no longer available. Reviews and support reports show
-only the font name. Older plain-name answers still install their original font
-package; older answers without a font choice use the default 8x16 font.
-
-Compressed font discovery uses the system's `gzip` command. No additional Rust
-dependencies are required.
-
-## Default terminal
-
-Terminal launches use [instantos-terminal](https://github.com/instantOS/instantOS-libs).
-Choose a default in `ins settings`, or override it with `TERMINAL=foot` or
-`TERMINAL=alacritty`. Scratchpads follow this setting unless `--terminal` is
-explicitly supplied. The old hardcoded kitty default has been removed.
-
-```sh
-ins terminal
-ins terminal --title Notes -- nvim notes.md
-ins terminal --terminal foot -- sh -c 'printf "hello\n"; read answer'
-ins terminal --ensure-default
-```
-
-An explicit terminal override is strict. Ordinary launches try the configured
-alias directly and fall back only if execution reports a missing executable.
-Fallback does not overwrite the saved preference. Terminal options and command
-arguments are kept separate; use `--` before the command.
-
-Scratchpad commands take program arguments after `--`. Shell interpretation is
-explicit; the old `--command` shell-string option has been removed:
-
-```sh
-ins scratchpad show --terminal foot -- nvim 'notes with spaces.md'
-ins scratchpad show --shell-command 'printf "hello\n"; read answer'
-```
-
-## Application launcher
-
-`ins launch` discovers desktop applications and remembers selections by their
-stable desktop-entry IDs. Entries with `Terminal=true` use the configured
-terminal. Use `--include-path` to include executable commands, or `--terminal`
-for a command-only menu that runs the selection in a terminal:
-
-```sh
-ins launch
-ins launch --include-path --query firefox
-ins launch --terminal --query nvim
-ins launch --list
-```
-
-`--query` is supported by the instantMENU, TUI and scratchpad backends.
-Use `--backend instantmenu`, `--backend tui` or `--backend scratchpad` to select
-one explicitly. The hosted menu protocol is now version 9; restart an older
-menu server when upgrading.
+[GPL-2.0-only](LICENSE).

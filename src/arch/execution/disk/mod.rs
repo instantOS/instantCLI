@@ -12,12 +12,25 @@ use anyhow::Result;
 
 pub use util::get_part_path;
 
+fn activate_swap(path: &str, executor: &dyn CommandRunner) -> Result<()> {
+    if !executor.dry_run() {
+        crate::arch::bootstrap::record(crate::arch::bootstrap::Resource::Swap(path.into()))?;
+    }
+    executor.run(std::process::Command::new("swapon").arg(path))
+}
+
 pub fn prepare_disk(
     plan: &InstallPlan,
     context: &InstallContext,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
     let disk = plan.storage().disk();
+    // Recheck source protection at the mutation boundary, including plans
+    // imported without the wizard and device aliases.
+    crate::arch::disks::ensure_not_running_disk(disk.as_str())?;
+    if plan.storage().encryption().is_some() {
+        crate::arch::bootstrap::ensure_encryption_names_available()?;
+    }
 
     // Last line of defence before partitioning. The wizard's disk question
     // refuses the running disk, and `crate::arch::disks::prepare_disk` refuses
@@ -26,10 +39,8 @@ pub fn prepare_disk(
     // stop here rather than repartition the machine the installer is executing
     // from.
     //
-    // The conflict was resolved when the plan was built, by reading the running
-    // devices at that moment. A device appearing or changing since then is not
-    // re-read here, so this is a guard against a bad plan rather than a fresh
-    // check of the machine.
+    // Retain the plan's original conflict as well as the fresh check above:
+    // a disk protected when the plan was built must stay protected.
     if let Some(conflict) = plan.environment().target() {
         anyhow::bail!(
             "{}",

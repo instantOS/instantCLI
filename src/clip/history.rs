@@ -163,6 +163,29 @@ pub fn clear() -> Result<usize> {
     Ok(count)
 }
 
+pub(super) fn store(data: &[u8]) -> Result<()> {
+    let mut child = Command::new("cliphist")
+        .arg("store")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to run cliphist store")?;
+    child
+        .stdin
+        .take()
+        .context("Failed to open cliphist input")?
+        .write_all(data)
+        .context("Failed to store edited clipboard text")?;
+    let output = child.wait_with_output()?;
+    anyhow::ensure!(
+        output.status.success(),
+        "cliphist store failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(())
+}
+
 /// Put an entry back on the clipboard. Images need an explicit MIME type on
 /// X11, otherwise xclip would offer the raw bytes as text.
 pub fn restore(entry: &ClipEntry) -> Result<()> {

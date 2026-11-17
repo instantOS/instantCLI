@@ -1,5 +1,6 @@
 //! File suggestion preview - generates rich previews based on file type/mimetype.
 
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 
@@ -15,25 +16,31 @@ use crate::video::support::ffmpeg::probe_media_metadata;
 /// Render a file suggestion preview based on the file's mimetype.
 /// Dispatches to specialized previews for video/audio, images, etc.
 pub(crate) fn render_file_suggestion_preview(ctx: &PreviewContext) -> Result<String> {
+    let columns = ctx.columns();
     let Some(path_str) = ctx.key() else {
         return Ok(PreviewBuilder::new()
+            .width(columns)
             .header(NerdFont::File, "No file selected")
             .build_string());
     };
 
     let path = Path::new(path_str);
-    let columns = ctx.columns();
 
     if !path.exists() {
         return Ok(append_wrapped_path(
-            PreviewBuilder::new().header(NerdFont::Warning, "File not found"),
+            PreviewBuilder::new()
+                .width(columns)
+                .header(NerdFont::Warning, "File not found"),
             Path::new(path_str),
             columns,
         )
         .build_string());
     }
 
-    let mimetype = detect_mimetype(path);
+    let mimetype = ctx
+        .mime_type
+        .clone()
+        .unwrap_or_else(|| detect_mimetype(path));
     let category = mimetype_category(&mimetype);
 
     match category {
@@ -143,7 +150,7 @@ fn render_media_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> 
         NerdFont::Video
     };
 
-    let mut builder = PreviewBuilder::new().header(icon, file_name);
+    let mut builder = PreviewBuilder::new().width(columns).header(icon, file_name);
 
     if let Some(duration) = metadata.duration_display() {
         builder = builder.field("Duration", &duration);
@@ -187,7 +194,9 @@ fn render_image_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> 
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown");
 
-    let mut builder = PreviewBuilder::new().header(NerdFont::Image, file_name);
+    let mut builder = PreviewBuilder::new()
+        .width(columns)
+        .header(NerdFont::Image, file_name);
 
     // Try to get image dimensions using file command or identify
     if let Some((width, height)) = probe_image_dimensions(path) {
@@ -260,7 +269,9 @@ fn render_text_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> R
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown");
 
-    let mut builder = PreviewBuilder::new().header(NerdFont::FileText, file_name);
+    let mut builder = PreviewBuilder::new()
+        .width(columns)
+        .header(NerdFont::FileText, file_name);
 
     if let Ok(meta) = path.metadata() {
         builder = builder.field("Size", &format_size(meta.len()));
@@ -269,15 +280,43 @@ fn render_text_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> R
         }
     }
 
-    // Count lines
-    if let Ok(content) = std::fs::read_to_string(path) {
-        let lines = content.lines().count();
-        builder = builder.field("Lines", &lines.to_string());
+    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
+    if path.metadata()?.is_file() {
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?
+            .take(16 * 1024)
+            .read_to_end(&mut bytes)?;
+        builder = builder
+            .blank()
+            .separator()
+            .subtext("Contents · first 80 lines / 16 KiB");
+        for line in text_excerpt(&bytes).lines() {
+            builder = builder.text(line);
+        }
     }
 
-    builder = append_wrapped_path(builder.blank().field("MIME Type", mimetype), path, columns);
-
     Ok(builder.build_string())
+}
+
+/// Keep previews bounded and prevent file contents from emitting terminal controls.
+fn text_excerpt(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    text.lines()
+        .take(80)
+        .map(|line| {
+            line.chars()
+                .take(240)
+                .map(|c| {
+                    if c.is_control() && c != '\t' {
+                        '�'
+                    } else {
+                        c
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_archive_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Result<String> {
@@ -286,7 +325,9 @@ fn render_archive_preview(path: &Path, mimetype: &str, columns: Option<usize>) -
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown");
 
-    let mut builder = PreviewBuilder::new().header(NerdFont::Archive, file_name);
+    let mut builder = PreviewBuilder::new()
+        .width(columns)
+        .header(NerdFont::Archive, file_name);
 
     if let Ok(meta) = path.metadata() {
         builder = builder.field("Size", &format_size(meta.len()));
@@ -306,7 +347,9 @@ fn render_pdf_preview(path: &Path, mimetype: &str, columns: Option<usize>) -> Re
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown");
 
-    let mut builder = PreviewBuilder::new().header(NerdFont::FilePdf, file_name);
+    let mut builder = PreviewBuilder::new()
+        .width(columns)
+        .header(NerdFont::FilePdf, file_name);
 
     if let Ok(meta) = path.metadata() {
         builder = builder.field("Size", &format_size(meta.len()));
@@ -344,7 +387,9 @@ fn render_directory_preview(path: &Path, columns: Option<usize>) -> Result<Strin
         .and_then(|s| s.to_str())
         .unwrap_or("Directory");
 
-    let mut builder = PreviewBuilder::new().header(NerdFont::Folder, dir_name);
+    let mut builder = PreviewBuilder::new()
+        .width(columns)
+        .header(NerdFont::Folder, dir_name);
 
     if let Ok(entries) = std::fs::read_dir(path) {
         let count = entries.count();
@@ -374,7 +419,7 @@ fn render_generic_preview(path: &Path, mimetype: &str, columns: Option<usize>) -
         NerdFont::File
     };
 
-    let mut builder = PreviewBuilder::new().header(icon, file_name);
+    let mut builder = PreviewBuilder::new().width(columns).header(icon, file_name);
 
     if let Ok(meta) = path.metadata() {
         builder = builder
@@ -391,92 +436,13 @@ fn render_generic_preview(path: &Path, mimetype: &str, columns: Option<usize>) -
 }
 
 fn append_wrapped_path(
-    mut builder: PreviewBuilder,
+    builder: PreviewBuilder,
     path: &Path,
     columns: Option<usize>,
 ) -> PreviewBuilder {
-    let path = path.to_string_lossy();
-    let line_width = path_line_width(columns);
-    let lines = wrap_path_for_preview(&path, line_width);
-
-    for (index, line) in lines.iter().enumerate() {
-        let label = if index == 0 { "Path: " } else { "      " };
-        builder = builder.subtext(&format!("{label}{line}"));
-    }
-
     builder
-}
-
-fn path_line_width(columns: Option<usize>) -> usize {
-    columns.unwrap_or(80).saturating_sub(8).clamp(24, 160)
-}
-
-fn wrap_path_for_preview(path: &str, line_width: usize) -> Vec<String> {
-    if path.chars().count() <= line_width {
-        return vec![path.to_string()];
-    }
-
-    let mut lines = Vec::new();
-    let mut current = String::new();
-
-    for segment in split_path_segments(path) {
-        if current.chars().count() + segment.chars().count() <= line_width {
-            current.push_str(&segment);
-            continue;
-        }
-
-        if !current.is_empty() {
-            lines.push(std::mem::take(&mut current));
-        }
-
-        if segment.chars().count() <= line_width {
-            current.push_str(&segment);
-        } else {
-            lines.extend(split_long_segment(&segment, line_width));
-        }
-    }
-
-    if !current.is_empty() {
-        lines.push(current);
-    }
-
-    lines
-}
-
-fn split_path_segments(path: &str) -> Vec<String> {
-    let mut segments = Vec::new();
-    let mut current = String::new();
-
-    for ch in path.chars() {
-        current.push(ch);
-        if ch == '/' || ch == '\\' {
-            segments.push(std::mem::take(&mut current));
-        }
-    }
-
-    if !current.is_empty() {
-        segments.push(current);
-    }
-
-    segments
-}
-
-fn split_long_segment(segment: &str, line_width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-
-    for ch in segment.chars() {
-        if current.chars().count() >= line_width {
-            lines.push(std::mem::take(&mut current));
-        }
-        current.push(ch);
-    }
-
-    if !current.is_empty() {
-        lines.push(current);
-    }
-
-    lines
+        .width(columns)
+        .field("Path", &path.to_string_lossy())
 }
 
 #[cfg(test)]
@@ -484,26 +450,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wraps_long_paths_at_directory_boundaries() {
-        let lines = wrap_path_for_preview(
-            "/run/media/benjamin/External Drive/Games/Very Long Game Name/Game.exe",
-            24,
-        );
-
-        assert!(lines.len() > 1);
-        assert!(lines.iter().all(|line| line.chars().count() <= 24));
-        assert_eq!(
-            lines.join(""),
-            "/run/media/benjamin/External Drive/Games/Very Long Game Name/Game.exe"
-        );
-    }
-
-    #[test]
-    fn wraps_single_long_path_component() {
-        let lines = wrap_path_for_preview("/mnt/aaaaaaaaaaaaaaaaaaaaaaaaaaaa/Game.exe", 10);
-
-        assert!(lines.len() > 1);
-        assert!(lines.iter().all(|line| line.chars().count() <= 10));
-        assert_eq!(lines.join(""), "/mnt/aaaaaaaaaaaaaaaaaaaaaaaaaaaa/Game.exe");
+    fn text_previews_bound_content_and_strip_terminal_controls() {
+        let bytes = "\x1b[31mhello\n".repeat(200);
+        let preview = text_excerpt(bytes.as_bytes());
+        assert_eq!(preview.lines().count(), 80);
+        assert!(!preview.contains('\x1b'));
+        assert_eq!(text_excerpt("x".repeat(500).as_bytes()).len(), 240);
     }
 }
