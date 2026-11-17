@@ -14,6 +14,7 @@ use super::sync::SyncReport;
 use super::ui_dialog::{GameUi, after_launch};
 
 const POST_LAUNCH_SYNC_DELAY: Duration = Duration::from_secs(5);
+const PRE_LAUNCH_SYNC_GUIDANCE: &str = "Could not sync saves before launch. Run `ins game init` to review backup storage; for rclone account or login problems, run `rclone config`. The game was not launched";
 
 /// Handle game launching
 pub fn launch_game(game_name: Option<String>) -> Result<()> {
@@ -55,6 +56,15 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
     };
 
     game_config.validate_ownership(&installations)?;
+    // Setup can invoke installers and edit storage configuration. Do it before
+    // holding save locks, and only for games that actually use backups.
+    if installations
+        .owner_saves(&game_config.owner_id(&selected.name))
+        .is_ok()
+        && !ui.prepare_backups(&selected.name, &game_config)?
+    {
+        return Ok(());
+    }
     let owner_id = game_config.owner_id(&selected.name);
     let owner_lock = crate::game::save_runtime::SaveLock::owner(&owner_id)?;
     // Recheck after locking so a newly configured save binding cannot be
@@ -86,8 +96,10 @@ fn launch_with_ui(game_name: Option<String>, ui: &GameUi) -> Result<()> {
         return launch_without_backups(&selected, ui, owner_lock);
     }
     let title = format!("InstantCLI - {}", selected.name);
-    let report = ui.sync_owner(&title, Duration::ZERO, &selected.name, &owner_id)?;
-    ensure_game_synced(&report, &selected.name, "Pre-launch")?;
+    let report = ui
+        .sync_owner(&title, Duration::ZERO, &selected.name, &owner_id)
+        .context(PRE_LAUNCH_SYNC_GUIDANCE)?;
+    ensure_game_synced(&report, &selected.name, "Pre-launch").context(PRE_LAUNCH_SYNC_GUIDANCE)?;
     ui.notify_conflicts(&report);
     after_launch(run_launch_command(&selected), || {
         let report = ui.sync_owner(&title, POST_LAUNCH_SYNC_DELAY, &selected.name, &owner_id)?;

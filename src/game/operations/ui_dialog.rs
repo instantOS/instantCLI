@@ -14,6 +14,28 @@ pub(super) struct GameUi {
 }
 
 impl GameUi {
+    /// Complete interactive setup before acquiring save locks or starting sync.
+    /// False means the user cancelled setup.
+    pub(super) fn prepare_backups(
+        &self,
+        game_name: &str,
+        config: &crate::game::config::InstantGameConfig,
+    ) -> Result<bool> {
+        let Err(problem) = crate::game::repository::readiness::check(config) else {
+            return Ok(true);
+        };
+        let guidance = format!(
+            "Game backups need setup before launching '{game_name}':\n\n{problem:#}\n\nRun `ins game init` in a terminal to review backup storage."
+        );
+        if !std::io::stdin().is_terminal() {
+            anyhow::bail!(
+                "{guidance}\nRetry launching from a terminal to install backup tools and configure rclone."
+            );
+        }
+        println!("{guidance}");
+        crate::game::repository::readiness::prepare()
+    }
+
     pub(super) fn confirm(&self, message: &str, yes: &str, no: &str) -> Result<bool> {
         if self.graphical {
             let mut command = Command::new("zenity");

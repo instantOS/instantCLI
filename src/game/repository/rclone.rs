@@ -11,7 +11,7 @@ use crate::common::requirements::InstallTest;
 use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::nerd_font::NerdFont;
 
-static RCLONE: Dependency = Dependency {
+pub(super) static RCLONE: Dependency = Dependency {
     name: "rclone",
     packages: &[
         PackageDefinition::new("rclone", PackageManager::Apk),
@@ -89,6 +89,63 @@ impl RcloneBackend for SystemRclone {
             String::from_utf8_lossy(&output.stderr).trim()
         );
         Ok(())
+    }
+}
+
+/// Check local configuration only; network and repository errors belong to sync.
+pub(super) fn check_configured(repository: &str) -> Result<()> {
+    let Some(remote) = repository_remote(repository)? else {
+        return Ok(());
+    };
+    ensure!(which::which("rclone").is_ok(), "rclone is not installed");
+    ensure!(
+        SystemRclone
+            .list_remotes()?
+            .iter()
+            .any(|name| name == remote),
+        "The rclone remote '{remote}' is not configured on this device. Run `rclone config` and create '{remote}' using the same storage account as your other devices. Keep the existing backup folder."
+    );
+    Ok(())
+}
+
+pub(super) fn repository_remote(repository: &str) -> Result<Option<&str>> {
+    let Some(location) = repository.strip_prefix("rclone:") else {
+        return Ok(None);
+    };
+    let (remote, _) = location.split_once(':').context(
+        "Invalid rclone repository URL. Use `ins game init` to select a remote and backup folder.",
+    )?;
+    remote_root(remote)?;
+    Ok(Some(remote))
+}
+
+/// Repair the configured remote without changing the repository URL or folder.
+pub(super) fn ensure_configured(repository: &str) -> Result<bool> {
+    ensure_configured_with(repository, &mut SystemRclone)
+}
+
+fn ensure_configured_with(repository: &str, backend: &mut impl RcloneBackend) -> Result<bool> {
+    let Some(remote) = repository_remote(repository)? else {
+        return Ok(true);
+    };
+    loop {
+        let problem = match backend.list_remotes() {
+            Ok(remotes) if remotes.iter().any(|name| name == remote) => return Ok(true),
+            Ok(_) => format!(
+                "The rclone remote '{remote}' is not configured on this device.\n\nCreate a remote named '{remote}' using the same storage account as your other devices. Your backup folder will stay unchanged: {repository}"
+            ),
+            Err(error) => format!("Could not read rclone configuration: {error:#}"),
+        };
+        if FzfWrapper::builder()
+            .confirm(format!("{problem}\n\nOpen rclone configuration now? Quit rclone to return and retry launching."))
+            .yes_text("Configure rclone")
+            .no_text("Cancel launch")
+            .confirm_dialog()?
+            != crate::menu_utils::ConfirmResult::Yes
+        {
+            return Ok(false);
+        }
+        manage(backend)?;
     }
 }
 
@@ -289,6 +346,7 @@ mod tests {
         roots: Vec<String>,
         fail_list_once: bool,
         fail_root_once: bool,
+        missing_remote: bool,
     }
 
     impl RcloneBackend for FakeRclone {
@@ -297,11 +355,16 @@ mod tests {
             if std::mem::take(&mut self.fail_list_once) {
                 bail!("list failed");
             }
-            Ok(vec!["drive".into()])
+            Ok(if self.missing_remote {
+                vec!["other-account".into()]
+            } else {
+                vec!["drive".into()]
+            })
         }
 
         fn configure(&mut self) -> Result<()> {
             self.config_calls += 1;
+            self.missing_remote = false;
             Ok(())
         }
 
@@ -312,6 +375,89 @@ mod tests {
             }
             Ok(())
         }
+    }
+
+    #[test]
+    fn launch_repairs_the_required_remote_without_selecting_new_storage() -> Result<()> {
+        let _guard = MockQueue::new().confirm_yes().guard();
+        let mut backend = FakeRclone {
+            missing_remote: true,
+            ..Default::default()
+        };
+        assert!(ensure_configured_with(
+            "rclone:drive:existing/backups",
+            &mut backend
+        )?);
+        assert_eq!(backend.config_calls, 1);
+        assert_eq!(backend.list_calls, 2);
+        assert!(backend.roots.is_empty());
+        assert_eq!(crate::menu_utils::scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn launch_can_cancel_a_missing_remote_without_running_rclone_config() -> Result<()> {
+        let _guard = MockQueue::new().confirm_no().guard();
+        let mut backend = FakeRclone {
+            missing_remote: true,
+            ..Default::default()
+        };
+        assert!(!ensure_configured_with(
+            "rclone:drive:backups",
+            &mut backend
+        )?);
+        assert_eq!(backend.config_calls, 0);
+        assert!(backend.roots.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn launch_with_local_storage_never_needs_rclone() -> Result<()> {
+        let mut backend = FakeRclone::default();
+        assert!(ensure_configured_with("/backups/games", &mut backend)?);
+        assert_eq!(backend.list_calls, 0);
+        assert_eq!(backend.config_calls, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn launch_with_a_configured_remote_needs_no_dialog_or_network() -> Result<()> {
+        let mut backend = FakeRclone::default();
+        assert!(ensure_configured_with(
+            "rclone:drive:backups",
+            &mut backend
+        )?);
+        assert_eq!(backend.config_calls, 0);
+        assert!(backend.roots.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn launch_can_recover_from_unreadable_rclone_configuration() -> Result<()> {
+        let _guard = MockQueue::new().confirm_yes().guard();
+        let mut backend = FakeRclone {
+            fail_list_once: true,
+            ..Default::default()
+        };
+        assert!(ensure_configured_with(
+            "rclone:drive:backups",
+            &mut backend
+        )?);
+        assert_eq!(backend.config_calls, 1);
+        assert_eq!(backend.list_calls, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn repository_remote_requires_an_unambiguous_rclone_url() -> Result<()> {
+        assert_eq!(
+            repository_remote("rclone:my account:backups")?,
+            Some("my account")
+        );
+        assert_eq!(repository_remote("sftp:user@host:/backups")?, None);
+        assert!(repository_remote("rclone:drive").is_err());
+        assert!(repository_remote("rclone::backups").is_err());
+        Ok(())
     }
 
     #[test]
