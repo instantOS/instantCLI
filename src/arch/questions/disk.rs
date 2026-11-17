@@ -426,7 +426,8 @@ impl WizardStep for PartitioningMethodQuestion {
                 .header(
                     HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),
                 )
-                .items(options),
+                .items(options)
+                .padded(),
         )?;
 
         Ok(StepOutcome::from_dialog(result, |option| {
@@ -445,7 +446,7 @@ pub struct RunCfdiskStep;
 
 #[derive(Clone)]
 enum ManualLayoutAction {
-    Continue,
+    Continue(String),
     ReopenCfdisk,
     ChangePartitioningMethod,
     PauseInstaller,
@@ -454,7 +455,7 @@ enum ManualLayoutAction {
 impl FzfSelectable for ManualLayoutAction {
     fn fzf_display_text(&self) -> String {
         match self {
-            Self::Continue => format!("{} Continue with these partitions", NerdFont::ArrowRight),
+            Self::Continue(_) => format!("{} Continue with these partitions", NerdFont::ArrowRight),
             Self::ReopenCfdisk => format!("{} Reopen cfdisk", NerdFont::HardDrive),
             Self::ChangePartitioningMethod => {
                 format!("{} Change partitioning method", NerdFont::ArrowLeft)
@@ -465,9 +466,9 @@ impl FzfSelectable for ManualLayoutAction {
 
     fn fzf_preview(&self) -> FzfPreview {
         match self {
-            Self::Continue => {
-                FzfPreview::Text("Select which partitions to use for the installation.".to_string())
-            }
+            Self::Continue(layout) => FzfPreview::Text(format!(
+                "Current partition layout\n\n{layout}\n\nContinue to select installation partitions."
+            )),
             Self::ReopenCfdisk => FzfPreview::Text(
                 "Open cfdisk again and create the required partitions.".to_string(),
             ),
@@ -484,7 +485,21 @@ impl RunCfdiskStep {
     fn review_layout(disk_path: &str, has_partitions: bool) -> Result<Option<StepOutcome>> {
         let mut actions = Vec::new();
         if has_partitions {
-            actions.push(ManualLayoutAction::Continue);
+            let layout = std::process::Command::new("lsblk")
+                .args([
+                    "--output",
+                    "NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS",
+                    "--",
+                    disk_path,
+                ])
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+                .unwrap_or_else(|| {
+                    "Could not read the current layout. Reopen cfdisk to inspect it.".to_string()
+                });
+            actions.push(ManualLayoutAction::Continue(layout));
         }
         actions.extend([
             ManualLayoutAction::ReopenCfdisk,
@@ -510,13 +525,15 @@ impl RunCfdiskStep {
             .select_one()?;
 
         Ok(match result {
-            DialogOutcome::Submitted(ManualLayoutAction::Continue) => Some(StepOutcome::Completed),
+            DialogOutcome::Submitted(ManualLayoutAction::Continue(_)) => {
+                Some(StepOutcome::Completed)
+            }
             DialogOutcome::Submitted(ManualLayoutAction::ReopenCfdisk) => None,
             DialogOutcome::Submitted(ManualLayoutAction::ChangePartitioningMethod) => {
-                Some(StepOutcome::revisit(
-                    StepId::PartitioningMethod,
-                    "Choose a different partitioning method.",
-                ))
+                Some(StepOutcome::Revisit {
+                    step: StepId::PartitioningMethod,
+                    message: None,
+                })
             }
             DialogOutcome::Submitted(ManualLayoutAction::PauseInstaller)
             | DialogOutcome::Cancelled => Some(StepOutcome::Pause),

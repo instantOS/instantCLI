@@ -147,6 +147,7 @@ pub struct ConfirmBuilder {
     pub(crate) shared: SharedConfig,
     pub(crate) yes_text: String,
     pub(crate) no_text: String,
+    pub(crate) back_option: bool,
     pub(crate) title: Option<String>,
 }
 
@@ -373,6 +374,7 @@ impl FzfBuilder {
             shared,
             yes_text: "Yes".to_string(),
             no_text: "No".to_string(),
+            back_option: false,
             title: None,
         }
     }
@@ -475,6 +477,12 @@ impl PasswordBuilder {
 // ---------------------------------------------------------------------------
 
 impl ConfirmBuilder {
+    /// Offer Back as an explicit cancellation action beside Yes and No.
+    pub fn back_option(mut self) -> Self {
+        self.back_option = true;
+        self
+    }
+
     pub fn title<S: Into<String>>(mut self, title: S) -> Self {
         self.title = Some(title.into());
         self

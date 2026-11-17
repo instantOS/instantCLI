@@ -156,7 +156,7 @@ impl WizardStep for BooleanQuestion {
         }
     }
 
-    async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let message = if let Some(desc) = &self.description {
             format!("{} {}\n\n{}", self.icon, self.prompt, desc)
         } else {
@@ -164,7 +164,11 @@ impl WizardStep for BooleanQuestion {
         };
 
         // Use FzfWrapper's confirmation dialog for consistent yes/no prompts
-        let result = FzfWrapper::builder().confirm(message).confirm_dialog()?;
+        let mut dialog = FzfWrapper::builder().confirm(message);
+        if matches!(self.ask_policy(context), AskPolicy::Optional { .. }) {
+            dialog = dialog.back_option();
+        }
+        let result = dialog.confirm_dialog()?;
 
         match result {
             ConfirmResult::Yes => Ok(StepOutcome::Answer("yes".to_string())),
