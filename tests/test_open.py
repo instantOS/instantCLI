@@ -11,12 +11,14 @@ import unicodedata
 import select
 import struct
 import signal
+import shutil
 import subprocess
 import termios
 import time
 
 root = Path(os.environ["TEST_ROOT"])
 binary = os.environ["INS_BIN"]
+real_xdg_mime = shutil.which("xdg-mime")
 bin_dir = root / "bin"
 bin_dir.mkdir()
 applications = Path(os.environ["XDG_DATA_HOME"]) / "applications"
@@ -770,4 +772,41 @@ gate.unlink()
 (root / 'cancel-immediately').unlink()
 
 assert probe_log.read_text().splitlines() == ["probe"], "File preview repeated MIME detection"
+
+# xdg-utils #151: real xdg-mime skips a saved default with a quoted Exec path.
+# Exercise saving, refreshing, reopening, and launching without modifying the launcher.
+assert real_xdg_mime, "xdg-mime is required for the quoted default regression"
+os.environ.update(XDG_CURRENT_DESKTOP="generic", XDG_CONFIG_DIRS=str(root / "empty-config"))
+executable("xdg-mime", f"""
+import os, sys
+if sys.argv[1:3] == ['query', 'filetype']:
+    print('text/plain')
+else:
+    os.execv({real_xdg_mime!r}, [{real_xdg_mime!r}, *sys.argv[1:]])
+""")
+quoted_launcher = executable("quoted app", launcher.read_text().split("\n", 1)[1])
+quoted_desktop = applications / "quoted.desktop"
+quoted_content = (
+    '[Desktop Entry]\nType=Application\nName=Quoted Editor\n'
+    f'Exec="{quoted_launcher}" quoted %F\n'
+)
+quoted_desktop.write_text(quoted_content)
+(Path(os.environ["XDG_CONFIG_HOME"]) / "mimeapps.list").write_text(
+    '[Default Applications]\ntext/plain=editor.desktop;\n'
+)
+picker = Picker()
+picker.wait_focused("Default Editor")
+picker.send(b"Quoted Editor")
+picker.wait_for("Desktop ID: quoted.desktop")
+picker.send(b"\x04")
+picker.wait_for("Default set to Quoted Editor")
+picker.wait_focused("Quoted Editor")
+picker.finish()
+picker = Picker()
+picker.wait_focused("Quoted Editor")
+picker.finish(b"\r")
+await_launches(4)
+assert launches()[-1] == ["quoted", str(file)]
+assert quoted_desktop.read_text() == quoted_content
+
 print("Open With terminal and Instant Menu integration tests passed")
