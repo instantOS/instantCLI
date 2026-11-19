@@ -94,12 +94,9 @@ impl FzfSelectable for WelcomeItem {
                 .subtext("This will guide you through disk setup,")
                 .subtext("partitioning, and system installation.")
                 .blank()
-                .line(colors::YELLOW, Some(NerdFont::Warning), "Scope")
-                .bullets([
-                    "From the live ISO: any disk, including the one it booted from",
-                    "From a running system: a disk other than the one you are running from",
-                ])
-                .subtext("The wizard refuses the running disk and says so.")
+                .text("You are running a live session.")
+                .subtext("Choose the disk on which to install instantOS.")
+                .subtext("Back up important data before partitioning.")
                 .build(),
             WelcomeItem::InstallOnAnotherDrive => PreviewBuilder::new()
                 .line(
@@ -109,15 +106,10 @@ impl FzfSelectable for WelcomeItem {
                 )
                 .separator()
                 .blank()
-                .text(
-                    if crate::common::distro::OperatingSystem::detect()
-                        == crate::common::distro::OperatingSystem::InstantOS
-                    {
-                        "You are already running instantOS."
-                    } else {
-                        "You are already running an installed system."
-                    },
-                )
+                .text(&format!(
+                    "You are running {}.",
+                    crate::common::distro::OperatingSystem::detect()
+                ))
                 .text("Use this only to create another instantOS")
                 .text("installation on a different drive.")
                 .blank()

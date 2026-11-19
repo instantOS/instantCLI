@@ -1,5 +1,6 @@
 //! Disk identities captured in the source mount namespace, before chrooting.
 use std::collections::BTreeMap;
+use std::fs;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::process::Command;
 
@@ -16,6 +17,8 @@ struct BlockDevice {
     name: String,
     #[serde(rename = "maj:min")]
     identity: String,
+    #[serde(rename = "type")]
+    kind: String,
     #[serde(default)]
     mountpoints: Vec<Option<String>>,
     #[serde(default)]
@@ -28,7 +31,12 @@ pub(super) struct ProtectedDevices(BTreeMap<String, String>);
 impl ProtectedDevices {
     pub fn capture() -> Result<Self> {
         let output = Command::new("lsblk")
-            .args(["--json", "--paths", "--output", "NAME,MAJ:MIN,MOUNTPOINTS"])
+            .args([
+                "--json",
+                "--paths",
+                "--output",
+                "NAME,MAJ:MIN,TYPE,MOUNTPOINTS",
+            ])
             .output()
             .context("Could not inspect host disks")?;
         if !output.status.success() {
@@ -36,13 +44,17 @@ impl ProtectedDevices {
         }
         let topology: Topology = serde_json::from_slice(&output.stdout)?;
         let root = Command::new("findmnt")
-            .args(["--noheadings", "--output", "MAJ:MIN", "--target", "/"])
+            .args(["-rn", "-o", "MAJ:MIN,FSTYPE,SOURCE", "--target", "/"])
             .output()?;
         if !root.status.success() {
             bail!("Could not identify the host root filesystem");
         }
         let mut devices = Self::from_topology(&topology);
-        let identity = String::from_utf8(root.stdout)?.trim().to_owned();
+        let root = String::from_utf8(root.stdout)?;
+        let mut root_fields = root.split_whitespace();
+        let identity = root_fields
+            .next()
+            .context("Host root mount has no device ID")?;
         // lsblk cannot reliably attribute every member of a multi-device btrfs
         // filesystem. Resolve those members explicitly rather than trusting the
         // single device displayed by findmnt.
@@ -84,12 +96,24 @@ impl ProtectedDevices {
         }
         // btrfs findmnt identities are anonymous filesystem IDs rather than
         // block IDs; lsblk's mount attribution still identifies the root.
-        if !devices.0.contains_key(&identity) && !has_root(&topology.blockdevices) {
+        if devices.0.contains_key(identity) || has_root(&topology.blockdevices) {
+            return Ok(devices);
+        }
+
+        // Casper mounts the root overlay as /cow and moves the live medium
+        // to /cdrom. The topology snapshot already protects mounted devices
+        // and their ancestors. Verify that the live medium is among them.
+        if root_fields.next() == Some("overlay") && root_fields.next() == Some("/cow") {
+            if topology.has_casper_live_media()? {
+                return Ok(devices);
+            }
             bail!(
-                "Cannot identify the block devices backing the host root filesystem. Installing from overlay/container/network roots is unsupported; use the live ISO."
+                "Cannot safely identify the disks backing this Casper live session. Boot directly from a standard Ubuntu CD or USB without persistence, or use the Arch Linux live ISO."
             );
         }
-        Ok(devices)
+        bail!(
+            "Cannot identify the block devices backing the host root filesystem. Use an installed Linux system, a supported Ubuntu live boot, or the Arch Linux live ISO."
+        );
     }
 
     fn from_topology(topology: &Topology) -> Self {
@@ -145,6 +169,71 @@ impl ProtectedDevices {
             ))?;
         Ok(())
     }
+}
+
+impl Topology {
+    fn has_casper_live_media(&self) -> Result<bool> {
+        let cmdline = fs::read_to_string("/proc/cmdline")
+            .context("Could not inspect the live boot parameters")?;
+        if !supports_casper_boot(&cmdline) {
+            return Ok(false);
+        }
+        // Casper exposes a lower squashfs layer at /rofs. Ask the loop
+        // driver which filesystem holds that image, then verify that it is
+        // a directly attached device mounted at /cdrom in our snapshot.
+        let image = Command::new("findmnt")
+            .args([
+                "-rn",
+                "-t",
+                "squashfs",
+                "-o",
+                "SOURCE",
+                "--mountpoint",
+                "/rofs",
+            ])
+            .output()
+            .context("Could not inspect the Casper system image")?;
+        if !image.status.success() {
+            return Ok(false);
+        }
+        let image = String::from_utf8(image.stdout)?;
+        let backing = Command::new("losetup")
+            .args(["-lnO", "BACK-MAJ:MIN", "--", image.trim()])
+            .output()
+            .context("Could not inspect the Casper loop device with losetup")?;
+        Ok(backing.status.success()
+            && self.has_direct_live_media(String::from_utf8(backing.stdout)?.trim()))
+    }
+
+    fn has_direct_live_media(&self, identity: &str) -> bool {
+        let is_media = |device: &BlockDevice| {
+            device.identity == identity
+                && device.mountpoints.iter().flatten().any(|p| p == "/cdrom")
+        };
+        self.blockdevices
+            .iter()
+            .any(|device| match device.kind.as_str() {
+                "rom" => is_media(device),
+                "disk" => {
+                    is_media(device)
+                        || device
+                            .children
+                            .iter()
+                            .any(|partition| partition.kind == "part" && is_media(partition))
+                }
+                _ => false,
+            })
+    }
+}
+
+fn supports_casper_boot(cmdline: &str) -> bool {
+    // A persistent upper layer may live on another device and its mount can
+    // be hidden after the initramfs hands off to the live root.
+    !cmdline.split_whitespace().any(|arg| {
+        matches!(arg, "persistent" | "toram")
+            || arg.starts_with("todisk=")
+            || arg.starts_with("persistent-path=")
+    })
 }
 
 fn btrfs_members(listing: &str) -> Result<Vec<String>> {
@@ -282,18 +371,18 @@ mod tests {
     #[test]
     fn protects_all_ancestors_of_mounts_and_swap_including_spanning_lvm() {
         let topology: Topology = serde_json::from_value(serde_json::json!({"blockdevices": [
-            {"name":"/dev/sda", "maj:min":"8:0", "mountpoints":[null], "children":[
-                {"name":"/dev/sda1", "maj:min":"8:1", "children":[
-                    {"name":"/dev/mapper/root", "maj:min":"253:0", "mountpoints":["/"]}
+            {"name":"/dev/sda", "maj:min":"8:0", "type":"disk", "mountpoints":[null], "children":[
+                {"name":"/dev/sda1", "maj:min":"8:1", "type":"part", "children":[
+                    {"name":"/dev/mapper/root", "maj:min":"253:0", "type":"lvm", "mountpoints":["/"]}
                 ]}
             ]},
-            {"name":"/dev/sdb", "maj:min":"8:16", "children":[
-                {"name":"/dev/mapper/root", "maj:min":"253:0", "mountpoints":["/"]}
+            {"name":"/dev/sdb", "maj:min":"8:16", "type":"disk", "children":[
+                {"name":"/dev/mapper/root", "maj:min":"253:0", "type":"lvm", "mountpoints":["/"]}
             ]},
-            {"name":"/dev/sdc", "maj:min":"8:32", "children":[
-                {"name":"/dev/sdc1", "maj:min":"8:33", "mountpoints":["[SWAP]"]}
+            {"name":"/dev/sdc", "maj:min":"8:32", "type":"disk", "children":[
+                {"name":"/dev/sdc1", "maj:min":"8:33", "type":"part", "mountpoints":["[SWAP]"]}
             ]},
-            {"name":"/dev/sdd", "maj:min":"8:48", "mountpoints":[null]}
+            {"name":"/dev/sdd", "maj:min":"8:48", "type":"disk", "mountpoints":[null]}
         ]}))
         .unwrap();
         let protected = ProtectedDevices::from_topology(&topology);
@@ -301,5 +390,43 @@ mod tests {
             assert!(protected.0.contains_key(id), "unprotected {id}");
         }
         assert!(!protected.0.contains_key("8:48"));
+    }
+
+    #[test]
+    fn casper_media_must_be_mounted_on_a_direct_device() -> Result<()> {
+        let topology: Topology = serde_json::from_value(serde_json::json!({"blockdevices": [
+            {"name":"/dev/sr0", "maj:min":"11:0", "type":"rom", "mountpoints":["/cdrom"]},
+            {"name":"/dev/sda", "maj:min":"8:0", "type":"disk", "children":[
+                {"name":"/dev/sda1", "maj:min":"8:1", "type":"part", "mountpoints":["/cdrom"]}
+            ]},
+            {"name":"/dev/sdb", "maj:min":"8:16", "type":"disk"},
+            {"name":"/dev/loop0", "maj:min":"7:0", "type":"loop", "mountpoints":["/cdrom"], "children":[
+                {"name":"/dev/loop0p1", "maj:min":"259:0", "type":"part", "mountpoints":["/cdrom"]}
+            ]}
+        ]}))?;
+        assert!(topology.has_direct_live_media("11:0"));
+        assert!(topology.has_direct_live_media("8:1"));
+        for id in ["8:0", "8:16", "7:0", "259:0", "0:54"] {
+            assert!(!topology.has_direct_live_media(id), "accepted {id}");
+        }
+        let protected = ProtectedDevices::from_topology(&topology);
+        for id in ["11:0", "8:0", "8:1"] {
+            assert!(protected.0.contains_key(id), "unprotected {id}");
+        }
+        assert!(!protected.0.contains_key("8:16"));
+        Ok(())
+    }
+
+    #[test]
+    fn casper_refuses_persistent_and_copied_live_roots() {
+        assert!(supports_casper_boot("boot=casper nopersistent quiet ---"));
+        for arg in [
+            "persistent",
+            "persistent-path=/data",
+            "toram",
+            "todisk=/dev/sda",
+        ] {
+            assert!(!supports_casper_boot(&format!("boot=casper {arg} ---")));
+        }
     }
 }

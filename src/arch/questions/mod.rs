@@ -89,9 +89,17 @@ pub(crate) fn select_one_for_step<T: FzfSelectable + Clone>(
             .position(|item| item.fzf_key() == answer)
     });
 
-    match index {
-        Some(index) => selection.initial_index(index).select_one(),
-        None => selection.select_one(),
+    let selection = match index {
+        Some(index) => selection.initial_index(index),
+        None => selection,
+    };
+    if matches!(
+        step.ask_policy(context),
+        crate::arch::engine::AskPolicy::Optional { .. }
+    ) {
+        selection.select_one_with_back()
+    } else {
+        selection.select_one()
     }
 }
 

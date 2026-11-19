@@ -53,6 +53,50 @@ pub enum StepId {
     DualBootInstructions,
 }
 
+impl StepId {
+    /// Human-readable menu label, independent of serialized answer IDs.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Hostname => "Hostname",
+            Self::Username => "Username",
+            Self::Password => "Password",
+            Self::Keymap => "Keyboard layout",
+            Self::ConsoleFont => "Console font",
+            Self::Disk => "Installation disk",
+            Self::PrepareDisk => "Prepare disk",
+            Self::MirrorRegion => "Mirror region",
+            Self::Timezone => "Time zone",
+            Self::Locale => "Locale",
+            Self::Kernel => "Kernel",
+            Self::DesktopEnvironment => "Desktop environment",
+            Self::RootFilesystem => "Root filesystem",
+            Self::BtrfsCompression => "Btrfs compression",
+            Self::DisplayManager => "Display manager",
+            Self::UseEncryption => "Disk encryption",
+            Self::EncryptionPassword => "Encryption password",
+            Self::UsePlymouth => "Plymouth boot splash",
+            Self::Autologin => "Automatic login",
+            Self::UseXorg => "Use Xorg",
+            Self::LogUpload => "Upload installation logs",
+            Self::ConfirmInstall => "Confirm installation",
+            Self::VirtualBoxWarning => "VirtualBox warning",
+            Self::WeakPasswordWarning => "Weak password warning",
+            Self::LowRamWarning => "Low memory warning",
+            Self::DualBootEspWarning => "EFI partition warning",
+            Self::MinimalMode => "Minimal installation",
+            Self::PartitioningMethod => "Partitioning method",
+            Self::RunCfdisk => "Manual partitioning",
+            Self::RootPartition => "Root partition",
+            Self::SwapPartition => "Swap partition",
+            Self::BootPartition => "Boot partition",
+            Self::HomePartition => "Home partition",
+            Self::DualBootPartition => "Partition to shrink",
+            Self::DualBootSize => "Dual boot size",
+            Self::DualBootInstructions => "Dual boot instructions",
+        }
+    }
+}
+
 /// Kernel variants the wizard can install.
 ///
 /// The stored answer is the pacman package name ([`Kernel::label`]); parse it

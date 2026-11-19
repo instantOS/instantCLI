@@ -249,7 +249,7 @@ impl ConfirmBuilder {
             self.shared.header = Some(Header::Manual(header_text));
         }
 
-        let options = vec![
+        let mut options = vec![
             ConfirmOption::new(
                 self.yes_text.clone(),
                 colors::GREEN,
@@ -263,6 +263,15 @@ impl ConfirmBuilder {
                 ConfirmResult::No,
             ),
         ];
+
+        if self.back_option {
+            options.push(ConfirmOption::new(
+                "Back".to_string(),
+                colors::OVERLAY1,
+                NerdFont::ArrowLeft,
+                ConfirmResult::Cancelled,
+            ));
+        }
 
         // Reuse the padded selection terminal on the entry FzfBuilder by
         // constructing one with the prepared shared config.

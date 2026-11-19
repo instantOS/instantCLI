@@ -77,7 +77,70 @@ impl<T: FzfSelectable + Clone, A: Clone> ItemSelection<T, A> {
     }
 }
 
+#[derive(Clone)]
+enum WithBack<T> {
+    Item(T),
+    Back,
+}
+
+impl<T: FzfSelectable> FzfSelectable for WithBack<T> {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Item(item) => item.fzf_display_text(),
+            Self::Back => format!("{} Back", crate::ui::nerd_font::NerdFont::ArrowLeft),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        match self {
+            Self::Item(item) => item.fzf_preview(),
+            Self::Back => crate::menu_utils::FzfPreview::Text(
+                "Return without changing this answer.".to_string(),
+            ),
+        }
+    }
+
+    fn fzf_search_keywords(&self) -> &[&str] {
+        match self {
+            Self::Item(item) => item.fzf_search_keywords(),
+            Self::Back => &[],
+        }
+    }
+
+    fn fzf_is_selectable(&self) -> bool {
+        match self {
+            Self::Item(item) => item.fzf_is_selectable(),
+            Self::Back => true,
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            Self::Item(item) => item.fzf_key(),
+            Self::Back => "__back".to_string(),
+        }
+    }
+}
+
 impl<T: FzfSelectable + Clone> ItemSelection<T, ()> {
+    /// Append a visible Back entry with the same outcome as pressing Escape.
+    pub fn select_one_with_back(self) -> Result<DialogOutcome<T>> {
+        let mut items: Vec<_> = self.items.into_iter().map(WithBack::Item).collect();
+        items.push(WithBack::Back);
+        let selection = ItemSelection {
+            builder: self.builder,
+            items,
+            keybinds: self.keybinds,
+            presentation: self.presentation,
+        };
+        Ok(match selection.select_one()? {
+            DialogOutcome::Submitted(WithBack::Item(item)) => DialogOutcome::Submitted(item),
+            DialogOutcome::Submitted(WithBack::Back) | DialogOutcome::Cancelled => {
+                DialogOutcome::Cancelled
+            }
+        })
+    }
+
     /// Run a single-item menu and return the item directly.
     pub fn select_one(self) -> Result<DialogOutcome<T>> {
         single(self.select()?)

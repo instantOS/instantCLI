@@ -164,8 +164,9 @@ impl FzfSelectable for ReviewItem {
                 let display_answer = display_step_answer(*id, answer, *is_sensitive);
                 let truncated = truncate_answer(&display_answer);
                 format!(
-                    "{} {id:?}: {truncated}",
-                    format_icon_colored(NerdFont::Check, colors::TEAL)
+                    "{} {}: {truncated}",
+                    format_icon_colored(NerdFont::Check, colors::TEAL),
+                    id.display_name()
                 )
             }
         }
@@ -192,7 +193,7 @@ impl FzfSelectable for ReviewItem {
             } => {
                 let answer = display_step_answer(*id, answer, *is_sensitive);
                 let mut builder =
-                    PreviewBuilder::new().header(NerdFont::Question, &format!("{id:?}"));
+                    PreviewBuilder::new().header(NerdFont::Question, id.display_name());
                 if !description.is_empty() {
                     builder = builder.subtext(description);
                 }
@@ -261,11 +262,12 @@ impl FzfSelectable for AdvancedOption {
                 ..
             } => match answer {
                 Some(answer) => format!(
-                    "{} {id:?} (Current: {})",
+                    "{} {} (Current: {})",
                     NerdFont::Gear,
+                    id.display_name(),
                     display_step_answer(*id, answer, *is_sensitive)
                 ),
-                None => format!("{} {id:?}", NerdFont::Gear),
+                None => format!("{} {}", NerdFont::Gear, id.display_name()),
             },
         }
     }
@@ -283,7 +285,7 @@ impl FzfSelectable for AdvancedOption {
                 is_sensitive,
                 ..
             } => {
-                let mut builder = PreviewBuilder::new().header(NerdFont::Gear, &format!("{id:?}"));
+                let mut builder = PreviewBuilder::new().header(NerdFont::Gear, id.display_name());
                 if !description.is_empty() {
                     builder = builder.subtext(description);
                 }

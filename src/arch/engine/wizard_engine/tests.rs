@@ -1573,3 +1573,33 @@ async fn mirror_availability_is_checked_after_its_provider_finishes() {
         assert_eq!(engine.find_next_step_index(), available.then_some(0));
     }
 }
+
+#[tokio::test]
+async fn backing_out_of_kernel_selection_preserves_the_previous_answer() {
+    for previous in [None, Some("linux-lts")] {
+        let mut context = InstallContext::new();
+        if let Some(answer) = previous {
+            context.set_answer(StepId::Kernel, answer.to_string());
+        }
+        let engine = WizardEngine::new(vec![Box::new(crate::arch::questions::KernelQuestion)])
+            .unwrap()
+            .with_context(context);
+        let _mock = MockQueue::new()
+            .select_index(2) // final review: Advanced Options
+            .select_index(1) // advanced: Kernel
+            .select_index(3) // kernel: Back, after the three variants
+            .select_index(0) // advanced: Back
+            .select_index(0) // final review: Install
+            .guard();
+        match engine.run().await.unwrap() {
+            WizardOutcome::Completed(context) => {
+                assert_eq!(
+                    context.get_answer(&StepId::Kernel).map(String::as_str),
+                    previous
+                );
+            }
+            WizardOutcome::Aborted => panic!("expected completion"),
+        }
+        assert_eq!(scripted_responses_remaining(), 0);
+    }
+}
