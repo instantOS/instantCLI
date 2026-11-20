@@ -56,6 +56,7 @@ pub fn prepare_dualboot_disk(
     let mut disk_info = crate::arch::dualboot::detect_disk(disk_path)
         .context("Disk detection data not available and re-detection failed")?
         .context("Selected disk not found in detection data")?;
+    let mut largest_free_region = disk_info.require_contiguous_free_space()?;
     refresh_cached_disk(context, &disk_info);
 
     let mut resized_partition: Option<String> = None;
@@ -84,6 +85,7 @@ pub fn prepare_dualboot_disk(
             disk_info = crate::arch::dualboot::detect_disk(disk_path)
                 .context("Failed to refresh disk information after resize")?
                 .context("Selected disk not found after resize")?;
+            largest_free_region = disk_info.require_contiguous_free_space()?;
             refresh_cached_disk(context, &disk_info);
         }
     }
@@ -108,25 +110,26 @@ pub fn prepare_dualboot_disk(
         disk_info = crate::arch::dualboot::detect_disk(disk_path)
             .context("Failed to refresh disk information after ESP creation")?
             .context("Selected disk not found after ESP creation")?;
+        largest_free_region = disk_info.require_contiguous_free_space()?;
         refresh_cached_disk(context, &disk_info);
     }
 
-    let preferred_region = if let Some(ref partition_path) = resized_partition {
-        match find_next_free_region(disk_path, disk_info.size_bytes, partition_path) {
-            Ok(Some(region)) => Some(region),
-            Ok(None) if executor.dry_run() => resize_plan.map(|plan| plan.preferred_region),
-            Ok(None) => {
-                if auto_resize_selected {
-                    anyhow::bail!("No free region found after resizing {}", partition_path);
-                }
-                None
+    let preferred_region = if let Some(ref partition_path) = resized_partition
+        && (auto_resize_selected
+            || disk_info
+                .partitions
+                .iter()
+                .any(|partition| partition.device == *partition_path))
+    {
+        match find_next_free_region(disk_path, disk_info.size_bytes, partition_path)
+            .context("Failed to locate free space after resizing")?
+        {
+            Some(region) => Some(region),
+            None if executor.dry_run() => resize_plan.map(|plan| plan.preferred_region),
+            None if auto_resize_selected => {
+                anyhow::bail!("No free region found after resizing {}", partition_path)
             }
-            Err(err) => {
-                if auto_resize_selected {
-                    return Err(err.context("Failed to locate free space after resizing"));
-                }
-                None
-            }
+            None => None,
         }
     } else {
         None
@@ -135,7 +138,7 @@ pub fn prepare_dualboot_disk(
     let available_space = preferred_region
         .as_ref()
         .map(|region| region.size_bytes)
-        .unwrap_or(disk_info.max_contiguous_free_space_bytes);
+        .unwrap_or(largest_free_region);
     const GB: u64 = 1024 * 1024 * 1024;
     let mut swap_size_bytes = swap_size_gb * GB;
 
@@ -727,7 +730,7 @@ mod tests {
             size_bytes: size,
             partition_table: PartitionTableType::GPT,
             partitions: Vec::new(),
-            max_contiguous_free_space_bytes: 0,
+            max_contiguous_free_space_bytes: Ok(0),
         }
     }
 

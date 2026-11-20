@@ -23,6 +23,21 @@ executing install steps. It uses the current environment's timezone database and
 partition. Add `--target` to require all named block devices to exist. Use
 `ins arch config explain` for the full field list.
 
+Run `ins arch dualboot info --output json` on the install host to discover whole
+disk targets, existing partitions, OS hints, free space, and resize options.
+The probe is read-only. If `target_error` or `free_space_error` reports a device
+permission problem, rerun it through `sudo`. OS names are inferred from
+filesystem metadata. Disk availability and resize bounds describe the current
+probe and can change before installation starts.
+If the partition table probe fails, free space is unknown and the installer
+requires a successful probe before attempting dual-boot partitioning.
+
+To use existing free space, set `PartitioningMethod = "dual_boot"` and
+`DualBootPartition = "__free_space__"`. To shrink a partition, set
+`DualBootPartition` to its device, `DualBootInstructions = "auto"`, and
+`DualBootSize` to the chosen byte count as a string. Review the proposed disk,
+partition, and size before running the install.
+
 After reviewing the plan, use `sudo ins arch exec -f questions.toml` to install.
 Foreign hosts support complete installations. Individual execution steps need a
 persistent Arch environment. `exec --dry-run` previews the execution steps.

@@ -24,6 +24,8 @@ pub use resize::{ResizeStatus, ResizeVerifier};
 
 /// Minimum size for a Linux installation in bytes (30 GB)
 pub const MIN_LINUX_SIZE: u64 = 30 * 1024 * 1024 * 1024;
+/// Minimum space requested by the resize slider, including its swap allowance.
+pub(super) const MIN_DUAL_BOOT_RESIZE_BYTES: u64 = MIN_LINUX_SIZE + 1024 * 1024 * 1024;
 
 pub struct DualBootDisksKey;
 

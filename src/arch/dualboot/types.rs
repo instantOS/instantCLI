@@ -19,8 +19,8 @@ pub struct DiskInfo {
     pub partition_table: PartitionTableType,
     /// List of partitions on this disk
     pub partitions: Vec<PartitionInfo>,
-    /// Largest contiguous unpartitioned space in bytes (detected via sfdisk)
-    pub max_contiguous_free_space_bytes: u64,
+    /// Largest contiguous unpartitioned region in bytes, or the probe error.
+    pub max_contiguous_free_space_bytes: Result<u64, String>,
 }
 
 impl DiskInfo {
@@ -46,7 +46,18 @@ impl DiskInfo {
     }
 
     pub fn has_sufficient_free_space(&self) -> bool {
-        self.max_contiguous_free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
+        self.max_contiguous_free_space_bytes
+            .as_ref()
+            .is_ok_and(|bytes| *bytes >= crate::arch::dualboot::MIN_LINUX_SIZE)
+    }
+
+    pub fn require_contiguous_free_space(&self) -> anyhow::Result<u64> {
+        self.max_contiguous_free_space_bytes
+            .as_ref()
+            .copied()
+            .map_err(|error| {
+                anyhow::anyhow!("Cannot determine free space on {}: {error}", self.device)
+            })
     }
 
     /// Find a suitable EFI partition for reuse in dual boot
@@ -58,6 +69,16 @@ impl DiskInfo {
     }
 
     pub fn check_disk_dualboot_feasibility(&self) -> DualBootFeasibility {
+        let free_space_bytes = match self.require_contiguous_free_space() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return DualBootFeasibility {
+                    feasible: false,
+                    feasible_partitions: vec![],
+                    reason: Some(error.to_string()),
+                };
+            }
+        };
         let feasible_partitions: Vec<String> = self
             .partitions
             .iter()
@@ -66,8 +87,7 @@ impl DiskInfo {
             .collect();
 
         // We check CONTIGUOUS space to ensure we can actually create the partition
-        let free_space_bytes = self.max_contiguous_free_space_bytes;
-        let has_unpartitioned_space = free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+        let has_unpartitioned_space = self.has_sufficient_free_space();
 
         if feasible_partitions.is_empty() {
             if has_unpartitioned_space {
@@ -88,7 +108,7 @@ impl DiskInfo {
                     feasible_partitions: vec![],
                     reason: Some(format!(
                         "Disk too small or full (Largest free region: {})",
-                        format_size(self.max_contiguous_free_space_bytes)
+                        format_size(free_space_bytes)
                     )),
                 }
             } else {
@@ -344,7 +364,7 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![],
-            max_contiguous_free_space_bytes: crate::arch::dualboot::MIN_LINUX_SIZE,
+            max_contiguous_free_space_bytes: Ok(crate::arch::dualboot::MIN_LINUX_SIZE),
         };
         assert!(disk.has_sufficient_free_space());
     }
@@ -356,7 +376,7 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![],
-            max_contiguous_free_space_bytes: 1024,
+            max_contiguous_free_space_bytes: Ok(1024),
         };
         assert!(!disk.has_sufficient_free_space());
     }
@@ -385,7 +405,7 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![make_esp(MIN_ESP_SIZE)],
-            max_contiguous_free_space_bytes: 0,
+            max_contiguous_free_space_bytes: Ok(0),
         };
         let esp = disk.find_reusable_esp().unwrap();
         assert_eq!(esp.size_bytes, MIN_ESP_SIZE);
@@ -399,7 +419,7 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![make_esp(100 * 1024 * 1024)], // 100 MB, below 260 MB minimum
-            max_contiguous_free_space_bytes: 0,
+            max_contiguous_free_space_bytes: Ok(0),
         };
         assert!(disk.find_reusable_esp().is_none());
     }
@@ -421,7 +441,7 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![non_efi],
-            max_contiguous_free_space_bytes: 0,
+            max_contiguous_free_space_bytes: Ok(0),
         };
         assert!(disk.find_reusable_esp().is_none());
     }
@@ -443,7 +463,7 @@ mod tests {
             size_bytes: 500 * 1024 * 1024 * 1024,
             partition_table: PartitionTableType::GPT,
             partitions: vec![small_efi, large_efi],
-            max_contiguous_free_space_bytes: 0,
+            max_contiguous_free_space_bytes: Ok(0),
         };
         let esp = disk.find_reusable_esp().unwrap();
         assert_eq!(esp.device, "/dev/sda2");
@@ -500,7 +520,7 @@ mod tests {
             size_bytes: size,
             partition_table: PartitionTableType::GPT,
             partitions,
-            max_contiguous_free_space_bytes: 0,
+            max_contiguous_free_space_bytes: Ok(0),
         }
     }
 
@@ -545,9 +565,9 @@ mod tests {
             1000,
             vec![partition("/dev/vda1", 300), partition("/dev/vda2", 300)],
         );
-        disk.max_contiguous_free_space_bytes = 100;
+        disk.max_contiguous_free_space_bytes = Ok(100);
 
         assert_eq!(disk.unpartitioned_bytes(), 400);
-        assert_eq!(disk.max_contiguous_free_space_bytes, 100);
+        assert_eq!(disk.max_contiguous_free_space_bytes, Ok(100));
     }
 }

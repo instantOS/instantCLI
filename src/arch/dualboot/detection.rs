@@ -21,8 +21,10 @@ use anyhow::Result;
 /// Callers that already know which disk they want should use [`detect_disk`],
 /// which pays for one disk rather than all of them.
 pub fn detect_disks() -> Result<Vec<DiskInfo>> {
-    let lsblk = crate::common::blockdev::load_lsblk(&[])?;
-    detect_disks_from_lsblk(lsblk)
+    Ok(analyze_all_disks()?
+        .into_iter()
+        .map(|analysis| analysis.disk)
+        .collect())
 }
 
 /// One disk, by device path.
@@ -34,6 +36,7 @@ pub fn detect_disk(device: &str) -> Result<Option<DiskInfo>> {
     let lsblk = crate::common::blockdev::load_lsblk(&[device])?;
     Ok(detect_disks_from_lsblk(lsblk)?
         .into_iter()
+        .map(|analysis| analysis.disk)
         .find(|disk| disk.device == device))
 }
 
@@ -42,7 +45,9 @@ pub fn detect_disk(device: &str) -> Result<Option<DiskInfo>> {
 /// Takes the tree as an argument rather than running `lsblk`, so the tests can
 /// feed a fixture: both public entry points read the whole machine, so there is
 /// no other way to point detection at one disk.
-fn detect_disks_from_lsblk(lsblk: crate::common::blockdev::LsblkOutput) -> Result<Vec<DiskInfo>> {
+fn detect_disks_from_lsblk(
+    lsblk: crate::common::blockdev::LsblkOutput,
+) -> Result<Vec<DiskAnalysis>> {
     let mut disks = Vec::new();
 
     for device in &lsblk.blockdevices {
@@ -80,59 +85,32 @@ fn detect_disks_from_lsblk(lsblk: crate::common::blockdev::LsblkOutput) -> Resul
 
         let device_path = device.path();
         let max_contiguous_free_space_bytes =
-            match get_largest_free_region(&device_path, Some(size_bytes)) {
-                Ok(largest) => largest.unwrap_or(0),
-                Err(error) => {
-                    // Report zero and carry on: refusing to detect a disk
-                    // because a helper is missing is worse than reporting a
-                    // disk it cannot describe. But say why, because zero here
-                    // is otherwise indistinguishable from a full disk.
-                    eprintln!(
-                        "Could not read the partition table of {device_path}, so its free \\
-                         space is reported as 0. Is sfdisk installed? {error:#}"
-                    );
-                    0
-                }
-            };
+            parsing::get_free_regions(&device_path, Some(size_bytes))
+                .map(|regions| {
+                    regions
+                        .iter()
+                        .map(|region| region.size_bytes)
+                        .max()
+                        .unwrap_or(0)
+                })
+                .map_err(|error| format!("{error:#}"));
 
-        disks.push(DiskInfo {
+        let disk = DiskInfo {
             device: device_path,
             size_bytes,
             partition_table,
             partitions,
             max_contiguous_free_space_bytes,
-        });
+        };
+        let feasibility = disk.check_disk_dualboot_feasibility();
+        disks.push(DiskAnalysis { disk, feasibility });
     }
 
     Ok(disks)
 }
 
-/// The largest contiguous free region on a device, in bytes.
-///
-/// `Ok(None)` means the partition table was read and offers no free space —
-/// the normal answer for a blank disk. `Err` means the table could not be read
-/// at all, which is different: a disk that happens to be full and a host with
-/// no `sfdisk` both need saying out loud, or the second is reported as the
-/// first.
-fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Result<Option<u64>> {
-    Ok(parsing::get_free_regions(device, disk_size_bytes)?
-        .into_iter()
-        .map(|region| region.size_bytes)
-        .max())
-}
-
 pub fn analyze_all_disks() -> Result<Vec<DiskAnalysis>> {
-    let disks = detect_disks()?;
-
-    let results = disks
-        .into_iter()
-        .map(|disk| {
-            let feasibility = disk.check_disk_dualboot_feasibility();
-            DiskAnalysis { disk, feasibility }
-        })
-        .collect();
-
-    Ok(results)
+    detect_disks_from_lsblk(crate::common::blockdev::load_lsblk(&[])?)
 }
 
 fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
@@ -222,10 +200,10 @@ mod tests {
 
         let disks = detect_disks_from_lsblk(lsblk).unwrap();
         assert_eq!(disks.len(), 1);
-        let d = &disks[0];
+        let d = &disks[0].disk;
         assert_eq!(d.device, disk.path_str());
         assert_eq!(d.partition_table, PartitionTableType::GPT);
-        assert!(d.max_contiguous_free_space_bytes > 300 * MB);
+        assert!(d.require_contiguous_free_space().unwrap() > 300 * MB);
     }
 
     #[test]
@@ -264,7 +242,7 @@ mod tests {
 
         let disks = detect_disks_from_lsblk(lsblk).unwrap();
         assert_eq!(disks.len(), 1);
-        assert_eq!(disks[0].partitions.len(), 1);
-        assert!(disks[0].partitions[0].is_efi);
+        assert_eq!(disks[0].disk.partitions.len(), 1);
+        assert!(disks[0].disk.partitions[0].is_efi);
     }
 }

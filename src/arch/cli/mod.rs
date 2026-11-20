@@ -18,7 +18,7 @@ pub enum ConfigCommands {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DualbootCommands {
-    /// Show information about existing operating systems and partitions
+    /// Inspect disks, existing OS hints, and resize options (supports --output json)
     Info,
 }
 
@@ -91,7 +91,7 @@ pub enum ArchCommands {
     },
     /// Show system information in a pretty format
     Info,
-    /// Dual boot detection and setup
+    /// Disk and dual-boot discovery
     Dualboot {
         #[command(subcommand)]
         command: DualbootCommands,

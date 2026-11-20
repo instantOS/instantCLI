@@ -171,7 +171,7 @@ impl WizardStep for DualBootPartitionQuestion {
 
         // Nothing is shrinkable, so an unpartitioned gap is the only option.
         if shrinkable_partitions.is_empty() {
-            let free_space_bytes = disk_info.max_contiguous_free_space_bytes;
+            let free_space_bytes = disk_info.require_contiguous_free_space()?;
             let bitlocker_detected = disk_info.partitions.iter().any(|p| {
                 p.filesystem
                     .as_ref()
@@ -289,7 +289,7 @@ impl WizardStep for DualBootSizeQuestion {
                 .context("Selected disk not found")?;
 
             return Ok(StepOutcome::Answer(
-                disk_info.max_contiguous_free_space_bytes.to_string(),
+                disk_info.require_contiguous_free_space()?.to_string(),
             ));
         }
 
@@ -334,10 +334,8 @@ impl WizardStep for DualBootSizeQuestion {
             }
         };
 
-        // Minimum for Linux + swap (swap can be capped but stays at least 1GB)
         const GB: u64 = 1024 * 1024 * 1024;
-        let min_linux = crate::arch::dualboot::MIN_LINUX_SIZE;
-        let min_total = min_linux + GB; // +1GB swap minimum
+        let min_total = crate::arch::dualboot::MIN_DUAL_BOOT_RESIZE_BYTES;
 
         let max_linux = partition_size.saturating_sub(min_existing);
 

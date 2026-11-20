@@ -392,6 +392,7 @@ impl WizardStep for PartitioningMethodQuestion {
 
     async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
         let mut options = vec![PartitioningMethod::Automatic, PartitioningMethod::Manual];
+        let mut header = HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method");
 
         // Check for dual boot possibility using shared feasibility logic
         if let Some(disk_path) = context.get_answer(&StepId::Disk) {
@@ -412,10 +413,23 @@ impl WizardStep for PartitioningMethodQuestion {
             )
             .await;
 
-            if let Ok(Ok(feasibility)) = feasibility_result
-                && feasibility.feasible
-            {
-                options.insert(1, PartitioningMethod::DualBoot);
+            match feasibility_result {
+                Ok(Ok(feasibility)) if feasibility.feasible => {
+                    options.insert(1, PartitioningMethod::DualBoot);
+                }
+                Ok(Ok(feasibility)) => {
+                    if let Some(reason) = feasibility.reason {
+                        header = header.subtitle(format!("Dual boot unavailable. {reason}"));
+                    }
+                }
+                Ok(Err(error)) => {
+                    header =
+                        header.subtitle(format!("Could not inspect disk for dual boot. {error:#}"));
+                }
+                Err(error) => {
+                    header =
+                        header.subtitle(format!("Could not inspect disk for dual boot. {error}"));
+                }
             }
         }
 
@@ -423,9 +437,7 @@ impl WizardStep for PartitioningMethodQuestion {
             context,
             self,
             FzfWrapper::builder()
-                .header(
-                    HeaderBuilder::new(NerdFont::HardDrive, "Select Partitioning Method").build(),
-                )
+                .header(header.build())
                 .items(options)
                 .padded(),
         )?;

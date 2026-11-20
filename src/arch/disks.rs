@@ -271,6 +271,18 @@ pub fn ensure_not_running_disk(disk: &str) -> Result<()> {
     Ok(())
 }
 
+/// Probe a block device for active mounts, swap and device-mapper holders.
+/// The file is opened read-only and immediately closed.
+pub(super) fn probe_exclusive_access(path: &str) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_EXCL)
+        .open(path)
+        .map(drop)
+}
+
 /// Result of preparing a disk for installation
 #[derive(Debug, Default)]
 pub struct DiskPrepareResult {

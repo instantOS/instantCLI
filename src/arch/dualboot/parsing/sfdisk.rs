@@ -114,9 +114,10 @@ pub fn get_free_regions(
         .context("Failed to run sfdisk -J")?;
 
     if !output.status.success() {
-        // If it returns error (e.g. no partition table, empty disk), we assume no dual boot targets.
-        // Return empty regions rather than error
-        return Ok(Vec::new());
+        anyhow::bail!(
+            "sfdisk could not read {device}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
 
     let json_output = String::from_utf8_lossy(&output.stdout);

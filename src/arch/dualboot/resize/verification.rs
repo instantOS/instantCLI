@@ -80,7 +80,7 @@ impl ResizeVerifier {
 
         let current_partition_size = partition.map(|p| p.size_bytes);
         let current_unpartitioned = disk.unpartitioned_bytes();
-        let current_contiguous = disk.max_contiguous_free_space_bytes;
+        let current_contiguous = disk.require_contiguous_free_space()?;
 
         let partition_missing = current_partition_size.is_none();
         let partition_shrunk = current_partition_size

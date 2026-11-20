@@ -1,7 +1,7 @@
 //! Disk identities captured in the source mount namespace, before chrooting.
 use std::collections::BTreeMap;
 use std::fs;
-use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
@@ -160,10 +160,7 @@ impl ProtectedDevices {
         // formatting and mounts. This is an idle check, not a reservation;
         // callers must recheck at the write boundary and the target must not
         // be used concurrently by another process.
-        std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(nix::libc::O_EXCL)
-            .open(path)
+        crate::arch::disks::probe_exclusive_access(path)
             .with_context(|| format!(
                 "Cannot claim target {path} exclusively. It may have been mounted or activated since the installer started, including in another mount namespace. Release it on the host before continuing."
             ))?;

@@ -31,6 +31,9 @@ Answer keys are case-sensitive and values are TOML strings, including
 intended install host. If you edit a wizard export, remove its
 `step_dependency_fingerprints` table. Hand-authored files need no wizard metadata.
 
+Run `ins arch dualboot info --output json` on the install host to discover disks,
+existing OS hints, and ways to make room for Linux.
+
 Run `sudo ins arch exec -f questions.toml` only after the installation and its
 target have been approved.
 "
