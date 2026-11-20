@@ -797,13 +797,6 @@ fn cleanup_hashed_video_input(hashed_path: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn temp_models(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ins-tc-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     fn args_with(backend: TranscribeBackend) -> TranscribeArgs {
         TranscribeArgs {
             video: PathBuf::from("x.mp4"),
@@ -820,41 +813,37 @@ mod tests {
 
     #[test]
     fn resolve_backend_auto_uses_granite() {
-        let dir = temp_models("auto");
-        let choice = resolve_backend(&args_with(TranscribeBackend::Auto), &dir).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let choice = resolve_backend(&args_with(TranscribeBackend::Auto), dir.path()).unwrap();
         assert_eq!(choice, BackendChoice::Granite);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn resolve_backend_explicit_wins() {
-        let dir = temp_models("explicit");
+        let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            resolve_backend(&args_with(TranscribeBackend::Granite), &dir).unwrap(),
+            resolve_backend(&args_with(TranscribeBackend::Granite), dir.path()).unwrap(),
             BackendChoice::Granite
         );
         assert_eq!(
-            resolve_backend(&args_with(TranscribeBackend::Whisperx), &dir).unwrap(),
+            resolve_backend(&args_with(TranscribeBackend::Whisperx), dir.path()).unwrap(),
             BackendChoice::WhisperX
         );
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn custom_granite_model_path_accepts_local_file() {
-        let dir = temp_models("local");
-        let gguf = dir.join("custom.gguf");
+        let dir = tempfile::tempdir().unwrap();
+        let gguf = dir.path().join("custom.gguf");
         fs::write(&gguf, b"x").unwrap();
-        let p = custom_granite_model_path(&gguf.to_string_lossy(), &dir).unwrap();
+        let p = custom_granite_model_path(&gguf.to_string_lossy(), dir.path()).unwrap();
         assert_eq!(p, gguf);
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn custom_granite_model_path_rejects_invalid_spec() {
-        let dir = temp_models("bad");
-        assert!(custom_granite_model_path("not-a-file", &dir).is_err());
-        fs::remove_dir_all(&dir).ok();
+        let dir = tempfile::tempdir().unwrap();
+        assert!(custom_granite_model_path("not-a-file", dir.path()).is_err());
     }
 
     #[test]

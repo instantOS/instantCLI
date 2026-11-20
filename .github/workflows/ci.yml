@@ -45,6 +45,8 @@ jobs:
         run: cargo clippy --all-targets
       - name: Run unit tests and build debug binary
         run: cargo test --locked --verbose
+      - name: Check pacman keyring configuration integration
+        run: cargo test --locked arch::execution::signing::tests::doctor_resolves_the_keyring_from_pacman_configuration -- --ignored --exact
       - name: Run integration tests
         run: |
           # Make test scripts executable

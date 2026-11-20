@@ -125,16 +125,7 @@ impl Pacman {
         println!("Preparing live ISO package dependencies...");
         let keyring_name = self.linux_variant.keyring_name();
         let keyring_package = self.linux_variant.keyring_package();
-        for args in [
-            ["--init"].as_slice(),
-            ["--populate", keyring_name].as_slice(),
-        ] {
-            let mut command = Command::new("pacman-key");
-            command.args(args);
-            executor
-                .run(&mut command)
-                .with_context(|| format!("Failed to initialize the {keyring_name} keyring"))?;
-        }
+        ensure_package_keyring(self.linux_variant, None, executor)?;
 
         if !mode.is_offline() {
             let mut command = Command::new("pacman");
@@ -579,6 +570,47 @@ impl Pacman {
     }
 }
 
+fn ensure_package_keyring(
+    linux_variant: ArchLinuxVariant,
+    gpg_dir: Option<&Path>,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    let keyring_name = linux_variant.keyring_name();
+    for (operation, args) in [
+        ("initialize", ["--init"].as_slice()),
+        ("populate", ["--populate", keyring_name].as_slice()),
+    ] {
+        let mut command = Command::new("pacman-key");
+        if let Some(gpg_dir) = gpg_dir {
+            command.arg("--gpgdir").arg(gpg_dir);
+        }
+        command.args(args);
+        executor
+            .run(&mut command)
+            .with_context(|| format!("Failed to {operation} the {keyring_name} keyring"))?;
+    }
+    Ok(())
+}
+
+fn prepare_live_bootstrap_keyring(
+    mount_point: &Path,
+    linux_variant: ArchLinuxVariant,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    // A fresh target inherits the host keyring. On offline Arch media,
+    // pacman-init may still be waiting for network time synchronization.
+    ensure_package_keyring(linux_variant, None, executor)?;
+
+    // pacstrap keeps an existing target keyring, including one left empty
+    // by a failed installation. Populate it in place to retain existing keys.
+    let target_keyring = mount_point.join("etc/pacman.d/gnupg");
+    if target_keyring.is_dir() {
+        ensure_package_keyring(linux_variant, Some(&target_keyring), executor)
+            .context("Failed to prepare the target keyring")?;
+    }
+    Ok(())
+}
+
 /// Wrapper for the variant's bootstrap command (`pacstrap`/`basestrap`) with
 /// retry logic.
 pub fn bootstrap_packages(
@@ -594,6 +626,10 @@ pub fn bootstrap_packages(
     let offline = crate::arch::offline::mode().is_offline();
     let source = PackageSource::resolve(linux_variant);
     let bootstrap = linux_variant.bootstrap_command();
+
+    if crate::common::distro::is_live_iso() {
+        prepare_live_bootstrap_keyring(Path::new(mount_point), linux_variant, executor)?;
+    }
 
     let mut attempt = 0;
 
@@ -646,17 +682,12 @@ pub fn bootstrap_packages(
                 return Ok(());
             }
             Err(e) => {
-                println!("{bootstrap} failed: {e}");
-
                 if offline {
-                    // The bundle is static: no mirror shuffle or refresh can
-                    // change the outcome, so fail with the real cause instead
-                    // of retrying identical work.
-                    anyhow::bail!(
-                        "{bootstrap} failed. The offline bundle does not contain every required package."
-                    );
+                    // Retrying with a static bundle would repeat the failure.
+                    return Err(e).with_context(|| format!("{bootstrap} failed in offline mode"));
                 }
 
+                println!("{bootstrap} failed: {e}");
                 println!("Ensure you are connected to the internet.");
 
                 // Reorder the mirrorlist this run installs from — never the
@@ -1095,6 +1126,38 @@ Include = /etc/pacman.d/mirrorlist-arch
                     .iter()
                     .any(|command| command.contains(keyring_package)),
                 "{linux_variant:?} must install its own keyring package: {commands:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bootstrap_keyring_preflight_handles_fresh_and_existing_targets() {
+        for (linux_variant, keyring_name) in [
+            (ArchLinuxVariant::Arch, "archlinux"),
+            (ArchLinuxVariant::Artix(ArtixInitSystem::OpenRC), "artix"),
+        ] {
+            let target = tempfile::tempdir().unwrap();
+            let runner = MockRunner::new();
+            let host_commands = [
+                "pacman-key --init".to_string(),
+                format!("pacman-key --populate {keyring_name}"),
+            ];
+            prepare_live_bootstrap_keyring(target.path(), linux_variant, &runner).unwrap();
+            assert_eq!(runner.command_log(), host_commands);
+
+            let target_keyring = target.path().join("etc/pacman.d/gnupg");
+            std::fs::create_dir_all(&target_keyring).unwrap();
+            let runner = MockRunner::new();
+            prepare_live_bootstrap_keyring(target.path(), linux_variant, &runner).unwrap();
+            let target_keyring = target_keyring.display();
+            assert_eq!(
+                runner.command_log(),
+                [
+                    host_commands[0].clone(),
+                    host_commands[1].clone(),
+                    format!("pacman-key --gpgdir {target_keyring} --init"),
+                    format!("pacman-key --gpgdir {target_keyring} --populate {keyring_name}"),
+                ],
             );
         }
     }

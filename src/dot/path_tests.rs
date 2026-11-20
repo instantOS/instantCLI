@@ -2,11 +2,16 @@
 mod tests {
     use crate::common::home_dir;
     use crate::dot::resolve_dotfile_path;
+    use crate::dot::test_util::EnvGuard;
+    use serial_test::serial;
 
     use std::fs;
 
     #[test]
+    #[serial]
     fn test_resolve_dotfile_path_tilde_expansion() {
+        let temp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("HOME", temp.path());
         let result = resolve_dotfile_path("~", false, true);
         assert!(result.is_ok());
         let home = std::env::var("HOME").unwrap();
@@ -14,7 +19,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dotfile_path_absolute_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("HOME", temp.path());
         let home = home_dir();
         let test_file = home.join("test_resolve_absolute.txt");
 
@@ -23,12 +31,13 @@ mod tests {
         let result = resolve_dotfile_path(test_file.to_str().unwrap(), false, true);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), test_file.canonicalize().unwrap());
-
-        fs::remove_file(test_file).unwrap();
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dotfile_path_outside_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("HOME", temp.path());
         let result = resolve_dotfile_path("/etc/passwd", false, true);
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -36,7 +45,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dotfile_path_nonexistent() {
+        let temp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("HOME", temp.path());
         let home = home_dir();
         let nonexistent = home.join("nonexistent_file.txt");
 
@@ -47,7 +59,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_resolve_dotfile_path_nonexistent_when_allowed() {
+        let temp = tempfile::tempdir().unwrap();
+        let _home = EnvGuard::set("HOME", temp.path());
         let home = home_dir();
         let nonexistent = home.join("nonexistent_file_allowed.txt");
 
