@@ -91,7 +91,10 @@ fn trusted_signing_key(listing: &str) -> bool {
 /// Check the pinned master's trust and availability of a usable signing subkey.
 /// Suppress trustdb writes so Doctor can inspect this as an ordinary user.
 pub fn healthy(conf: &Path) -> Result<bool> {
-    let homedir = gpg_dir(conf)?;
+    healthy_keyring(&gpg_dir(conf)?)
+}
+
+fn healthy_keyring(homedir: &Path) -> Result<bool> {
     if !homedir.is_dir() {
         return Ok(false);
     }
@@ -209,19 +212,13 @@ mod tests {
     }
 
     #[test]
-    fn doctor_checks_real_trust_in_the_configured_keyring() {
+    fn doctor_checks_real_trust_in_the_keyring() {
         let temp = tempfile::tempdir().unwrap();
         let homedir = temp.path().join("target-keyring");
         std::fs::create_dir(&homedir).unwrap();
-        let conf = temp.path().join("pacman.conf");
-        std::fs::write(
-            &conf,
-            format!("[options]\nGPGDir = {}\n", homedir.display()),
-        )
-        .unwrap();
         let key = temp.path().join("public.asc");
         std::fs::write(&key, PUBLIC_KEY).unwrap();
-        assert!(!healthy(&conf).unwrap());
+        assert!(!healthy_keyring(&homedir).unwrap());
         let run_gpg = |args: &[&str]| {
             let result = Command::new("gpg")
                 .arg("--homedir")
@@ -244,7 +241,7 @@ mod tests {
             );
         };
         run_gpg(&["--import", key.to_str().unwrap()]);
-        assert!(!healthy(&conf).unwrap());
+        assert!(!healthy_keyring(&homedir).unwrap());
         run_gpg(&[
             "--quick-generate-key",
             "fixture@example.invalid",
@@ -254,7 +251,24 @@ mod tests {
         ]);
         run_gpg(&["--quick-lsign-key", MASTER_FINGERPRINT]);
         run_gpg(&["--check-trustdb"]);
-        assert!(healthy(&conf).unwrap());
+        assert!(healthy_keyring(&homedir).unwrap());
+    }
+
+    #[test]
+    #[ignore = "requires Arch Linux's pacman-conf"]
+    fn doctor_resolves_the_keyring_from_pacman_configuration() {
+        let temp = tempfile::tempdir().unwrap();
+        let homedir = temp.path().join("target-keyring");
+        std::fs::create_dir(&homedir).unwrap();
+        let conf = temp.path().join("pacman.conf");
+        std::fs::write(
+            &conf,
+            format!("[options]\nGPGDir = {}\n", homedir.display()),
+        )
+        .unwrap();
+
+        assert_eq!(gpg_dir(&conf).unwrap(), homedir);
+        assert!(!healthy(&conf).unwrap(), "an empty keyring is unhealthy");
     }
 
     #[test]

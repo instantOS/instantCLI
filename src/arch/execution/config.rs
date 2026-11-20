@@ -98,19 +98,19 @@ fn target_root() -> std::path::PathBuf {
 
 #[cfg(test)]
 fn test_target_root() -> std::path::PathBuf {
-    use std::sync::OnceLock;
-
-    static FIXTURE: OnceLock<std::path::PathBuf> = OnceLock::new();
-
-    FIXTURE
-        .get_or_init(|| {
-            let root = std::env::temp_dir().join("ins-execution-config-target");
+    // Each test thread owns its fixture. Thread-local destruction removes it
+    // on success or panic, without sharing paths with another test process.
+    thread_local! {
+        static FIXTURE: tempfile::TempDir = {
+            let root = tempfile::tempdir().expect("create isolated installer target");
             for directory in ["etc", "var/lib/dbus"] {
-                let _ = std::fs::create_dir_all(root.join(directory));
+                std::fs::create_dir_all(root.path().join(directory))
+                    .expect("create installer fixture directories");
             }
             root
-        })
-        .clone()
+        };
+    }
+    FIXTURE.with(|root| root.path().to_path_buf())
 }
 
 /// The machine identity files systemd derives the system's identity from.
@@ -1117,13 +1117,19 @@ mod tests {
             std::fs::read_to_string(root.join("etc/vconsole.conf")).unwrap(),
             "KEYMAP=us\nFONT=ter-v32n\n"
         );
+        // The config editor preserves existing trailing newlines; new files
+        // have none. Both forms are valid shell configuration.
         assert_eq!(
-            std::fs::read_to_string(root.join("etc/conf.d/keymaps")).unwrap(),
-            "keymap=us\n"
+            std::fs::read_to_string(root.join("etc/conf.d/keymaps"))
+                .unwrap()
+                .trim_end_matches('\n'),
+            "keymap=us"
         );
         assert_eq!(
-            std::fs::read_to_string(root.join("etc/conf.d/consolefont")).unwrap(),
-            "consolefont=ter-v32n\n"
+            std::fs::read_to_string(root.join("etc/conf.d/consolefont"))
+                .unwrap()
+                .trim_end_matches('\n'),
+            "consolefont=ter-v32n"
         );
         assert!(
             mock.command_log()

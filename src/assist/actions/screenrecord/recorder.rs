@@ -438,6 +438,31 @@ mod tests {
         assert_eq!(parse_audio_module_ids("nope"), Vec::<u32>::new());
     }
 
+    fn start_test_recorder(pid_file: &Path) -> Result<std::process::ChildStdin> {
+        let mut cmd = Command::new("setsid");
+        cmd.arg("--fork")
+            .arg("sh")
+            .arg("-c")
+            .arg(RECORDER_WRAPPER)
+            .arg("test-wrapper")
+            .arg(pid_file)
+            .arg("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut launcher = cmd.spawn()?;
+        // Keep the pipe outside the launcher: wait() closes Child::stdin.
+        // On any early return or panic, dropping this pipe gives cat EOF,
+        // including when the wrapper fails to report its PID.
+        let input = launcher
+            .stdin
+            .take()
+            .context("missing recorder input pipe")?;
+        anyhow::ensure!(launcher.wait()?.success(), "recorder launcher failed");
+
+        Ok(input)
+    }
+
     #[test]
     fn detached_recorder_reports_the_real_pid() -> Result<()> {
         // Integration check for the shell wrapper: the PID written must be the
@@ -445,26 +470,14 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let pid_file = dir.path().join(PID_FILE);
 
-        let mut cmd = Command::new("setsid");
-        cmd.arg("--fork")
-            .arg("sh")
-            .arg("-c")
-            .arg(RECORDER_WRAPPER)
-            .arg("test-wrapper")
-            .arg(&pid_file)
-            .arg("sleep")
-            .arg("30")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        assert!(cmd.status()?.success());
+        let _input = start_test_recorder(&pid_file)?;
 
-        let pid = wait_for_pid_report(&pid_file).expect("wrapper should report a PID");
+        let pid = wait_for_pid_report(&pid_file)?;
 
         let deadline = Instant::now() + PID_REPORT_TIMEOUT;
         let cmdline = loop {
             let cmdline = fs::read_to_string(format!("/proc/{pid}/cmdline"))?;
-            if cmdline.starts_with("sleep\0") || Instant::now() >= deadline {
+            if cmdline.starts_with("cat\0") || Instant::now() >= deadline {
                 break cmdline;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -473,8 +486,24 @@ mod tests {
         signal_recorder_stop(pid)?;
         wait_for_process_exit(pid)?;
         assert!(alive);
-        assert!(cmdline.starts_with("sleep\0"), "got {cmdline:?}");
+        assert!(cmdline.starts_with("cat\0"), "got {cmdline:?}");
         let _ = fs::remove_file(&pid_file);
+        Ok(())
+    }
+
+    #[test]
+    fn detached_recorder_exits_when_a_test_panics() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let pid_file = dir.path().join(PID_FILE);
+        let input = start_test_recorder(&pid_file)?;
+        let pid = wait_for_pid_report(&pid_file)?;
+        let failure = std::panic::catch_unwind(move || {
+            let _input = input;
+            panic!("simulate a test assertion failing before explicit cleanup");
+        });
+        // The pipe closed during unwinding. No explicit stop signal is sent.
+        wait_for_process_exit(pid)?;
+        assert!(failure.is_err());
         Ok(())
     }
 }

@@ -185,15 +185,14 @@ fn is_stale(modified: SystemTime, ttl: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dot::test_util::EnvGuard;
     use serial_test::serial;
 
     #[test]
     #[serial]
     fn cache_round_trip_uses_tmp_dir() {
         let temp = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("INS_PREVIEW_CACHE_DIR", temp.path());
-        }
+        let _cache = EnvGuard::set("INS_PREVIEW_CACHE_DIR", temp.path());
 
         let ctx = PreviewContext {
             mime_type: None,
@@ -213,14 +212,13 @@ mod tests {
         })
         .unwrap();
         assert_eq!(cached, "value");
-
-        unsafe {
-            std::env::remove_var("INS_PREVIEW_CACHE_DIR");
-        }
     }
 
     #[test]
+    #[serial]
     fn formatted_cache_keys_include_pane_dimensions() {
+        let temp = tempfile::tempdir().unwrap();
+        let _cache = EnvGuard::set("INS_PREVIEW_CACHE_DIR", temp.path());
         let ctx_a = PreviewContext {
             mime_type: None,
             key: Some("flathub|org.mozilla.firefox".to_string()),
@@ -264,9 +262,7 @@ mod tests {
     #[serial]
     fn invalidation_removes_only_the_requested_preview_type() {
         let temp = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("INS_PREVIEW_CACHE_DIR", temp.path());
-        }
+        let _cache = EnvGuard::set("INS_PREVIEW_CACHE_DIR", temp.path());
         let ctx = PreviewContext {
             mime_type: None,
             key: Some("example".to_string()),
@@ -283,8 +279,5 @@ mod tests {
             get_cached(PreviewId::DefaultBrowser, &ctx).unwrap(),
             Some("browser".to_string())
         );
-        unsafe {
-            std::env::remove_var("INS_PREVIEW_CACHE_DIR");
-        }
     }
 }

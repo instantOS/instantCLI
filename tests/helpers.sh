@@ -6,6 +6,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 setup_test_env() {
+	# Standalone tests must build with the original HOME/toolchain, before
+	# switching to the fixture. The suite's prepared binary is reused.
+	prepare_ins_binary || return 1
 	TEST_ROOT="$(mktemp -d)"
 	export TEST_ROOT
 
@@ -13,8 +16,31 @@ setup_test_env() {
 	export XDG_CONFIG_HOME="${HOME}/.config"
 	export XDG_DATA_HOME="${HOME}/.local/share"
 	export XDG_CACHE_HOME="${HOME}/.cache"
+	export XDG_STATE_HOME="${HOME}/.local/state"
+	export XDG_CONFIG_DIRS="${TEST_ROOT}/system/config"
+	export XDG_DATA_DIRS="${TEST_ROOT}/system/data"
+	export XDG_RUNTIME_DIR="${TEST_ROOT}/runtime"
+	export TMPDIR="${TEST_ROOT}/tmp"
+	export INS_PREVIEW_CACHE_DIR="${XDG_CACHE_HOME}"
+	export RESTIC_CACHE_DIR="${XDG_CACHE_HOME}/restic"
+	export GNUPGHOME="${HOME}/.gnupg"
+	export PASSWORD_STORE_DIR="${HOME}/.password-store"
 
-	mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
+	mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}" \
+		"${XDG_STATE_HOME}" "${XDG_RUNTIME_DIR}" "${TMPDIR}" "${GNUPGHOME}" \
+		"${XDG_CONFIG_DIRS}" "${XDG_DATA_DIRS}"
+	chmod 700 "${XDG_RUNTIME_DIR}" "${GNUPGHOME}"
+
+	# Tests opt into fake display backends explicitly. Never inherit the live
+	# desktop, its D-Bus sockets, or GUI prompts from a developer's session.
+	unset DISPLAY WAYLAND_DISPLAY INSTANTWM XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+	export INS_GAME_GUI=0
+	export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/no-session-bus"
+	export DBUS_SYSTEM_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/no-system-bus"
+
+	# Temporary repositories must not run hooks from a user's global config.
+	export GIT_CONFIG_NOSYSTEM=1
+	export GIT_CONFIG_GLOBAL=/dev/null
 
 	mkdir -p "${XDG_CONFIG_HOME}/instant"
 	cat >"${XDG_CONFIG_HOME}/instant/dots.toml" <<'EOF'
@@ -32,9 +58,10 @@ prepare_ins_binary() {
 	if [[ -n "${INS_PREPARED:-}" && -n "${INS_BIN:-}" && -x "${INS_BIN}" ]]; then
 		return
 	fi
+	unset INS_BIN INS_PREPARED
 
 	echo "Compiling ins (debug) for tests..." >&2
-	cd "${REPO_ROOT}"
+	cd "${REPO_ROOT}" || return 1
 
 	# Optimizations for faster compilation in tests
 	if [[ -n "${SCCACHE_DISABLE_INCR_COMPILATION:-}" || "${RUSTC_WRAPPER:-}" == *sccache* ]]; then
@@ -42,13 +69,20 @@ prepare_ins_binary() {
 	else
 		export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-1}"
 	fi
-	export CARGO_BUILD_JOBS=$(nproc)
 
-	# Only build the ins binary, skip all other dependencies and examples
-	# Suppress all output except errors to avoid interfering with tests
-	cargo build --bin ins --message-format=short --quiet 2>&1 | grep -E "^error" || true
+	# Read the executable Cargo actually built, including custom target dirs.
+	# Cargo renders diagnostics to stderr, leaving only build events to parse.
+	local binary
+	if ! binary="$(cargo build --bin ins --message-format=json-render-diagnostics --quiet |
+		jq -r 'select(.reason == "compiler-artifact" and .target.name == "ins") | .executable // empty')"; then
+		return 1
+	fi
+	if [[ ! -x "${binary}" ]]; then
+		echo 'Cargo did not report an executable ins binary' >&2
+		return 1
+	fi
 
-	export INS_BIN="${REPO_ROOT}/target/debug/ins"
+	export INS_BIN="${binary}"
 	export INS_PREPARED=1
 }
 
@@ -57,7 +91,7 @@ prepare_ins_binary() {
 # break literal grep assertions on colored substrings.
 ins() {
 	if [[ -z "${INS_BIN:-}" || ! -x "${INS_BIN}" ]]; then
-		prepare_ins_binary
+		prepare_ins_binary || return 1
 	fi
 	"${INS_BIN}" --no-color "$@"
 }
