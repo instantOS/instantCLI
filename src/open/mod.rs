@@ -27,13 +27,12 @@ pub(crate) fn run(args: &OpenArgs) -> Result<()> {
     let result = run_inner(args);
     if args.instantmenu
         && let Err(error) = &result
-    {
-        if let Err(dialog_error) = crate::menu::instantmenu::InstantmenuBackend::message(
+        && let Err(dialog_error) = crate::menu::instantmenu::InstantmenuBackend::message(
             Some("INS Open"),
             &format!("{error:#}"),
-        ) {
-            eprintln!("Could not display error: {dialog_error:#}");
-        }
+        )
+    {
+        eprintln!("Could not display error: {dialog_error:#}");
     }
     result
 }

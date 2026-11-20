@@ -678,17 +678,16 @@ fn spawn_output_reader(
             if let Some(rest) = line.strip_prefix("TC_PROGRESS ") {
                 if let Some((done, total)) = rest.split_once(' ')
                     && let (Ok(done), Ok(total)) = (done.parse::<u64>(), total.parse::<u64>())
+                    && let Ok(mut progress) = progress.lock()
                 {
-                    if let Ok(mut progress) = progress.lock() {
-                        progress.update(done, total);
-                    }
+                    progress.update(done, total);
                 }
                 continue;
             }
-            if is_diagnostic_warning(&line) {
-                if let Ok(progress) = progress.lock() {
-                    progress.warning(&line);
-                }
+            if is_diagnostic_warning(&line)
+                && let Ok(progress) = progress.lock()
+            {
+                progress.warning(&line);
             }
             if tail.len() >= OUTPUT_TAIL_LINES {
                 tail.remove(0);
