@@ -105,9 +105,13 @@ enum Commands {
     /// Choose a display layout using instantmenu
     Display,
     /// Arch Linux installation commands
+    #[command(arg_required_else_help = true)]
     Arch {
+        /// Print the guide to writing and checking unattended install configs
+        #[arg(long)]
+        skill: bool,
         #[command(subcommand)]
-        command: arch::cli::ArchCommands,
+        command: Option<arch::cli::ArchCommands>,
     },
     /// Dotfile management commands
     Dot {
@@ -299,7 +303,15 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
         Some(Commands::Terminal { args }) => {
             std::process::exit(instantos_terminal::run_cli(args.clone()));
         }
-        Some(Commands::Arch { command }) => {
+        Some(Commands::Arch {
+            skill: true,
+            command: Some(_),
+        }) => anyhow::bail!("Use ins arch --skill on its own"),
+        Some(Commands::Arch { skill: true, .. }) => arch::cli::print_config_guide(),
+        Some(Commands::Arch {
+            command: Some(command),
+            ..
+        }) => {
             run_async(async {
                 execute_with_error_handling(
                     arch::cli::handle_arch_command(command.clone(), cli.debug).await,
@@ -307,6 +319,7 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
                 )
             })?;
         }
+        Some(Commands::Arch { .. }) => anyhow::bail!("Specify an arch subcommand or --skill"),
         Some(Commands::Game { command }) => {
             execute_with_error_handling(
                 game::handle_game_command(command.clone(), cli.debug),
@@ -604,10 +617,27 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod cli_tests {
-    use super::cli_command;
+    use super::{Cli, Commands, cli_command, dispatch_command};
+    use clap::Parser;
 
     #[test]
     fn clap_definition_is_internally_valid() {
         cli_command().debug_assert();
+    }
+
+    #[test]
+    fn arch_skill_runs_without_a_subcommand() -> anyhow::Result<()> {
+        let cli = Cli::try_parse_from(["ins", "arch", "--skill"])?;
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Arch {
+                skill: true,
+                command: None
+            })
+        ));
+        let combined = Cli::try_parse_from(["ins", "arch", "--skill", "exec"])?;
+        assert!(dispatch_command(&combined).is_err());
+        Cli::try_parse_from(["ins", "arch", "--no-color", "list"])?;
+        Ok(())
     }
 }

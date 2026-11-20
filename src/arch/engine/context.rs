@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
 use std::collections::{BTreeSet, HashMap};
+use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::types::{Kernel, PartitioningMethod, StepId, SystemInfo};
@@ -147,10 +148,33 @@ impl InstallContext {
         Ok(toml::to_string_pretty(self)?)
     }
 
-    pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
         let content = std::fs::read_to_string(path)?;
-        let context: Self = toml::from_str(&content)?;
-        Ok(context)
+        Self::parse_config(&content, path)
+    }
+
+    pub(crate) fn parse_config(source: &str, path: &Path) -> Result<Self> {
+        toml::from_str(source).map_err(|error| {
+            // TOML's default diagnostic quotes the source line, which can
+            // include passwords (including in an inline table).
+            let message = error.message();
+            let message = match message.strip_prefix("invalid type:") {
+                Some(_) => message
+                    .rsplit_once(", expected ")
+                    .map_or("invalid value type".to_owned(), |(_, expected)| {
+                        format!("invalid value type, expected {expected}")
+                    }),
+                None => message.to_owned(),
+            };
+            if let Some(span) = error.span() {
+                let prefix = &source.as_bytes()[..span.start.min(source.len())];
+                let line = prefix.split(|byte| *byte == b'\n').count();
+                anyhow::anyhow!("{}:{line}: {message}", path.display())
+            } else {
+                anyhow::anyhow!("{}: {message}", path.display())
+            }
+        })
     }
 
     pub fn new() -> Self {
@@ -344,8 +368,22 @@ impl InstallContext {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{DataKey, InstallContext, KeyId};
     use crate::arch::engine::StepId;
+
+    #[test]
+    fn config_parse_error_keeps_its_location_without_quoting_passwords() {
+        let source = r#"answers = { Password = "synthetic-password", UseEncryption = false }"#;
+        let error = InstallContext::parse_config(source, Path::new("questions.toml"))
+            .err()
+            .expect("boolean answers must be quoted")
+            .to_string();
+        assert!(error.contains("questions.toml:1"));
+        assert!(error.contains("expected a string"));
+        assert!(!error.contains("synthetic-password"));
+    }
 
     struct StringKey;
 

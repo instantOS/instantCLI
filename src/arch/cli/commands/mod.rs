@@ -1,4 +1,5 @@
 mod ask;
+mod config;
 mod dualboot;
 mod exec;
 mod finished;
@@ -14,6 +15,7 @@ use crate::arch::engine::WizardStep;
 use crate::common::distro::OperatingSystem;
 
 use self::ask::{AskOutcome, handle_ask_command};
+use self::config::{check_config, handle_config_command};
 use self::dualboot::handle_dualboot_info;
 use self::exec::handle_exec_command;
 use self::finished::handle_finished_command;
@@ -21,6 +23,8 @@ use self::info::handle_info_command;
 use self::install::handle_install_command;
 use self::setup::handle_setup_command;
 use self::upload_logs::handle_upload_logs;
+
+pub use self::config::print_config_guide;
 
 pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<()> {
     let os = OperatingSystem::detect();
@@ -37,6 +41,11 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
     let steps = build_steps();
 
     match command {
+        ArchCommands::Config { command } => handle_config_command(command),
+        ArchCommands::Check {
+            questions_file,
+            target,
+        } => check_config(&steps, &questions_file, target),
         ArchCommands::List => {
             println!("Available wizard steps:");
             for step in steps {

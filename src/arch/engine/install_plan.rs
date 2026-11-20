@@ -589,6 +589,23 @@ impl TryFrom<&InstallContext> for InstallPlan {
 }
 
 impl InstallPlan {
+    pub(crate) fn from_imported_config(
+        steps: &[Box<dyn super::WizardStep>],
+        context: &InstallContext,
+    ) -> Result<Self> {
+        super::validate_imported_context(steps, context).context("Invalid configuration")?;
+        let plan = if !crate::arch::execution::is_chroot()
+            && crate::arch::host::HostProfile::detect()?
+                == crate::arch::host::HostProfile::ForeignDistro
+        {
+            // Real execution on these hosts enters an Arch bootstrap first.
+            Self::from_context(context, ArchLinuxVariant::Arch)
+        } else {
+            Self::try_from(context)
+        };
+        plan.context("Incomplete or inconsistent installation plan")
+    }
+
     fn from_context(context: &InstallContext, linux_variant: ArchLinuxVariant) -> Result<Self> {
         let required = |id| {
             context

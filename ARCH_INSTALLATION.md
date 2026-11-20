@@ -6,10 +6,26 @@ x86_64 foreign Linux distribution such as Ubuntu or Debian, it automatically
 creates an authenticated Arch bootstrap environment and runs the same installer
 there. Select Minimal Mode for vanilla Arch instead of instantOS.
 
-For a saved configuration, use `sudo ins arch exec --questions-file PATH`.
-Foreign hosts support complete installations; individual execution steps need a
-persistent Arch environment. `--dry-run` validates and describes the plan on
-the source host without downloading a bootstrap or changing disks.
+## Unattended install configurations
+
+Run `ins arch --skill` for the authoring guide. Generate a starter config on the
+machine that will run the installer so its boot mode and hardware are recorded.
+
+```sh
+(umask 077; ins arch config example > questions.toml)
+ins arch config explain PartitioningMethod
+```
+
+Edit the disk and credentials, then run `ins arch check -f questions.toml`.
+The check validates the config and prints the resolved storage operation without
+executing install steps. It uses the current environment's timezone database and
+`/etc/locale.gen`. Manual partitioning also checks the size of the selected boot
+partition. Add `--target` to require all named block devices to exist. Use
+`ins arch config explain` for the full field list.
+
+After reviewing the plan, use `sudo ins arch exec -f questions.toml` to install.
+Foreign hosts support complete installations. Individual execution steps need a
+persistent Arch environment. `exec --dry-run` previews the execution steps.
 
 ## Host requirements
 

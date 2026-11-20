@@ -68,7 +68,7 @@ pub fn format_luks(
     cmd.args(["-q", "luksFormat", "--type", "luks2", "--pbkdf", "argon2id"])
         .arg(&p2)
         .arg("-");
-    executor.run_with_input(&mut cmd, password)?;
+    executor.run_with_secret_input(&mut cmd, password)?;
 
     if !executor.dry_run() {
         executor.run(Command::new("udevadm").arg("settle"))?;
@@ -83,7 +83,7 @@ pub fn format_luks(
     }
     let mut cmd_open = Command::new("cryptsetup");
     cmd_open.arg("open").arg(&p2).arg("cryptlvm").arg("-");
-    executor.run_with_input(&mut cmd_open, password)?;
+    executor.run_with_secret_input(&mut cmd_open, password)?;
 
     println!("Setting up LVM...");
     executor.run(Command::new("pvcreate").arg("/dev/mapper/cryptlvm"))?;

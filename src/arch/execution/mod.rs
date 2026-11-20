@@ -71,6 +71,14 @@ pub trait CommandRunner {
         command: &mut std::process::Command,
         input: &str,
     ) -> anyhow::Result<()>;
+    fn run_with_secret_input(
+        &self,
+        command: &mut std::process::Command,
+        input: &str,
+    ) -> anyhow::Result<()> {
+        self.run_with_input(command, if self.dry_run() { "[redacted]" } else { input })
+    }
+
     fn run_with_output(
         &self,
         command: &mut std::process::Command,
@@ -414,16 +422,13 @@ pub async fn execute_installation(
     }
 
     let content = std::fs::read_to_string(&config_path)?;
-    let context: crate::arch::engine::InstallContext = toml::from_str(&content)?;
+    let context = crate::arch::engine::InstallContext::parse_config(&content, &config_path)?;
 
     // Exec bypasses the wizard, so nothing has validated the answers a saved
     // (possibly hand-edited) config contains. Fail loudly rather than acting
     // on an invalid or irrelevant answer. Hand-authored configurations may
     // omit wizard provenance; provenance that is present must still be current.
-    crate::arch::engine::validate_imported_context(steps, &context)
-        .context("Refusing to execute an invalid configuration")?;
-    let plan = crate::arch::engine::InstallPlan::try_from(&context)
-        .context("Refusing to execute an incomplete or inconsistent installation plan")?;
+    let plan = crate::arch::engine::InstallPlan::from_imported_config(steps, &context)?;
     let configuration_sha256 = crate::arch::installation_identity::configuration_fingerprint(
         &content,
         plan.linux_variant(),

@@ -715,7 +715,7 @@ fn configure_users(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<(
     // echo "root:password" | chpasswd
     let root_input = format!("root:{}", password);
     let mut cmd_root = Command::new("chpasswd");
-    executor.run_with_input(&mut cmd_root, &root_input)?;
+    executor.run_with_secret_input(&mut cmd_root, &root_input)?;
 
     // Ensure all required groups exist
     ensure_groups_exist(executor)?;
@@ -763,7 +763,7 @@ fn configure_users(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<(
     // Set user password
     let user_input = format!("{}:{}", username, password);
     let mut cmd_pass = Command::new("chpasswd");
-    executor.run_with_input(&mut cmd_pass, &user_input)?;
+    executor.run_with_secret_input(&mut cmd_pass, &user_input)?;
 
     // Create standard XDG user directories (Desktop, Documents, etc.)
     let mut cmd_xdg = Command::new("su");

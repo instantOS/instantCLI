@@ -3,7 +3,18 @@ mod utils;
 
 use clap::Subcommand;
 
-pub use commands::handle_arch_command;
+pub use commands::{handle_arch_command, print_config_guide};
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigCommands {
+    /// Print a starter TOML config with hardware detected on this machine
+    Example,
+    /// List config fields or explain one field's values and requirements
+    Explain {
+        /// TOML field name, such as PartitioningMethod
+        field: Option<String>,
+    },
+}
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DualbootCommands {
@@ -23,6 +34,20 @@ pub enum ArchCommands {
     },
     /// List all available questions
     List,
+    /// Get a starter TOML config or look up its fields
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
+    /// Validate a config and summarize its install plan without executing it
+    Check {
+        /// Path to the questions TOML file
+        #[arg(short = 'f', long)]
+        questions_file: std::path::PathBuf,
+        /// Also require the planned disk and partitions to exist as block devices
+        #[arg(long)]
+        target: bool,
+    },
     /// Ask a specific question
     Ask {
         /// The ID of the question to ask
