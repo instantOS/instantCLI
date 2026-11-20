@@ -21,6 +21,8 @@ binary = os.environ["INS_BIN"]
 real_xdg_mime = shutil.which("xdg-mime")
 bin_dir = root / "bin"
 bin_dir.mkdir()
+# Let the real ins-open.desktop entry resolve TryExec like an installed system.
+os.symlink(Path(binary).resolve(), bin_dir / "ins")
 applications = Path(os.environ["XDG_DATA_HOME"]) / "applications"
 applications.mkdir()
 os.environ.update(
@@ -542,7 +544,7 @@ def menus():
     return [json.loads(line) for line in menu_log.read_text().splitlines()]
 
 
-# Install our real desktop entry in the isolated catalog: it must never be offered.
+# Install our real desktop entry in the isolated catalog: it is a normal choice.
 (applications / 'ins-open.desktop').write_text(
     (Path(__file__).resolve().parent.parent / 'desktop/ins-open.desktop').read_text()
 )
@@ -567,7 +569,7 @@ for row in record['rows'].splitlines():
         assert row.startswith(('{icon=mdapplication ', '{green icon=mdapplication ')), row
 assert '↗' not in record['rows']
 assert 'Second Editor (second.desktop) (current)' in record['rows']
-assert 'ins-open.desktop' not in record['rows']
+assert 'INS Open (ins-open.desktop)' in record['rows']
 assert 'Hidden Application' not in record['rows']
 assert '\x1b' not in record['rows']
 assert history.read_bytes() == old_history
@@ -601,11 +603,12 @@ assert history.read_bytes() == old_history
 graphical([{'failure': True}], status=1)
 assert 'could not connect to display' in menus()[-1]['rows']
 
-# Being the MIME default must not offer the chooser itself.
-with (root / 'defaults.jsonl').open('a') as stream:
-    stream.write(json.dumps(['ins-open.desktop', 'text/plain']) + '\n')
-graphical([{'cancel': True}])
-assert 'ins-open.desktop' not in menus()[-1]['rows']
+# INS Open can be set as the default from its own picker, so a file type always
+# asks which application to use. It stays visible as the current default.
+graphical([{'key': 'ctrl-d', 'desktop': 'ins-open.desktop'}, {'cancel': True}])
+assert json.loads((root / 'defaults.jsonl').read_text().splitlines()[-1]) == ['ins-open.desktop', 'text/plain']
+assert 'Default set to INS Open' in menus()[-1]['rows']
+assert 'INS Open (ins-open.desktop) (current)' in menus()[-1]['rows']
 
 # The GUI hosts Yazi externally using the existing file-picker transport.
 # Force dwm so the test uses the transient-terminal fallback on any host.

@@ -301,8 +301,9 @@ update-desktop-database ~/.local/share/applications
 
 Choose INS Open as the default in your file manager, or run
 `xdg-mime default ins-open.desktop text/plain` for a specific MIME type. Choosing
-another default with Ctrl+D replaces that association. The chooser excludes its
-own desktop entry to avoid opening itself recursively.
+another default with Ctrl+D replaces that association. INS Open also appears as
+a normal choice in its own picker, so Ctrl+D can make it the default for a file
+type that should always ask which application to use.
 
 For guides, see the [documentation](https://instantos.io/docs/ins.html),
 [password and OTP guide](https://instantos.io/docs/pass), and

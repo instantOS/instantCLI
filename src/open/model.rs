@@ -217,7 +217,7 @@ pub(super) fn discover(mime: String, mut emit: impl FnMut(DiscoveryBatch) -> boo
     let mut catalog = ApplicationInfoCache::default();
     let mut emitted = HashSet::new();
     let mut apps = Vec::new();
-    if let Some(id) = default.filter(|id| id != "ins-open.desktop") {
+    if let Some(id) = default {
         let mut app = catalog.get(&id);
         if app.path.is_some() {
             app.is_default = true;
@@ -280,7 +280,7 @@ fn discover_remaining(
     );
     let mut recommended = Vec::new();
     for id in &known {
-        if id == "ins-open.desktop" || emitted.contains(id) {
+        if emitted.contains(id) {
             continue;
         }
         if let Some(path) = id.strip_prefix(CUSTOM_PREFIX) {
@@ -322,7 +322,7 @@ fn discover_remaining(
         .collect::<HashSet<_>>();
     let mut remaining = applications
         .into_iter()
-        .filter(|app| app.desktop_id != "ins-open.desktop" && !emitted.contains(&app.desktop_id))
+        .filter(|app| !emitted.contains(&app.desktop_id))
         .map(|app| Candidate {
             recommended: supported.contains(&app.desktop_id),
             score: 0.0,
@@ -409,16 +409,24 @@ mod tests {
             },
         );
         assert_eq!(batches.len(), 2);
-        assert!(
+        assert_eq!(
             batches
                 .iter()
                 .flat_map(|batch| &batch.apps)
-                .all(|candidate| candidate.app.key() != "ins-open.desktop")
+                .filter(|candidate| candidate.app.key() == "ins-open.desktop")
+                .count(),
+            1
         );
         let remaining = &batches[1].apps;
         assert_eq!(remaining[0].app.key(), "unindexed.desktop");
         assert!(remaining[0].recommended);
         assert!(remaining.iter().any(|app| app.app.key() == "late.desktop"));
+        assert!(
+            remaining
+                .iter()
+                .find(|app| app.app.key() == "ins-open.desktop")
+                .is_some_and(|app| !app.recommended)
+        );
         assert!(
             remaining
                 .iter()
