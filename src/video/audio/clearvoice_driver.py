@@ -9,8 +9,9 @@ as a WAV. The package downloads its checkpoints into ./checkpoints relative to
 the process working directory, so the Rust side runs this with cwd = the
 shared models directory (downloads happen once per model).
 
-Quiet mode is not used: tqdm progress goes to stderr, which the Rust side
-passes through to the user.
+Progress is reported on stderr as `CV_PROGRESS <done_ms> <total_ms>` lines
+so the Rust caller can render a progress bar. Other stderr output is kept
+for error reporting.
 """
 import sys
 import wave
@@ -21,6 +22,16 @@ MODEL = "MossFormer2_SE_48K"
 SAMPLE_RATE = 48000
 CHUNK_SECONDS = 10
 OVERLAP_SECONDS = 1
+PROGRESS_PREFIX = "CV_PROGRESS"
+
+
+def report_progress(done_samples: int, total_samples: int) -> None:
+    """Report machine-readable enhancement progress on stderr."""
+    if total_samples <= 0:
+        return
+    done_ms = done_samples * 1000 // SAMPLE_RATE
+    total_ms = total_samples * 1000 // SAMPLE_RATE
+    print(f"{PROGRESS_PREFIX} {done_ms} {total_ms}", file=sys.stderr, flush=True)
 
 
 def read_pcm(path: str) -> np.ndarray:
@@ -61,16 +72,8 @@ def enhance_overlapped(cv, audio: np.ndarray) -> np.ndarray:
 
     start = 0
     previous_end = 0
-    chunk_number = 0
     while start < len(audio):
         end = min(start + chunk_samples, len(audio))
-        chunk_number += 1
-        print(
-            f"ClearVoice chunk {chunk_number}: "
-            f"{start / SAMPLE_RATE:.1f}-{end / SAMPLE_RATE:.1f}s",
-            file=sys.stderr,
-            flush=True,
-        )
 
         # Tensor mode returns [batch, samples] for this single-output model.
         enhanced = np.asarray(cv(audio[np.newaxis, start:end], False))
@@ -93,6 +96,7 @@ def enhance_overlapped(cv, audio: np.ndarray) -> np.ndarray:
         output[previous_end:end] = enhanced[shared:]
 
         previous_end = end
+        report_progress(end, len(audio))
         if end == len(audio):
             break
         start += stride_samples
@@ -109,6 +113,7 @@ def main() -> int:
     from clearvoice import ClearVoice
 
     audio = read_pcm(input_path)
+    report_progress(0, len(audio))
     cv = ClearVoice(task="speech_enhancement", model_names=[MODEL])
     enhanced = enhance_overlapped(cv, audio)
     write_pcm(output_path, enhanced)
