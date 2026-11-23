@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod deps;
+pub mod frecency;
 pub mod games;
 pub mod launch_command;
 pub mod menu;

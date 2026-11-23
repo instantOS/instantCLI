@@ -305,6 +305,14 @@ another default with Ctrl+D replaces that association. INS Open also appears as
 a normal choice in its own picker, so Ctrl+D can make it the default for a file
 type that should always ask which application to use.
 
+`ins game menu` lists games by how recently and often you launched them, so the
+game you play most is near the top. Each launch updates a frecency cache at
+`$XDG_CACHE_HOME/instant/game-frecency.json`; scores halve every three days, and
+games that were not launched for 30 days drop out of it. Games you never launched
+follow alphabetically. Press Ctrl+S to switch the list to installed games first or
+to alphabetical order. The menu's actions stay above the games, and the chosen
+order lasts until the menu is closed.
+
 For guides, see the [documentation](https://instantos.io/docs/ins.html),
 [password and OTP guide](https://instantos.io/docs/pass), and
 [Arch installation prerequisites](ARCH_INSTALLATION.md).

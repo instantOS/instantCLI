@@ -2,6 +2,7 @@ mod action_menu;
 mod actions;
 mod edit_menu;
 mod editors;
+pub mod sort;
 mod state;
 
 use anyhow::{Context, Result, anyhow};
@@ -24,6 +25,7 @@ use crate::ui::nerd_font::NerdFont;
 
 use action_menu::build_action_menu;
 use actions::{ActionResult, handle_action};
+use sort::GameSort;
 use state::{EditState, GameState};
 
 pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
@@ -41,8 +43,9 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
     // Outer loop: menu entry selection
     let mut cursor = MenuCursor::new();
+    let mut sort = GameSort::default();
     loop {
-        let entry = match select_game_menu_entry(&mut cursor)? {
+        let entry = match select_game_menu_entry(&mut cursor, &mut sort)? {
             Some(entry) => entry,
             None => return Ok(()),
         };

@@ -1,16 +1,18 @@
 use crate::game::config::{Game, InstallationsConfig, InstantGameConfig, PathContentKind};
+use crate::game::frecency::LaunchHistory;
+use crate::game::menu::sort::{GameSort, SortRequested, choose_sort, sort_games, sort_keybind};
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
 /// Menu entry for game selection - can be a game or a special action
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameMenuEntry {
     Game(String, bool), // name, is_installed (has local installation)
     AddGame,
@@ -385,14 +387,16 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
     }
 }
 
-/// Select a game menu entry (game or special action)
-/// Returns Some(entry) if selected, None if cancelled
-pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenuEntry>> {
-    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
-
-    // Build menu entries: special actions first, then games
+/// Rows of the game menu: the fixed actions, then the games in `sort` order.
+///
+/// `score` reports how recently and often a game was launched; it is only
+/// consulted for [`GameSort::Recent`].
+pub(crate) fn menu_entries(
+    config: &InstantGameConfig,
+    installations: &InstallationsConfig,
+    sort: GameSort,
+    score: impl Fn(&str) -> f64,
+) -> Vec<GameMenuEntry> {
     let mut entries = vec![
         GameMenuEntry::AddGame,
         GameMenuEntry::SetupGames,
@@ -403,33 +407,237 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
     ];
 
     // Add all games with installation status
-    for game in &config.games {
-        let is_installed = config
-            .resolve_owner(&installations, &config.owner_id(&game.name.0))
-            .is_ok();
-        entries.push(GameMenuEntry::Game(game.name.0.clone(), is_installed));
-    }
+    let games = config
+        .games
+        .iter()
+        .map(|game| {
+            let is_installed = config
+                .resolve_owner(installations, &config.owner_id(&game.name.0))
+                .is_ok();
+            GameMenuEntry::Game(game.name.0.clone(), is_installed)
+        })
+        .collect();
+    entries.extend(sort_games(games, sort, score));
+    entries
+}
 
-    let mut builder = FzfWrapper::builder()
-        .header(Header::fancy("Game Menu"))
-        .prompt("Select")
-        .responsive_layout();
+/// Select a game menu entry (game or special action)
+/// Returns Some(entry) if selected, None if cancelled.
+///
+/// Pressing the sort key chooses a new order for the games and reopens the
+/// menu with the entry that was focused still under the cursor.
+pub fn select_game_menu_entry(
+    cursor: &mut MenuCursor,
+    sort: &mut GameSort,
+) -> Result<Option<GameMenuEntry>> {
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let history = LaunchHistory::load();
+    let keybinds = [sort_keybind()?];
 
-    if let Some(index) = cursor.initial_index(&entries) {
-        builder = builder.initial_index(index);
-    }
+    loop {
+        let entries = menu_entries(&config, &installations, *sort, |name| history.score(name));
 
-    // Show menu
-    let result = builder
-        .items(entries.clone())
-        .select_one()
-        .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
+        let mut builder = FzfWrapper::builder()
+            .header(
+                HeaderBuilder::new(NerdFont::Gamepad, "Game Menu")
+                    .field("Sort", sort.label())
+                    .build(),
+            )
+            .prompt("Select")
+            .responsive_layout();
 
-    match result {
-        crate::menu_utils::DialogOutcome::Submitted(entry) => {
-            cursor.update(&entry, &entries);
-            Ok(Some(entry))
+        if let Some(index) = cursor.initial_index(&entries) {
+            builder = builder.initial_index(index);
         }
-        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+
+        // Show menu
+        let result = builder
+            .items(entries.clone())
+            .keybinds(&keybinds)
+            .select()
+            .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
+
+        match result {
+            DialogOutcome::Submitted(selection) => {
+                let Some(item) = selection.items.into_iter().next() else {
+                    continue;
+                };
+                // Reordering the games must not move the cursor off the
+                // entry the user was on.
+                cursor.update(&item, &entries);
+                if selection.action == Some(SortRequested) {
+                    if let Some(chosen) = choose_sort(*sort)? {
+                        *sort = chosen;
+                    }
+                    continue;
+                }
+                return Ok(Some(item));
+            }
+            DialogOutcome::Cancelled => return Ok(None),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::TildePath;
+    use crate::dot::test_util::EnvGuard;
+    use crate::game::config::GameInstallation;
+    use crate::game::frecency::record_launch;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+
+    /// Two games whose config order matches neither the alphabetical nor the
+    /// installed order. Only Alpha has save backups on this device.
+    struct Fixture {
+        _temp: tempfile::TempDir,
+        _config_home: EnvGuard,
+        _cache_home: EnvGuard,
+    }
+
+    fn fixture() -> Result<Fixture> {
+        let temp = tempfile::tempdir()?;
+        let config_home = EnvGuard::set("XDG_CONFIG_HOME", temp.path().join("config"));
+        let cache_home = EnvGuard::set("XDG_CACHE_HOME", temp.path().join("cache"));
+        InstantGameConfig {
+            games: vec![Game::new("Zeta"), Game::new("Alpha")],
+            ..Default::default()
+        }
+        .save()?;
+        InstallationsConfig {
+            installations: vec![GameInstallation::with_kind(
+                "Alpha",
+                TildePath::new(temp.path().to_path_buf()),
+                PathContentKind::Directory,
+            )],
+            ..Default::default()
+        }
+        .save()?;
+        Ok(Fixture {
+            _temp: temp,
+            _config_home: config_home,
+            _cache_home: cache_home,
+        })
+    }
+
+    fn current_entries(sort: GameSort) -> Result<Vec<GameMenuEntry>> {
+        Ok(menu_entries(
+            &InstantGameConfig::load()?,
+            &InstallationsConfig::load()?,
+            sort,
+            |name| LaunchHistory::load().score(name),
+        ))
+    }
+
+    fn game_names(entries: &[GameMenuEntry]) -> Vec<&str> {
+        entries
+            .iter()
+            .filter_map(|entry| match entry {
+                GameMenuEntry::Game(name, _) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn menu_keeps_its_actions_above_the_games() -> Result<()> {
+        let _fixture = fixture()?;
+
+        let entries = current_entries(GameSort::Alphabetical)?;
+
+        assert_eq!(entries.len(), 8);
+        assert!(matches!(entries[0], GameMenuEntry::AddGame));
+        assert!(matches!(entries[5], GameMenuEntry::CloseMenu));
+        assert_eq!(game_names(&entries), ["Alpha", "Zeta"]);
+        assert_eq!(
+            entries[6],
+            GameMenuEntry::Game("Alpha".into(), true),
+            "installation status is kept for the installed order"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn games_default_to_the_most_recently_played() -> Result<()> {
+        let _fixture = fixture()?;
+        record_launch("Zeta");
+
+        assert_eq!(
+            game_names(&current_entries(GameSort::default())?),
+            ["Zeta", "Alpha"]
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn sort_key_reorders_games_and_keeps_the_focused_game() -> Result<()> {
+        let _fixture = fixture()?;
+        record_launch("Zeta");
+        let mut cursor = MenuCursor::new();
+        let mut sort = GameSort::default();
+        // Rows: six actions, then Zeta (played) and Alpha. Zeta is focused
+        // when the sort key is pressed; Alphabetical is the third option.
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![6])
+            .select_index(2)
+            .select_index(6)
+            .guard();
+
+        let entry = select_game_menu_entry(&mut cursor, &mut sort)?;
+
+        assert_eq!(entry, Some(GameMenuEntry::Game("Alpha".into(), true)));
+        assert_eq!(sort, GameSort::Alphabetical);
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn focused_game_follows_the_new_order() -> Result<()> {
+        let _fixture = fixture()?;
+        record_launch("Zeta");
+        let mut cursor = MenuCursor::new();
+        let mut sort = GameSort::default();
+        // Installed puts Alpha first, so Zeta moves from row 6 to row 7.
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![6])
+            .select_index(1)
+            .cancel_selection()
+            .guard();
+
+        assert_eq!(select_game_menu_entry(&mut cursor, &mut sort)?, None);
+
+        assert_eq!(sort, GameSort::Installed);
+        let entries = current_entries(sort)?;
+        assert_eq!(game_names(&entries), ["Alpha", "Zeta"]);
+        assert_eq!(cursor.initial_index(&entries), Some(7));
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn dismissing_the_sort_chooser_keeps_the_order() -> Result<()> {
+        let _fixture = fixture()?;
+        record_launch("Zeta");
+        let mut cursor = MenuCursor::new();
+        let mut sort = GameSort::default();
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![6])
+            .cancel_selection()
+            .select_index(6)
+            .guard();
+
+        let entry = select_game_menu_entry(&mut cursor, &mut sort)?;
+
+        assert_eq!(entry, Some(GameMenuEntry::Game("Zeta".into(), false)));
+        assert_eq!(sort, GameSort::Recent);
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
     }
 }

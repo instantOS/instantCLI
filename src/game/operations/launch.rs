@@ -296,6 +296,10 @@ fn run_launch_command(game: &LaunchableGame) -> Result<()> {
         }
     }
 
+    // Every check has passed and the game is about to start: remember the
+    // launch so the game menu can rank this game first.
+    crate::game::frecency::record_launch(&game.name);
+
     let status = Command::new("sh")
         .arg("-c")
         .arg(game.effective_command.to_string())
@@ -333,9 +337,17 @@ mod tests {
     use crate::menu_utils::{MockQueue, scripted_responses_remaining};
     use std::path::PathBuf;
 
+    /// Launches update the game menu's history; keep that cache in the
+    /// test's temp dir.
+    fn isolated_cache(temp: &tempfile::TempDir) -> crate::dot::test_util::EnvGuard {
+        crate::dot::test_util::EnvGuard::set("XDG_CACHE_HOME", temp.path())
+    }
+
     #[test]
+    #[serial_test::serial]
     fn unbacked_launch_requires_consent_and_releases_its_lock_on_cancel() -> Result<()> {
         let temp = tempfile::tempdir()?;
+        let _cache = isolated_cache(&temp);
         let marker = temp.path().join("ran");
         let command = format!(
             "touch {}",
@@ -347,14 +359,21 @@ mod tests {
         let _guard = MockQueue::new().confirm_no().guard();
         launch_without_backups(&selected, &GameUi::terminal(), lock)?;
         assert!(!marker.exists());
+        // Declining means the game was never played.
+        assert_eq!(
+            crate::game::frecency::LaunchHistory::load().score("New game"),
+            0.0
+        );
         let _lock = crate::game::save_runtime::SaveLock::at(&path)?;
         assert_eq!(scripted_responses_remaining(), 0);
         Ok(())
     }
 
     #[test]
+    #[serial_test::serial]
     fn unbacked_launch_runs_then_offers_setup_without_claiming_a_backup() -> Result<()> {
         let temp = tempfile::tempdir()?;
+        let _cache = isolated_cache(&temp);
         let marker = temp.path().join("ran");
         let command = format!(
             "touch {}",
@@ -366,6 +385,8 @@ mod tests {
         let _guard = MockQueue::new().confirm_yes().confirm_no().guard();
         launch_without_backups(&selected, &GameUi::terminal(), lock)?;
         assert!(marker.exists());
+        // A launch that ran is remembered for the game menu.
+        assert!(crate::game::frecency::LaunchHistory::load().score("New game") > 0.0);
         let _lock = crate::game::save_runtime::SaveLock::at(&path)?;
         assert_eq!(scripted_responses_remaining(), 0);
         Ok(())
