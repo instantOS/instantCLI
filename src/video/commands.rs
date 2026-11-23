@@ -7,7 +7,7 @@ use super::pipeline::{check, convert, setup, transcribe};
 use super::render;
 use super::slides;
 
-pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Result<()> {
+pub async fn handle_video_command(command: VideoCommands, debug: bool) -> Result<()> {
     match command {
         VideoCommands::Convert(args) => convert::handle_convert(args).await,
         VideoCommands::Append(args) => convert::handle_append(args).await,
@@ -24,10 +24,10 @@ pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Resul
                     "video",
                     "Video Menu",
                     &[],
-                    _debug,
+                    debug,
                 );
             }
-            menu::video_menu(_debug).await
+            menu::video_menu().await
         }
     }
 }

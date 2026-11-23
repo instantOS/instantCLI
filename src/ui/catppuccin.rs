@@ -182,7 +182,6 @@ pub fn is_console_mode() -> bool {
 }
 
 /// Linux virtual console DAC palette mapping for Catppuccin Mocha.
-#[allow(dead_code)]
 pub struct ConsolePaletteEntry {
     pub ansi: AnsiColor,
     pub hex: &'static str,
@@ -340,7 +339,6 @@ fn nearest_console_color((red, green, blue): (u8, u8, u8)) -> AnsiColor {
 /// Catppuccin Mocha color palette.
 ///
 /// Values are hex RGB strings in the `#RRGGBB` format.
-#[allow(dead_code)]
 pub mod colors {
     // Accent colors
     pub const ROSEWATER: &str = "#f5e0dc";

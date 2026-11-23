@@ -28,22 +28,9 @@ use crate::video::support::utils::{copy_overwriting, is_audio_file};
 const BASE_URL: &str = "https://auphonic.com/api";
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct UserInfo {
-    pub username: String,
-    pub user_id: String,
-    pub date_joined: String,
-    pub email: String,
-    pub credits: f64,
     pub onetime_credits: f64,
-    pub recurring_credits: f64,
-    pub recharge_date: String,
     pub recharge_recurring_credits: f64,
-    pub notification_email: bool,
-    pub error_email: bool,
-    pub warning_email: bool,
-    pub low_credits_email: bool,
-    pub low_credits_threshold: i32,
 }
 
 #[derive(Debug, Deserialize)]

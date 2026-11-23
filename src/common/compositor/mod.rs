@@ -244,7 +244,6 @@ impl CompositorType {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_wayland(&self) -> bool {
         match self {
             CompositorType::Sway | CompositorType::Hyprland | CompositorType::Niri => true,
@@ -256,7 +255,6 @@ impl CompositorType {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
         match self {
             CompositorType::I3 => true,
@@ -269,7 +267,6 @@ impl CompositorType {
         }
     }
 
-    #[allow(dead_code)]
     pub fn display_server(&self) -> DisplayServer {
         match self {
             CompositorType::Sway | CompositorType::Hyprland | CompositorType::Niri => {

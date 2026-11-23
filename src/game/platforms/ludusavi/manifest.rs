@@ -165,12 +165,6 @@ pub fn load_manifest() -> Result<LudusaviManifest> {
     Ok(manifest)
 }
 
-/// Check if the manifest is available (cached or downloadable)
-#[allow(dead_code)]
-pub fn is_manifest_available() -> bool {
-    load_manifest().is_ok()
-}
-
 /// Get the last update status message
 pub fn manifest_status() -> String {
     let cache_path = match manifest_cache_path() {

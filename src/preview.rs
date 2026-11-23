@@ -404,9 +404,7 @@ fn stream_default_app(
 pub(crate) struct PreviewContext {
     key: Option<String>,
     mime_type: Option<String>,
-    #[allow(dead_code)]
     columns: Option<usize>,
-    #[allow(dead_code)]
     lines: Option<usize>,
 }
 

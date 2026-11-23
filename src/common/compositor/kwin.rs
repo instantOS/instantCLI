@@ -16,8 +16,6 @@ struct KWinWindowInfo {
     class: String,
     title: String,
     visible: bool,
-    #[allow(dead_code)]
-    pid: Option<u32>,
 }
 
 impl ScratchpadProvider for KWin {
@@ -121,8 +119,7 @@ impl KWin {
                             name: c.resourceClass.replace("org.instantos.scratchpad.", ""),
                             class: c.resourceClass,
                             title: c.caption,
-                            visible: visible,
-                            pid: c.pid
+                            visible: visible
                         }});
                     }}
                 }}

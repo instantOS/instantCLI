@@ -14,7 +14,7 @@ use operations::{run_enhance, run_setup, run_slide, run_transcribe};
 use project::run_project_menu;
 use types::VideoMenuEntry;
 
-pub async fn video_menu(_debug: bool) -> Result<()> {
+pub async fn video_menu() -> Result<()> {
     let mut cursor = MenuCursor::new();
     loop {
         let entry = match select_video_menu_entry(&mut cursor)? {

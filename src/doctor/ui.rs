@@ -30,8 +30,6 @@ impl std::fmt::Display for MenuAction {
 pub enum DoctorMenuItem {
     Action(MenuAction),
     Issue(FixableIssue),
-    #[allow(dead_code)]
-    Check(ViewableCheck),
 }
 
 impl DoctorMenuItem {
@@ -62,16 +60,6 @@ impl DoctorMenuItem {
         match self {
             DoctorMenuItem::Action(a) => *a == action,
             DoctorMenuItem::Issue(issue) => issue.action == Some(action),
-            DoctorMenuItem::Check(_) => false,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn check_id(&self) -> Option<&str> {
-        match self {
-            DoctorMenuItem::Issue(issue) => issue.check_id.as_deref(),
-            DoctorMenuItem::Check(check) => Some(&check.check_id),
-            DoctorMenuItem::Action(_) => None,
         }
     }
 }
@@ -97,7 +85,6 @@ impl FzfSelectable for DoctorMenuItem {
                 }
             },
             DoctorMenuItem::Issue(issue) => issue.fzf_display_text(),
-            DoctorMenuItem::Check(check) => check.fzf_display_text(),
         }
     }
 
@@ -121,7 +108,6 @@ impl FzfSelectable for DoctorMenuItem {
                 }
             }
             DoctorMenuItem::Issue(issue) => issue.fzf_preview(),
-            DoctorMenuItem::Check(check) => check.fzf_preview(),
         }
     }
 
@@ -129,7 +115,6 @@ impl FzfSelectable for DoctorMenuItem {
         match self {
             DoctorMenuItem::Action(action) => action.to_string(),
             DoctorMenuItem::Issue(issue) => issue.fzf_key(),
-            DoctorMenuItem::Check(check) => check.fzf_key(),
         }
     }
 }

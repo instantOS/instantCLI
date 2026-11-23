@@ -82,7 +82,7 @@ pub fn generate_and_print_list(scope: ServiceScope) -> Result<()> {
 
     for (name, active, description) in lines {
         let enabled = enabled_state_for(&name, enabled_states.as_ref());
-        let display = format_display(&name, &active, &enabled, &description);
+        let display = format_display(&name, &active, &description);
         let key = format!("{}:{}", name, scope_str);
         let row = StreamingMenuItem::new(
             "systemd-service",
@@ -158,7 +158,7 @@ fn enabled_state_for(name: &str, states: Option<&HashMap<String, String>>) -> St
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn format_display(name: &str, active: &str, _enabled: &str, description: &str) -> String {
+fn format_display(name: &str, active: &str, description: &str) -> String {
     use crate::ui::catppuccin::{colors, format_icon_colored};
 
     let (active_icon, active_color) = match active {

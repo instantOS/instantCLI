@@ -100,7 +100,7 @@ pub async fn run_all_menu(debug: bool) -> Result<i32> {
                     }
                     AllMenuEntry::Video => {
                         // Same as `ins video menu`
-                        video::menu::video_menu(debug).await?;
+                        video::menu::video_menu().await?;
                     }
                     AllMenuEntry::Quit => return Ok(0),
                 }

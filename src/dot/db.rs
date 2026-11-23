@@ -248,8 +248,8 @@ impl Database {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
+    #[cfg(test)]
+    fn hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
             .conn
             .prepare("SELECT 1 FROM file_hashes WHERE hash = ? AND path = ?")?;
@@ -272,8 +272,8 @@ impl Database {
         Ok(result.is_some())
     }
 
-    #[allow(dead_code)]
-    pub fn target_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
+    #[cfg(test)]
+    fn target_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
             .conn
             .prepare("SELECT 1 FROM file_hashes WHERE hash = ? AND path = ? AND source_file = 0")?;

@@ -1,6 +1,5 @@
 use crate::common;
 use crate::common::git;
-use crate::common::home_dir;
 use crate::dot::config::DotfileConfig;
 use anyhow::{Context, Result};
 
@@ -157,25 +156,6 @@ impl DotfileRepo {
             .find(|r| r.name == self.name)
             .map(|r| r.is_external())
             .unwrap_or(false)
-    }
-
-    /// Convert a target path (in home directory) to source path (in repo)
-    #[allow(dead_code)]
-    pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
-        let home = home_dir();
-        let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
-
-        // Try to find the source path in active dotfile directories
-        for dotfile_dir in &self.dotfile_dirs {
-            if dotfile_dir.is_active {
-                let source_path = dotfile_dir.path.join(relative);
-                if source_path.exists() {
-                    return Ok(Some(source_path));
-                }
-            }
-        }
-
-        Ok(None)
     }
 
     fn switch_branch(&self, cfg: &DotfileConfig, branch: &str, debug: bool) -> Result<()> {

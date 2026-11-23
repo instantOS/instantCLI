@@ -78,7 +78,7 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     copy_overwriting(&video_path, &hashed_video_path, "temporary video")?;
 
     let models_dir = directories.models_dir();
-    let run_result = match resolve_backend(&args, &models_dir)? {
+    let run_result = match resolve_backend(&args)? {
         BackendChoice::Granite => {
             emit(
                 Level::Info,
@@ -142,7 +142,7 @@ enum BackendChoice {
 /// Resolve which transcription backend to use. `Auto` and `Granite` both
 /// resolve to Granite; the model is downloaded on first use via
 /// `ensure_granite_model`.
-fn resolve_backend(args: &TranscribeArgs, _models_dir: &Path) -> Result<BackendChoice> {
+fn resolve_backend(args: &TranscribeArgs) -> Result<BackendChoice> {
     match args.backend {
         TranscribeBackend::Granite | TranscribeBackend::Auto => Ok(BackendChoice::Granite),
         TranscribeBackend::Whisperx => Ok(BackendChoice::WhisperX),
@@ -813,20 +813,18 @@ mod tests {
 
     #[test]
     fn resolve_backend_auto_uses_granite() {
-        let dir = tempfile::tempdir().unwrap();
-        let choice = resolve_backend(&args_with(TranscribeBackend::Auto), dir.path()).unwrap();
+        let choice = resolve_backend(&args_with(TranscribeBackend::Auto)).unwrap();
         assert_eq!(choice, BackendChoice::Granite);
     }
 
     #[test]
     fn resolve_backend_explicit_wins() {
-        let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            resolve_backend(&args_with(TranscribeBackend::Granite), dir.path()).unwrap(),
+            resolve_backend(&args_with(TranscribeBackend::Granite)).unwrap(),
             BackendChoice::Granite
         );
         assert_eq!(
-            resolve_backend(&args_with(TranscribeBackend::Whisperx), dir.path()).unwrap(),
+            resolve_backend(&args_with(TranscribeBackend::Whisperx)).unwrap(),
             BackendChoice::WhisperX
         );
     }

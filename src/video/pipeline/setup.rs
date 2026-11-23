@@ -40,8 +40,8 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
 
     // Only set up the configured enhancer, not all of them.
     match config.enhancer {
-        crate::video::audio::EnhancerType::ClearVoice => setup_clearvoice(args.force)?,
-        crate::video::audio::EnhancerType::Local => setup_local_enhancer(args.force)?,
+        crate::video::audio::EnhancerType::ClearVoice => setup_clearvoice()?,
+        crate::video::audio::EnhancerType::Local => setup_local_enhancer()?,
         crate::video::audio::EnhancerType::Auphonic => setup_auphonic(args.force).await?,
         crate::video::audio::EnhancerType::None => {
             emit(
@@ -160,7 +160,7 @@ fn setup_external_tools() -> Result<()> {
     }
 }
 
-fn setup_clearvoice(_force: bool) -> Result<()> {
+fn setup_clearvoice() -> Result<()> {
     emit(
         Level::Info,
         "video.setup.clearvoice",
@@ -199,7 +199,7 @@ fn setup_clearvoice(_force: bool) -> Result<()> {
     Ok(())
 }
 
-fn setup_local_enhancer(_force: bool) -> Result<()> {
+fn setup_local_enhancer() -> Result<()> {
     emit(
         Level::Info,
         "video.setup.local",

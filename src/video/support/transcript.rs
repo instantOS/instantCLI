@@ -47,9 +47,6 @@ struct WhisperWord {
     word: String,
     start: f64,
     end: f64,
-    #[serde(default)]
-    #[allow(dead_code)]
-    score: f64,
 }
 
 const MAX_CLUSTER_SIZE: usize = 10;
@@ -85,7 +82,6 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
                 word: segment.text.trim().to_string(),
                 start: segment.start,
                 end: segment.end,
-                score: 0.0,
             });
         }
     }

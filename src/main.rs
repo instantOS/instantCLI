@@ -369,7 +369,7 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
             command,
         }) => {
             execute_with_error_handling(
-                assist::dispatch_assist_command(cli.debug, *instantmenu, command.clone()),
+                assist::dispatch_assist_command(*instantmenu, command.clone()),
                 "Error handling assist command",
             )?;
         }

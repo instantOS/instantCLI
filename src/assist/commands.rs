@@ -98,7 +98,6 @@ pub fn assist_command_argv(command: AssistInternalCommand) -> Result<Vec<String>
 
 /// Handle assist command
 pub fn dispatch_assist_command(
-    _debug: bool,
     use_instantmenu: bool,
     command: Option<AssistCommands>,
 ) -> Result<()> {

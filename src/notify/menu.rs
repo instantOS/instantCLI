@@ -26,10 +26,10 @@ pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        match run_main_menu(&db, daemon_running, debug, &mut cursor)? {
+        match run_main_menu(&db, daemon_running, &mut cursor)? {
             MenuAction::OpenNotification { id, main_cursor } => {
                 cursor = main_cursor;
-                handle_notification_detail(&db, id, debug)?;
+                handle_notification_detail(&db, id)?;
             }
             MenuAction::OpenOptions { main_cursor } => {
                 cursor = main_cursor;
@@ -143,7 +143,6 @@ fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMa
 fn run_main_menu(
     db: &NotifyDb,
     daemon_running: bool,
-    _debug: bool,
     cursor: &mut MenuCursor,
 ) -> Result<MenuAction> {
     let (items, unread) = build_main_items(db, daemon_running)?;
@@ -232,7 +231,7 @@ fn run_main_menu(
 /// Handle the detail view for a single notification.
 ///
 /// Shows the notification content and actions (back, mark unread, and delete).
-fn handle_notification_detail(db: &NotifyDb, id: i64, _debug: bool) -> Result<()> {
+fn handle_notification_detail(db: &NotifyDb, id: i64) -> Result<()> {
     let Some(mut notification) = db.get(id)? else {
         emit(
             Level::Warn,

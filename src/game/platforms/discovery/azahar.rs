@@ -478,14 +478,11 @@ fn extract_title_id_from_filename(path: &Path) -> Option<String> {
     None
 }
 
-/// Find a save that might match a ROM by checking if the ROM's parent directory
-/// name resembles a game that would have this save.
+/// Find a recently modified save for a ROM with a readable directory and stem.
 fn find_matching_save(rom_path: &Path, save_dirs: &HashMap<String, PathBuf>) -> Option<String> {
-    let _parent_name = rom_path.parent()?.file_name()?.to_str()?.to_lowercase();
-    let _rom_name = rom_path.file_stem()?.to_str()?.to_lowercase();
+    rom_path.parent()?.file_name()?.to_str()?;
+    rom_path.file_stem()?.to_str()?;
 
-    // Try to find a save that was modified around the same time
-    // or has a related name
     for (title_id, save_path) in save_dirs {
         // Check if save was recently modified (indicates active game)
         if let Some(modified) = get_directory_modified_time(save_path)

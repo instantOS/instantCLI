@@ -64,39 +64,12 @@ impl ServiceScope {
     }
 }
 
-/// Represents the state of a systemd service
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum ServiceState {
-    Active,
-    Inactive,
-    Failed,
-    Unknown(String),
-}
-
-/// Represents the enablement state of a systemd service
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
-pub enum ServiceEnablement {
-    Enabled,
-    Disabled,
-    Static,
-    Transient,
-    Masked,
-    Indirect,
-    Linked,
-    Unknown(String),
-}
-
 /// Configuration for creating a user service
 #[derive(Debug, Clone)]
 pub struct UserServiceConfig {
     pub name: String,
     pub description: String,
     pub exec_start: String,
-    pub restart: Option<String>,
-    pub restart_sec: Option<u32>,
-    pub wanted_by: Option<String>,
 }
 
 impl UserServiceConfig {
@@ -109,52 +82,15 @@ impl UserServiceConfig {
             name: name.into(),
             description: description.into(),
             exec_start: exec_start.into(),
-            restart: Some("always".to_string()),
-            restart_sec: Some(5),
-            wanted_by: Some("default.target".to_string()),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn with_restart(mut self, restart: impl Into<String>) -> Self {
-        self.restart = Some(restart.into());
-        self
-    }
-
-    /// Set the restart delay in seconds
-    #[allow(dead_code)]
-    pub fn with_restart_sec(mut self, sec: u32) -> Self {
-        self.restart_sec = Some(sec);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn with_wanted_by(mut self, target: impl Into<String>) -> Self {
-        self.wanted_by = Some(target.into());
-        self
     }
 
     /// Generate the service file content
     pub fn to_service_content(&self) -> String {
-        let mut content = format!(
-            "[Unit]\nDescription={}\n\n[Service]\nExecStart={}\n",
+        format!(
+            "[Unit]\nDescription={}\n\n[Service]\nExecStart={}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n",
             self.description, self.exec_start
-        );
-
-        if let Some(restart) = &self.restart {
-            content.push_str(&format!("Restart={}\n", restart));
-        }
-
-        if let Some(restart_sec) = self.restart_sec {
-            content.push_str(&format!("RestartSec={}\n", restart_sec));
-        }
-
-        content.push_str("\n[Install]\n");
-        if let Some(wanted_by) = &self.wanted_by {
-            content.push_str(&format!("WantedBy={}\n", wanted_by));
-        }
-
-        content
+        )
     }
 }
 
@@ -216,46 +152,6 @@ impl SystemdManager {
             .unwrap_or(false)
     }
 
-    #[allow(dead_code)]
-    pub fn get_state(&self, service_name: &str) -> ServiceState {
-        let output = self.run_systemctl(&["is-active", service_name]);
-
-        match output {
-            Ok(status) if status.success() => ServiceState::Active,
-            Ok(status) => {
-                let exit_code = status.code().unwrap_or(1);
-                match exit_code {
-                    3 => ServiceState::Inactive,
-                    4 => ServiceState::Failed,
-                    _ => ServiceState::Unknown(format!("Exit code: {}", exit_code)),
-                }
-            }
-            Err(_) => ServiceState::Unknown("Command failed".to_string()),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn get_enablement(&self, service_name: &str) -> ServiceEnablement {
-        let output = self.run_systemctl_output(&["is-enabled", service_name]);
-
-        match output {
-            Ok(o) if o.status.success() => ServiceEnablement::Enabled,
-            Ok(o) => {
-                let state = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                match state.as_str() {
-                    "disabled" => ServiceEnablement::Disabled,
-                    "static" => ServiceEnablement::Static,
-                    "not-found" => ServiceEnablement::Transient,
-                    "masked" => ServiceEnablement::Masked,
-                    "indirect" => ServiceEnablement::Indirect,
-                    "linked" => ServiceEnablement::Linked,
-                    _ => ServiceEnablement::Unknown(state),
-                }
-            }
-            Err(_) => ServiceEnablement::Unknown("Command failed".to_string()),
-        }
-    }
-
     /// Start a service
     pub fn start(&self, service_name: &str) -> Result<()> {
         let status = self
@@ -269,7 +165,6 @@ impl SystemdManager {
     }
 
     /// Stop a service
-    #[allow(dead_code)]
     pub fn stop(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["stop", service_name])
@@ -282,7 +177,6 @@ impl SystemdManager {
     }
 
     /// Restart a service
-    #[allow(dead_code)]
     pub fn restart(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["restart", service_name])
@@ -295,7 +189,6 @@ impl SystemdManager {
     }
 
     /// Enable a service
-    #[allow(dead_code)]
     pub fn enable(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["enable", service_name])
@@ -308,7 +201,6 @@ impl SystemdManager {
     }
 
     /// Disable a service
-    #[allow(dead_code)]
     pub fn disable(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["disable", service_name])
@@ -381,7 +273,6 @@ impl SystemdManager {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn create_user_service_file(
         &self,
         service_name: &str,
@@ -405,27 +296,6 @@ impl SystemdManager {
 
         // Reload daemon to pick up the new service file
         self.daemon_reload()?;
-
-        Ok(())
-    }
-
-    /// Remove a user service file
-    #[allow(dead_code)]
-    pub fn remove_user_service_file(&self, service_name: &str) -> Result<()> {
-        if self.scope != ServiceScope::User {
-            anyhow::bail!("remove_user_service_file can only be used with user scope");
-        }
-
-        let service_dir = self.get_user_service_dir()?;
-        let service_path = service_dir.join(format!("{}.service", service_name));
-
-        if service_path.exists() {
-            std::fs::remove_file(&service_path).with_context(|| {
-                format!("Failed to remove service file {}", service_path.display())
-            })?;
-            // Reload daemon to reflect the removal
-            self.daemon_reload()?;
-        }
 
         Ok(())
     }
@@ -503,21 +373,5 @@ mod tests {
         assert!(content.contains("Restart=always"));
         assert!(content.contains("RestartSec=5"));
         assert!(content.contains("WantedBy=default.target"));
-    }
-
-    #[test]
-    fn test_user_service_config_custom() {
-        let config = UserServiceConfig::new("custom-service", "Custom Service", "/usr/bin/custom")
-            .with_restart("on-failure")
-            .with_restart_sec(10)
-            .with_wanted_by("graphical.target");
-
-        let content = config.to_service_content();
-
-        assert!(content.contains("Description=Custom Service"));
-        assert!(content.contains("ExecStart=/usr/bin/custom"));
-        assert!(content.contains("Restart=on-failure"));
-        assert!(content.contains("RestartSec=10"));
-        assert!(content.contains("WantedBy=graphical.target"));
     }
 }

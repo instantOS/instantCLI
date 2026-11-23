@@ -787,7 +787,6 @@ mod tests {
                         tags: vec!["save".to_string()],
                         when: vec![FileConstraint {
                             os: Some("windows".to_string()),
-                            store: None,
                         }],
                     },
                 ),
@@ -797,7 +796,6 @@ mod tests {
                         tags: vec![],
                         when: vec![FileConstraint {
                             os: Some("linux".to_string()),
-                            store: None,
                         }],
                     },
                 ),
@@ -820,25 +818,22 @@ mod tests {
     }
 
     #[test]
-    fn build_windows_manifest_keeps_store_only_base_patterns() {
-        let manifest = HashMap::from([(
-            "Black Mesa".to_string(),
-            empty_game_entry(HashMap::from([(
-                "<base>/bms/save".to_string(),
-                FileEntry {
-                    tags: vec!["save".to_string()],
-                    when: vec![FileConstraint {
-                        os: None,
-                        store: Some("steam".to_string()),
-                    }],
-                },
-            )])),
-        )]);
-
+    fn build_windows_manifest_keeps_store_only_base_patterns() -> anyhow::Result<()> {
+        let manifest = serde_yaml::from_str(
+            r#"
+Black Mesa:
+  files:
+    <base>/bms/save:
+      tags: [save]
+      when:
+        - store: steam
+"#,
+        )?;
         let filtered = build_windows_manifest(manifest);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].game_name, "Black Mesa");
         assert_eq!(filtered[0].files.len(), 1);
+        Ok(())
     }
 
     #[test]

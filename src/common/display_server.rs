@@ -139,7 +139,6 @@ impl DisplayServer {
         matches!(self, DisplayServer::X11)
     }
 
-    #[allow(dead_code)]
     pub fn is_unknown(&self) -> bool {
         matches!(self, DisplayServer::Unknown)
     }
@@ -152,16 +151,6 @@ impl DisplayServer {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn get_screenshot_command(&self) -> (&'static str, Vec<&'static str>) {
-        match self {
-            DisplayServer::Wayland => ("grim", vec![]),
-            DisplayServer::X11 => ("scrot", vec![]),
-            DisplayServer::Unknown => ("grim", vec![]), // Default to Wayland
-        }
-    }
-
-    #[allow(dead_code)]
     pub fn is_desktop_session(&self) -> bool {
         !self.is_unknown()
     }
@@ -270,15 +259,6 @@ mod tests {
         let x11_cmd = DisplayServer::X11.get_clipboard_command();
         assert_eq!(x11_cmd.0, "xclip");
         assert_eq!(x11_cmd.1, vec!["-selection", "clipboard", "-o"]);
-    }
-
-    #[test]
-    fn test_screenshot_commands() {
-        let wayland_cmd = DisplayServer::Wayland.get_screenshot_command();
-        assert_eq!(wayland_cmd.0, "grim");
-
-        let x11_cmd = DisplayServer::X11.get_screenshot_command();
-        assert_eq!(x11_cmd.0, "scrot");
     }
 
     #[test]

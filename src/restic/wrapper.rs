@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use std::process::Command;
 
 use crate::restic::error::ResticError;
@@ -531,71 +531,35 @@ fn parse_restic_version(output: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct BackupProgress {
     pub summary: Option<BackupSummary>,
 }
 
 impl BackupProgress {
     fn parse(output: &str) -> Result<Self, ResticError> {
-        let mut summary = None;
-
-        for line in output.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            let value: serde_json::Value = serde_json::from_str(line)?;
-
-            if let Some(msg_type) = value.get("message_type")
-                && msg_type.as_str() == Some("summary")
-            {
-                summary = Some(serde_json::from_value(value)?);
-            }
-        }
-
-        Ok(BackupProgress { summary })
+        Ok(Self {
+            summary: parse_summary(output)?,
+        })
     }
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct BackupSummary {
-    #[serde(default)]
-    pub dry_run: bool,
     pub files_new: u64,
     pub files_changed: u64,
-    pub files_unmodified: u64,
-    pub dirs_new: u64,
-    pub dirs_changed: u64,
-    pub dirs_unmodified: u64,
-    pub data_blobs: i64,
-    pub tree_blobs: i64,
-    pub data_added: u64,
-    pub data_added_packed: u64,
-    pub total_files_processed: u64,
-    pub total_bytes_processed: u64,
-    pub backup_start: String,
-    pub backup_end: String,
-    pub total_duration: f64,
     pub snapshot_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 pub struct Snapshot {
     pub time: String,
-    pub parent: Option<String>,
     pub original: Option<String>,
     pub tree: String,
     pub paths: Vec<String>,
     pub hostname: String,
     pub username: String,
-    pub uid: Option<u32>,
-    pub gid: Option<u32>,
-    pub excludes: Option<Vec<String>>,
     pub tags: Vec<String>,
-    pub program_version: Option<String>,
     pub summary: Option<SnapshotSummary>,
     pub id: String,
     pub short_id: String,
@@ -613,7 +577,6 @@ impl Snapshot {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 pub struct SnapshotNode {
     pub path: String,
     #[serde(rename = "type")]
@@ -621,127 +584,55 @@ pub struct SnapshotNode {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 pub struct SnapshotSummary {
     pub backup_start: String,
     pub backup_end: String,
     pub files_new: u64,
     pub files_changed: u64,
     pub files_unmodified: u64,
-    pub dirs_new: u64,
-    pub dirs_changed: u64,
-    pub dirs_unmodified: u64,
-    pub data_blobs: i64,
-    pub tree_blobs: i64,
     pub data_added: u64,
     pub data_added_packed: u64,
     pub total_files_processed: u64,
     pub total_bytes_processed: u64,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug)]
 pub struct RestoreProgress {
     pub summary: Option<RestoreSummary>,
-    pub errors: Vec<RestoreError>,
 }
 
 impl RestoreProgress {
     fn parse(output: &str) -> Result<Self, ResticError> {
-        let mut summary = None;
-        let mut errors = Vec::new();
-
-        for line in output.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            let value: serde_json::Value = serde_json::from_str(line)?;
-
-            if let Some(msg_type) = value.get("message_type") {
-                match msg_type.as_str() {
-                    Some("summary") => {
-                        summary = Some(serde_json::from_value(value)?);
-                    }
-                    Some("error") => {
-                        // Error messages have nested structure according to docs
-                        if let Some(error_msg) = value.get("error").and_then(|e| e.get("message")) {
-                            let during = value
-                                .get("during")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("restore")
-                                .to_string();
-                            let item = value
-                                .get("item")
-                                .and_then(|i| i.as_str())
-                                .map(|s| s.to_string());
-
-                            errors.push(RestoreError {
-                                message: error_msg.as_str().unwrap_or("Unknown error").to_string(),
-                                during,
-                                item,
-                            });
-                        } else {
-                            // Fallback for different error structure
-                            let message = value
-                                .get("message")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("Unknown error")
-                                .to_string();
-                            let during = value
-                                .get("during")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("restore")
-                                .to_string();
-                            let item = value
-                                .get("item")
-                                .and_then(|i| i.as_str())
-                                .map(|s| s.to_string());
-
-                            errors.push(RestoreError {
-                                message,
-                                during,
-                                item,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        Ok(RestoreProgress { summary, errors })
+        Ok(Self {
+            summary: parse_summary(output)?,
+        })
     }
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-//TODO: should all of these have a default value? Is this even necessary?
 pub struct RestoreSummary {
     #[serde(default)]
-    pub seconds_elapsed: u64,
-    #[serde(default)]
-    pub total_files: u64,
-    #[serde(default)]
     pub files_restored: u64,
-    #[serde(default)]
-    pub files_skipped: u64,
-    #[serde(default)]
-    pub files_deleted: u64,
-    #[serde(default)]
-    pub total_bytes: u64,
-    #[serde(default)]
-    pub bytes_restored: u64,
-    #[serde(default)]
-    pub bytes_skipped: u64,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-pub struct RestoreError {
-    pub message: String,
-    pub during: String,
-    pub item: Option<String>,
+fn parse_summary<T: DeserializeOwned>(output: &str) -> Result<Option<T>, ResticError> {
+    let mut summary = None;
+
+    for line in output.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let value: serde_json::Value = serde_json::from_str(line)?;
+
+        if let Some(msg_type) = value.get("message_type")
+            && msg_type.as_str() == Some("summary")
+        {
+            summary = Some(serde_json::from_value(value)?);
+        }
+    }
+
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -760,6 +651,32 @@ mod tests {
             Some((0, 17, 0))
         );
         assert_eq!(parse_restic_version("unexpected output"), None);
+    }
+
+    #[test]
+    fn parses_restic_progress_with_extra_fields() -> anyhow::Result<()> {
+        let backup = BackupProgress::parse(
+            r#"
+{"message_type":"status","total_files":3}
+{"message_type":"summary","files_new":1,"files_changed":2,"snapshot_id":"abc123","dirs_new":0}
+"#,
+        )?
+        .summary
+        .ok_or_else(|| anyhow::anyhow!("missing backup summary"))?;
+        assert_eq!((backup.files_new, backup.files_changed), (1, 2));
+        assert_eq!(backup.snapshot_id.as_deref(), Some("abc123"));
+
+        let restore = RestoreProgress::parse(
+            r#"
+{"message_type":"error","error":{"message":"diagnostic"}}
+{"message_type":"summary","files_restored":3,"files_skipped":1}
+"#,
+        )?
+        .summary
+        .ok_or_else(|| anyhow::anyhow!("missing restore summary"))?;
+        assert_eq!(restore.files_restored, 3);
+        assert!(RestoreProgress::parse("invalid JSON").is_err());
+        Ok(())
     }
 
     #[test]

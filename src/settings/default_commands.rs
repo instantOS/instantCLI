@@ -113,8 +113,7 @@ pub fn ensure_default_links() -> Result<()> {
         DefaultCommand::TerminalFileManager,
     ] {
         if command == DefaultCommand::Terminal {
-            // Absence is reported by ensure_default_links_complete; other defaults
-            // must still be initialized on systems without a terminal installed.
+            // Still initialize the other defaults on systems without a terminal.
             if let Err(error) =
                 instantos_terminal::ensure_default(&default_dir.join(command.alias()))
                 && error.kind() != std::io::ErrorKind::NotFound
@@ -134,9 +133,6 @@ pub fn ensure_default_links() -> Result<()> {
 
 /// Return the default-command aliases that still have no installed target.
 ///
-/// This is the non-fatal companion to [`ensure_default_links_complete`]: callers
-/// that only want to create whatever symlinks are possible can use it to report
-/// the remaining gaps without aborting.
 pub fn missing_default_links() -> Vec<(&'static str, &'static [&'static str])> {
     let default_dir = match default_dir() {
         Ok(path) => path,
@@ -158,23 +154,6 @@ pub fn missing_default_links() -> Vec<(&'static str, &'static [&'static str])> {
         }
     }
     missing
-}
-
-#[allow(dead_code)]
-pub fn ensure_default_links_complete() -> Result<()> {
-    ensure_default_links()?;
-    let missing: Vec<&str> = missing_default_links()
-        .into_iter()
-        .map(|(alias, _)| alias)
-        .collect();
-
-    if !missing.is_empty() {
-        bail!(
-            "no installed default application could be found for: {}",
-            missing.join(", ")
-        );
-    }
-    Ok(())
 }
 
 pub fn installed_candidates(command: DefaultCommand) -> Vec<(String, PathBuf)> {

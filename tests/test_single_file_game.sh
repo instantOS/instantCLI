@@ -79,7 +79,6 @@ main() {
 
 	# Test 2: Modify the save file and backup again
 	echo "modified save data v2" >"${save_file}"
-	ins game backup "${game_name}"
 
 	local backup_output2
 	backup_output2="$(ins game backup "${game_name}")"
@@ -87,6 +86,11 @@ main() {
 
 	local snapshot_id2
 	snapshot_id2="$(printf '%s\n' "${backup_output2}" | sed -n 's/.*snapshot: \([0-9a-f]\{8,\}\).*/\1/p' | head -n1)"
+
+	if [[ -z "${snapshot_id2}" || "${snapshot_id2}" == "${snapshot_id}" ]]; then
+		echo "Expected the second backup to create a distinct snapshot" >&2
+		exit 1
+	fi
 
 	# Test 3: Remove save file and restore from snapshot
 	rm -f "${save_file}"

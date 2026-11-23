@@ -194,7 +194,7 @@ fn select_detail_action(
     metadata: &crate::dot::types::RepoMetaData,
     cursor: &mut MenuCursor,
 ) -> Result<Option<DetailAction>> {
-    let actions = build_detail_action_menu(metadata, repo_name);
+    let actions = build_detail_action_menu(metadata);
 
     let mut builder = FzfWrapper::builder()
         .header(Header::fancy(&format!("Edit Details: {}", repo_name)))
@@ -529,10 +529,7 @@ fn persist_metadata(
 }
 
 /// Build the detail action menu items
-fn build_detail_action_menu(
-    metadata: &crate::dot::types::RepoMetaData,
-    _repo_name: &str,
-) -> Vec<DetailActionItem> {
+fn build_detail_action_menu(metadata: &crate::dot::types::RepoMetaData) -> Vec<DetailActionItem> {
     let mut actions = Vec::new();
 
     // Edit Author

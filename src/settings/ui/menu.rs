@@ -63,7 +63,7 @@ pub fn run_settings_ui(
 
     loop {
         match initial_view {
-            InitialView::MainMenu(cursor) => match run_main_menu(&mut ctx, cursor)? {
+            InitialView::MainMenu(cursor) => match run_main_menu(cursor)? {
                 MenuAction::EnterCategory {
                     tree,
                     main_menu_cursor,
@@ -146,7 +146,7 @@ fn build_category_trees() -> Vec<TreeNode> {
         .collect()
 }
 
-fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<MenuAction> {
+fn run_main_menu(mut cursor: MenuCursor) -> Result<MenuAction> {
     let category_trees = build_category_trees();
 
     if category_trees.is_empty() {

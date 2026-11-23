@@ -263,7 +263,7 @@ pub fn add_dotfile(
             return Ok(());
         }
 
-        return add_with_destination_picker(config, db, &target_path, options.force, config_path);
+        return add_with_destination_picker(config, &target_path, options.force, config_path);
     }
 
     let mut stats = DirectoryAddStats::new();
@@ -337,7 +337,6 @@ pub fn add_dotfile(
 /// Delegates to the shared picker in the alternative module.
 fn add_with_destination_picker(
     config: &DotfileConfig,
-    _db: &Database,
     target_path: &Path,
     force: bool,
     config_path: Option<&str>,

@@ -19,13 +19,13 @@ impl SwapEscape {
 }
 
 /// Apply swap escape setting for Sway compositor
-fn apply_sway_swap_escape(_ctx: &mut SettingsContext, enabled: bool, verbose: bool) {
+fn apply_sway_swap_escape(ctx: &mut SettingsContext, enabled: bool, verbose: bool) {
     let xkb_options = if enabled { "caps:swapescape" } else { "" };
     let cmd = format!("input type:keyboard xkb_options {}", xkb_options);
     match sway::swaymsg(&cmd) {
         Ok(_) => {
             if verbose {
-                _ctx.notify(
+                ctx.notify(
                     "Swap Escape/Caps Lock",
                     if enabled {
                         "Escape and Caps Lock keys swapped"

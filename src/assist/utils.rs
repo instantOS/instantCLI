@@ -248,7 +248,6 @@ pub fn run_command_in_terminal(command: &str, title: &str) -> Result<ExitStatus>
 }
 
 /// Launch a command in the background (detached)
-#[allow(dead_code)]
 pub fn launch_detached(program: &str, args: &[&str]) -> Result<()> {
     Command::new(program)
         .args(args)
@@ -272,66 +271,18 @@ pub fn menu_command(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// Area selection color configuration
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub enum ColorConfiguration {
-    Red,
-    Green,
-    Blue,
-    Yellow,
-    Default,
-}
-
-impl ColorConfiguration {
-    /// Get hex color for Wayland (slurp)
-    pub fn wayland_hex(self) -> &'static str {
-        match self {
-            Self::Red => "#F38B82",
-            Self::Green => "#81C995",
-            Self::Blue => "#89B3F7",
-            Self::Yellow => "#FDD663",
-            Self::Default => "#81C995", // Default to green
-        }
-    }
-
-    /// Get RGB color for X11 (slop)
-    pub fn x11_rgb(self) -> &'static str {
-        match self {
-            Self::Red => "0.9529411764705882,0.5450980392156862,0.5098039215686274",
-            Self::Green => "0.5058823529411764,0.788235294117647,0.5843137254901961",
-            Self::Blue => "0.5372549019607843,0.7019607843137254,0.9686274509803922",
-            Self::Yellow => "0.9921568627450981,0.8392156862745098,0.38823529411764707",
-            Self::Default => "0.5058823529411764,0.788235294117647,0.5843137254901961", // Default to green
-        }
-    }
-}
-
 /// Cached display server and compositor detection
 #[derive(Debug, Clone)]
 pub struct AreaSelectionConfig {
     display_server: DisplayServer,
     has_compositor: bool,
-    color: ColorConfiguration,
 }
 
 impl AreaSelectionConfig {
-    /// Create new configuration with default green color
     pub fn new() -> Self {
         Self {
             display_server: DisplayServer::detect(),
             has_compositor: Self::detect_compositor(),
-            color: ColorConfiguration::Default,
-        }
-    }
-
-    /// Create configuration with custom color
-    #[allow(dead_code)]
-    pub fn with_color(color: ColorConfiguration) -> Self {
-        Self {
-            display_server: DisplayServer::detect(),
-            has_compositor: Self::detect_compositor(),
-            color,
         }
     }
 
@@ -366,16 +317,10 @@ impl AreaSelectionConfig {
         }
     }
 
-    /// Select area on Wayland using slurp with configurable color
+    /// Select area on Wayland using slurp
     fn select_area_wayland(&self) -> Result<Geometry> {
-        let color_hex = self.color.wayland_hex();
-
-        let mut cmd = Command::new("slurp");
-        if !color_hex.is_empty() {
-            cmd.arg("-c").arg(color_hex);
-        }
-
-        let output = cmd
+        let output = Command::new("slurp")
+            .args(["-c", "#81C995"])
             .output()
             .context("Failed to run slurp for area selection")?;
 
@@ -392,9 +337,9 @@ impl AreaSelectionConfig {
         Geometry::parse_slurp(&geometry)
     }
 
-    /// Select area on X11 using slop with configurable color and compositing support
+    /// Select area on X11 using slop with compositing support
     fn select_area_x11(&self) -> Result<Geometry> {
-        let rgb_color = self.color.x11_rgb();
+        let rgb_color = "0.5058823529411764,0.788235294117647,0.5843137254901961";
 
         let mut cmd = Command::new("slop");
 
@@ -598,7 +543,6 @@ pub fn show_notification(title: &str, message: &str) -> Result<()> {
 }
 
 /// Show a notification with icon using notify-send
-#[allow(dead_code)]
 pub fn show_notification_with_icon(title: &str, message: &str, icon: &str) -> Result<()> {
     Command::new("notify-send")
         .args(["-a", "instantASSIST", "-i", icon, title, message])

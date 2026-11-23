@@ -126,6 +126,7 @@ pub fn extract_game_name_from_tags(tags: &[String]) -> Option<String> {
 ///
 /// # Returns
 /// A formatted string showing snapshot IDs, times, and decoded game names
+#[cfg(any(debug_assertions, test))]
 pub fn debug_snapshot_tags(snapshots: &[crate::restic::wrapper::Snapshot]) -> String {
     let mut output = String::new();
     output.push_str("Snapshot Debug Information:\n");
@@ -246,14 +247,9 @@ mod tests {
             time: "2025-01-01T12:00:00Z".to_string(),
             tags: create_game_tags("Test Game"),
             hostname: "test".to_string(),
-            parent: None,
             tree: "tree123".to_string(),
             paths: vec!["/test".to_string()],
             username: "user".to_string(),
-            uid: Some(1000),
-            gid: Some(1000),
-            excludes: None,
-            program_version: Some("restic 0.17.0".to_string()),
             summary: None,
         }];
 

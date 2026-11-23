@@ -282,9 +282,10 @@ where
 
 impl<T> CommandSelection<T, ()> {
     /// Register typed actions without changing the selection source.
-    // Kept as part of the intentionally uniform source API even though no
-    // command-backed menu currently registers an action.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "keeps typed actions available for all selection sources"
+    )]
     pub fn keybinds<A: Clone>(self, keybinds: &[MenuKeybind<A>]) -> CommandSelection<T, A> {
         CommandSelection {
             builder: self.builder,

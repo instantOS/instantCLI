@@ -78,31 +78,6 @@ impl AssStyle {
             margin_v: 120, // Refined vertical margin
         }
     }
-
-    /// Catppuccin Latte theme (light mode variant).
-    #[allow(dead_code)]
-    pub fn catppuccin_latte() -> Self {
-        Self {
-            name: "Default".to_string(),
-            font_name: "Inter".to_string(),
-            font_size: 52,
-            // Catppuccin Latte "Mauve" (#8839EF) - darker purple for light mode
-            primary_color: "&H00EF3988".to_string(),
-            // Catppuccin Latte "Text" (#4C4F69) - dark text
-            secondary_color: "&H00694F4C".to_string(),
-            // Catppuccin Latte "Crust" (#DCE0E8) - light outline
-            outline_color: "&H00E8E0DC".to_string(),
-            // Catppuccin Latte "Mantle" (#E6E9EF) with opacity
-            back_color: "&H99EFE9E6".to_string(),
-            bold: false,
-            outline: 2,
-            shadow: 1,
-            alignment: 2,
-            margin_l: 60,
-            margin_r: 60,
-            margin_v: 120,
-        }
-    }
 }
 
 impl AssStyle {
