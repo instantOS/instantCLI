@@ -36,6 +36,26 @@ notes from CHANGELOG.md, then publishes npm packages using the same tag.
 The tag creation and artifact publication run in the same workflow, so they do
 not depend on a second workflow being triggered by a bot-created tag.
 
+## AUR publishing
+
+After the GitHub release is published, CI prepares checksummed `PKGBUILD` and
+`.SRCINFO` files for `ins` and `ins-bin` and smoke-tests `ins-bin` on Arch. The
+binary recipe repackages the existing x86_64 Arch release asset. Release reruns
+preserve uploaded assets so previously published checksums stay valid.
+
+1. Submit `ins-bin` to the AUR under your maintainer account. Use the
+   `ins-bin` directory from the `aur-recipes` workflow artifact, or the checked-in
+   `pkgbuild/ins-bin` recipe for its pinned release. Commit `PKGBUILD` and
+   `.SRCINFO` to the package's AUR `master` branch.
+2. Give the AUR account used by CI push access to both `ins` and `ins-bin`.
+   Register a dedicated SSH public key on that account.
+3. Store the private key as the `AUR_SSH_PRIVATE_KEY` repository Actions secret.
+
+With the secret configured, a release from `main` or a protected tag updates
+both AUR repositories. Without it, CI prepares the recipes and skips publishing.
+The publish job skips unchanged recipes and older versions, so it can be rerun
+after a failure.
+
 ## Retry and manual releases
 
 Rerun failed jobs to recover a failed build or publication. A complete rerun on
@@ -45,8 +65,9 @@ published; published npm versions cannot be replaced.
 
 Pushing a matching `vX.Y.Z` tag or manually running **Release** also publishes
 that version. For a manual branch run, Cargo.toml must already contain the
-intended release version. A manual run publishes GitHub and npm artifacts;
-it is not a preview. Run release preparation locally to inspect the bump:
+intended release version. A manual run publishes GitHub and npm artifacts and
+updates the AUR when publishing is enabled for the ref. Run release preparation
+locally to inspect the bump:
 
 ```sh
 python3 .github/scripts/prepare-release.py --dry-run

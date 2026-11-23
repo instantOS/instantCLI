@@ -1,0 +1,25 @@
+# Maintainer: paperbenni <paperbenni@gmail.com>
+pkgname=ins-bin
+pkgver=0.15.1
+pkgrel=1
+pkgdesc="A powerful command-line tool for managing dotfiles, system diagnostics, and instantOS configurations (prebuilt)"
+arch=('x86_64')
+url="https://instantos.io"
+license=('GPL-2.0-only')
+provides=("ins=$pkgver" 'instantpacman' 'instantsettings' 'instantupdate' 'instantwelcome')
+conflicts=('ins' 'instantpacman' 'instantsettings' 'instantupdate' 'instantwelcome')
+depends=('glibc' 'gcc-libs' 'fzf' 'git' 'sqlite')
+optdepends=(
+    'instantmenu: for graphical menus and INS Open'
+    'restic: for backup functionality'
+    'kitty: default terminal for scratchpad'
+    'ntfsprogs: for NTFS partition resize detection (dual-boot)'
+    'ntfs-3g: for mounting Windows NTFS partitions (dual-boot)'
+)
+options=('!strip' '!debug')
+source=("https://github.com/instantOS/instantCLI/releases/download/v$pkgver/ins-$pkgver-1-x86_64.pkg.tar.zst")
+sha256sums=('9b3dbf7b149de84a3d3a440b254db9b813babf98816ac24706fd26a2d0806a1a')
+
+package() {
+    cp -a "$srcdir/usr" "$pkgdir/"
+}

@@ -423,8 +423,108 @@ jobs:
           name: ${{ needs.metadata.outputs.tag }}
           body_path: release-notes.md
           files: dist/**/*
+          # AUR recipes pin release asset checksums across reruns.
+          overwrite_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  aur-recipes:
+    name: Prepare AUR recipes
+    runs-on: ubuntu-26.04
+    container:
+      image: archlinux:latest
+    needs: [metadata, release]
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Arch container
+        uses: ./.github/actions/setup-arch
+        with:
+          include-test-base: 'false'
+          packages: base-devel pacman-contrib fzf git sqlite
+      - name: Generate versioned recipes
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          useradd -m builder
+          chown -R builder:builder pkgbuild
+          for package in ins ins-bin; do
+            recipe="pkgbuild/$package"
+            sed -i "s/^pkgver=.*/pkgver=$VERSION/; s/^pkgrel=.*/pkgrel=1/" "$recipe/PKGBUILD"
+            (
+              cd "$recipe"
+              runuser -u builder -- updpkgsums
+              runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
+            )
+            install -Dm644 "$recipe/PKGBUILD" "aur-recipes/$package/PKGBUILD"
+            install -Dm644 "$recipe/.SRCINFO" "aur-recipes/$package/.SRCINFO"
+          done
+      - name: Smoke test ins-bin installation
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          cd pkgbuild/ins-bin
+          runuser -u builder -- makepkg --noconfirm
+          pacman -U --noconfirm "ins-bin-$VERSION-1-x86_64.pkg.tar.zst"
+          ins --version
+          ins --help > /dev/null
+          test -f /usr/share/applications/ins-settings.desktop
+          test -f /usr/lib/systemd/user/ins-notify.service
+          test -f /usr/share/licenses/ins/emoji-catalog-LICENSE
+      - name: Upload AUR recipes
+        uses: actions/upload-artifact@v7
+        with:
+          name: aur-recipes
+          path: aur-recipes/
+          include-hidden-files: true
+          if-no-files-found: error
+  aur:
+    name: Publish to the AUR
+    runs-on: ubuntu-26.04
+    container:
+      image: archlinux:latest
+    needs: aur-recipes
+    if: |-
+      github.repository == 'instantOS/instantCLI' &&
+      (github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && github.ref_protected))
+    concurrency:
+      group: aur-publish
+      cancel-in-progress: false
+    steps:
+      - name: Check for AUR SSH key
+        id: aur-key
+        env:
+          KEY_CONFIGURED: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        run: |
+          echo "configured=$KEY_CONFIGURED" >> "$GITHUB_OUTPUT"
+          if [[ "$KEY_CONFIGURED" != true ]]; then
+            echo 'AUR_SSH_PRIVATE_KEY is unset. Skipping AUR publishing.'
+          fi
+      - name: Install publishing tools
+        if: steps.aur-key.outputs.configured == 'true'
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm --needed git openssh
+      - name: Checkout release commit
+        if: steps.aur-key.outputs.configured == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download AUR recipes
+        if: steps.aur-key.outputs.configured == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aur-recipes
+          path: aur-recipes
+      - name: Push recipes to the AUR
+        if: steps.aur-key.outputs.configured == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: bash scripts/ci/publish-aur.sh aur-recipes
   npm:
     name: Publish npm packages
     runs-on: ubuntu-26.04

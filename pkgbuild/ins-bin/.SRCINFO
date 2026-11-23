@@ -1,0 +1,33 @@
+pkgbase = ins-bin
+	pkgdesc = A powerful command-line tool for managing dotfiles, system diagnostics, and instantOS configurations (prebuilt)
+	pkgver = 0.15.1
+	pkgrel = 1
+	url = https://instantos.io
+	arch = x86_64
+	license = GPL-2.0-only
+	depends = glibc
+	depends = gcc-libs
+	depends = fzf
+	depends = git
+	depends = sqlite
+	optdepends = instantmenu: for graphical menus and INS Open
+	optdepends = restic: for backup functionality
+	optdepends = kitty: default terminal for scratchpad
+	optdepends = ntfsprogs: for NTFS partition resize detection (dual-boot)
+	optdepends = ntfs-3g: for mounting Windows NTFS partitions (dual-boot)
+	provides = ins=0.15.1
+	provides = instantpacman
+	provides = instantsettings
+	provides = instantupdate
+	provides = instantwelcome
+	conflicts = ins
+	conflicts = instantpacman
+	conflicts = instantsettings
+	conflicts = instantupdate
+	conflicts = instantwelcome
+	options = !strip
+	options = !debug
+	source = https://github.com/instantOS/instantCLI/releases/download/v0.15.1/ins-0.15.1-1-x86_64.pkg.tar.zst
+	sha256sums = 9b3dbf7b149de84a3d3a440b254db9b813babf98816ac24706fd26a2d0806a1a
+
+pkgname = ins-bin
