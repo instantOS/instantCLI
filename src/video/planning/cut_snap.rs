@@ -6,10 +6,9 @@
 //! fixed pad around) those stamps therefore clips the tail of a kept word or lets
 //! the onset of a deleted neighbour leak into the render.
 //!
-//! This module looks at the audio that is actually rendered and moves each cut to
-//! the quietest nearby point within 60 ms of its target. Shared cuts may
-//! intentionally enter neighbouring edge words, bounded by half their duration;
-//! split and outer cuts stay outside the cue's words.
+//! This module normally moves cuts within 60 ms of their target. A cut in
+//! audible speech at a wide split can move toward sustained quiet in the gap.
+//! Shared cuts may enter neighbouring edge words, bounded by half their duration.
 
 use std::io::Read;
 
@@ -33,8 +32,16 @@ const POWER_FLOOR: f32 = 1e-10;
 /// win in continuous speech.
 const DISTANCE_PENALTY_DB_PER_SECOND: f32 = 100.0;
 
-/// How far a cut may move from its target in either direction.
+/// How far the normal search may move a cut from its target.
 pub(super) const SNAP_WINDOW_SECONDS: f64 = 0.06;
+
+const MIN_RECOVERY_GAP_SECONDS: f64 = 0.6;
+const MAX_RECOVERY_SECONDS: f64 = 1.0;
+const RECOVERY_REFERENCE_SECONDS: f64 = 0.15;
+const RECOVERY_QUIET_FRAMES: usize = 16; // 80 ms at the envelope's 5 ms hop.
+const RECOVERY_PAD_SECONDS: f64 = 0.02;
+const RECOVERY_QUIET_CEILING_DB: f32 = -38.0;
+const RECOVERY_DROP_DB: f32 = 18.0;
 
 /// Short-time loudness of a mono recording on a fixed 5 ms grid.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -114,6 +121,54 @@ impl AudioEnvelope {
             "No valid cut within +/-{SNAP_WINDOW_SECONDS} s of target {target}: bounds [{lo}, {hi}]"
         );
         Ok(self.quietest_point(target, lo, hi).clamp(lo, hi))
+    }
+
+    /// Protect an edge whose normal cut still lands in audible activity. A
+    /// transient dip cannot establish quiet, and neither edge can claim audio
+    /// on the neighbouring cue's side of the gap.
+    fn recover_split_edge(&self, cut: f64, midpoint: f64) -> f64 {
+        let forward = cut < midpoint;
+        let direction = if forward { 1.0 } else { -1.0 };
+        let index_at = |time: f64| (time / HOP_SECONDS).floor() as usize;
+        let cut_index = index_at(cut);
+        let Some(&cut_db) = self.db.get(cut_index) else {
+            return cut;
+        };
+        let reference = index_at(cut - direction * RECOVERY_REFERENCE_SECONDS);
+        let Some(reference_db) = self
+            .db
+            .get(reference.min(cut_index)..=reference.max(cut_index))
+        else {
+            return cut;
+        };
+        let peak_db = reference_db.iter().copied().fold(cut_db, f32::max);
+        if cut_db <= RECOVERY_QUIET_CEILING_DB.min(peak_db - RECOVERY_DROP_DB) {
+            return cut;
+        }
+
+        let limit = cut + direction * (midpoint - cut).abs().min(MAX_RECOVERY_SECONDS);
+        let limit_index = index_at(limit);
+        let quiet_db = RECOVERY_QUIET_CEILING_DB.min(cut_db - RECOVERY_DROP_DB);
+        // Allow the quiet run to straddle the search limit. Only the cut has
+        // to stay within it.
+        let quiet = |frames: &[f32]| frames.iter().all(|&db| db <= quiet_db);
+        let quiet_edge = if forward {
+            let end = (limit_index + RECOVERY_QUIET_FRAMES).min(self.db.len());
+            self.db[cut_index..end]
+                .windows(RECOVERY_QUIET_FRAMES)
+                .position(quiet)
+                .map(|offset| frame_centre(cut_index + offset))
+        } else {
+            let start = limit_index.saturating_sub(RECOVERY_QUIET_FRAMES - 1);
+            self.db[start..=cut_index]
+                .windows(RECOVERY_QUIET_FRAMES)
+                .rposition(quiet)
+                .map(|offset| frame_centre(start + offset + RECOVERY_QUIET_FRAMES - 1))
+        };
+        quiet_edge
+            .filter(|edge| (cut.min(limit)..=cut.max(limit)).contains(edge))
+            .map(|edge| edge + direction * (limit - edge).abs().min(RECOVERY_PAD_SECONDS))
+            .unwrap_or(cut)
     }
 
     /// Return the time in `[lo, hi]` that best balances "quiet" against "close
@@ -215,15 +270,17 @@ fn boundary_between(
             })?;
         Ok(Boundary::Shared(cut))
     } else {
-        Ok(Boundary::Split {
-            end: envelope.snapped_boundary_point(left_end + padding, left_end, mid)?,
-            start: envelope.snapped_boundary_point(right_start - padding, mid, right_start)?,
-        })
+        let mut end = envelope.snapped_boundary_point(left_end + padding, left_end, mid)?;
+        let mut start = envelope.snapped_boundary_point(right_start - padding, mid, right_start)?;
+        if right_start - left_end >= MIN_RECOVERY_GAP_SECONDS {
+            end = envelope.recover_split_edge(end, mid);
+            start = envelope.recover_split_edge(start, mid);
+        }
+        Ok(Boundary::Split { end, start })
     }
 }
 
-/// Source range for `cues[idx]` with both edges snapped to the quietest point
-/// within 60 ms of the padded word stamps (or the midpoint for shared cuts).
+/// Source range for `cues[idx]` with both edges snapped against the audio.
 /// Shared cuts may enter neighbouring edge words by up to half their duration;
 /// bounds depend on transcript neighbours, not whether they are kept in the edit.
 /// Contradictory shared constraints and non-positive snapped ranges are errors.
@@ -477,6 +534,38 @@ mod tests {
         // Silent plateau: identical to the classic 80 ms pad.
         assert!((first.end - 1.08).abs() < 1e-9);
         assert!((second.start - 1.92).abs() < 1e-9);
+    }
+
+    #[test]
+    fn wide_split_recovers_speech_that_extends_far_beyond_both_stamps() -> Result<()> {
+        let env = envelope(&[(1.85, 0.5), (0.3, 0.0), (1.85, 0.5)]);
+        let cues = vec![
+            cue(0, vec![word("one", 0.2, 1.0)]),
+            cue(1, vec![word("two", 3.0, 3.8)]),
+        ];
+
+        let first = snapped_cue_bounds(&cues, 0, 0.08, &env)?;
+        let second = snapped_cue_bounds(&cues, 1, 0.08, &env)?;
+        assert!((1.85..1.90).contains(&first.end), "end {}", first.end);
+        assert!(
+            (2.10..=2.15).contains(&second.start),
+            "start {}",
+            second.start
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn wide_split_does_not_extend_through_a_brief_dip_or_past_the_midpoint() -> Result<()> {
+        let env = envelope(&[(1.44, 0.5), (0.02, 0.0), (0.76, 0.5), (1.0, 0.0)]);
+        let cues = vec![
+            cue(0, vec![word("one", 0.2, 1.0)]),
+            cue(1, vec![word("two", 3.0, 3.2)]),
+        ];
+
+        let first = snapped_cue_bounds(&cues, 0, 0.08, &env)?;
+        assert!((first.end - 1.08).abs() <= SNAP_WINDOW_SECONDS);
+        Ok(())
     }
 
     #[test]
