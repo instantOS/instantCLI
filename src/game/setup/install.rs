@@ -11,7 +11,8 @@ use crate::game::restic::cache;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
-use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
@@ -352,9 +353,10 @@ enum PathPreparationOutcome {
 
 #[derive(Clone)]
 struct MissingPathChoice {
-    label: String,
-    description: String,
     kind: MissingPathChoiceKind,
+    /// What the path is used for, e.g. "Save directory".
+    label: String,
+    display: String,
 }
 
 #[derive(Clone, Copy)]
@@ -364,13 +366,69 @@ enum MissingPathChoiceKind {
     Cancel,
 }
 
+impl MissingPathChoice {
+    fn new(kind: MissingPathChoiceKind, label: &str, display: &str) -> Self {
+        Self {
+            kind,
+            label: label.to_string(),
+            display: display.to_string(),
+        }
+    }
+}
+
 impl FzfSelectable for MissingPathChoice {
     fn fzf_display_text(&self) -> String {
-        self.label.clone()
+        match self.kind {
+            MissingPathChoiceKind::UseAnyway => format!(
+                "{} Use this path anyway {}",
+                format_icon_colored(NerdFont::Folder, colors::YELLOW),
+                format_with_color("(create it manually later)", colors::YELLOW)
+            ),
+            MissingPathChoiceKind::Reselect => format!(
+                "{} Choose a different save path",
+                format_icon_colored(NerdFont::Edit, colors::BLUE)
+            ),
+            MissingPathChoiceKind::Cancel => format!(
+                "{} Cancel setup",
+                format_icon_colored(NerdFont::CrossCircle, colors::RED)
+            ),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.kind {
+            MissingPathChoiceKind::UseAnyway => "use-anyway",
+            MissingPathChoiceKind::Reselect => "reselect",
+            MissingPathChoiceKind::Cancel => "cancel",
+        }
+        .to_string()
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
-        protocol::FzfPreview::Text(self.description.clone())
+        let builder = match self.kind {
+            MissingPathChoiceKind::UseAnyway => PreviewBuilder::new()
+                .header(NerdFont::Folder, "Use This Path Anyway")
+                .text(&format!(
+                    "Keep '{}' as the {} even though it does not exist on disk yet.",
+                    self.display, self.label
+                ))
+                .blank()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "Create it manually before the game can use it.",
+                ),
+            MissingPathChoiceKind::Reselect => PreviewBuilder::new()
+                .header(NerdFont::Edit, "Choose a Different Save Path")
+                .text(
+                    "Go back and select another save path, from the snapshot list or a custom one.",
+                ),
+            MissingPathChoiceKind::Cancel => PreviewBuilder::new()
+                .header(NerdFont::CrossCircle, "Cancel Setup")
+                .text("Abort the game setup. You can run setup again later."),
+        };
+
+        builder.build()
     }
 }
 
@@ -378,31 +436,9 @@ impl FzfSelectable for MissingPathChoice {
 /// do instead: keep the non-existent path, pick a different path, or cancel.
 fn resolve_missing_path(display: &str, label: &str) -> Result<MissingPathChoiceKind> {
     let options = vec![
-        MissingPathChoice {
-            label: format!(
-                "{} Use this path anyway (create it manually later)",
-                char::from(NerdFont::Folder)
-            ),
-            description: format!(
-                "Keep '{display}' as the {label} even though it does not exist on disk yet. You will need to create it manually before the game can use it."
-            ),
-            kind: MissingPathChoiceKind::UseAnyway,
-        },
-        MissingPathChoice {
-            label: format!(
-                "{} Choose a different save path",
-                char::from(NerdFont::Edit)
-            ),
-            description:
-                "Go back and select another save path (from the snapshot list or a custom one)."
-                    .to_string(),
-            kind: MissingPathChoiceKind::Reselect,
-        },
-        MissingPathChoice {
-            label: format!("{} Cancel setup", char::from(NerdFont::CrossCircle)),
-            description: "Abort the game setup. You can run setup again later.".to_string(),
-            kind: MissingPathChoiceKind::Cancel,
-        },
+        MissingPathChoice::new(MissingPathChoiceKind::UseAnyway, label, display),
+        MissingPathChoice::new(MissingPathChoiceKind::Reselect, label, display),
+        MissingPathChoice::new(MissingPathChoiceKind::Cancel, label, display),
     ];
 
     match FzfWrapper::builder()
@@ -414,13 +450,14 @@ fn resolve_missing_path(display: &str, label: &str) -> Result<MissingPathChoiceK
             .subtitle("What would you like to do?")
             .build(),
         )
+        .responsive_layout()
         .items(options)
         .padded()
         .select_one()
         .map_err(|e| anyhow!("Failed to prompt for missing path action: {e}"))?
     {
-        crate::menu_utils::DialogOutcome::Submitted(choice) => Ok(choice.kind),
-        crate::menu_utils::DialogOutcome::Cancelled => Ok(MissingPathChoiceKind::Cancel),
+        DialogOutcome::Submitted(choice) => Ok(choice.kind),
+        DialogOutcome::Cancelled => Ok(MissingPathChoiceKind::Cancel),
     }
 }
 
@@ -606,27 +643,12 @@ fn detect_save_path_kind(
 
 fn prompt_save_path_kind(display: &str) -> Result<Option<PathContentKind>> {
     let options = vec![
-        SavePathKindOption::new(
-            format!(
-                "{} Directory containing multiple files",
-                char::from(NerdFont::Folder)
-            ),
-            format!(
-                "Choose this if '{display}' resolves to a folder of save data (multiple files or subdirectories)."
-            ),
-            PathContentKind::Directory,
-        ),
-        SavePathKindOption::new(
-            format!("{} Single save file", char::from(NerdFont::File)),
-            format!(
-                "Choose this if '{display}' is a single file created by the game (e.g., *.sav, *.slot)."
-            ),
-            PathContentKind::File,
-        ),
+        SavePathKindOption::new(PathContentKind::Directory, display),
+        SavePathKindOption::new(PathContentKind::File, display),
     ];
 
     match FzfWrapper::builder()
-        .prompt("save-type")
+        .prompt("Save type")
         .header(
             HeaderBuilder::new(
                 NerdFont::Question,
@@ -635,39 +657,70 @@ fn prompt_save_path_kind(display: &str) -> Result<Option<PathContentKind>> {
             .subtitle("Select the appropriate save type to continue.")
             .build(),
         )
+        .responsive_layout()
         .items(options)
         .padded()
         .select_one()?
     {
-        crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.kind)),
-        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+        DialogOutcome::Submitted(option) => Ok(Some(option.kind)),
+        DialogOutcome::Cancelled => Ok(None),
     }
 }
 
 #[derive(Clone)]
 struct SavePathKindOption {
-    label: String,
-    description: String,
     kind: PathContentKind,
+    display: String,
 }
 
 impl SavePathKindOption {
-    fn new(label: String, description: String, kind: PathContentKind) -> Self {
+    fn new(kind: PathContentKind, display: &str) -> Self {
         Self {
-            label,
-            description,
             kind,
+            display: display.to_string(),
         }
     }
 }
 
 impl FzfSelectable for SavePathKindOption {
     fn fzf_display_text(&self) -> String {
-        self.label.clone()
+        match self.kind {
+            PathContentKind::Directory => format!(
+                "{} Directory containing multiple files",
+                format_icon_colored(NerdFont::Folder, colors::LAVENDER)
+            ),
+            PathContentKind::File => format!(
+                "{} Single save file",
+                format_icon_colored(NerdFont::File, colors::TEAL)
+            ),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.kind {
+            PathContentKind::Directory => "directory",
+            PathContentKind::File => "file",
+        }
+        .to_string()
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
-        protocol::FzfPreview::Text(self.description.clone())
+        let builder = match self.kind {
+            PathContentKind::Directory => PreviewBuilder::new()
+                .header(NerdFont::Folder, "Directory")
+                .text(&format!(
+                    "Choose this if '{}' is a folder of save data (multiple files or subdirectories).",
+                    self.display
+                )),
+            PathContentKind::File => PreviewBuilder::new()
+                .header(NerdFont::File, "Single File")
+                .text(&format!(
+                    "Choose this if '{}' is a single file created by the game (e.g., *.sav, *.slot).",
+                    self.display
+                )),
+        };
+
+        builder.build()
     }
 }
 
@@ -675,6 +728,81 @@ impl FzfSelectable for SavePathKindOption {
 mod tests {
     use super::*;
     use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+    use crate::ui::text::strip_ansi;
+
+    fn plain_preview(item: &impl FzfSelectable) -> String {
+        let protocol::FzfPreview::Text(text) = item.fzf_preview() else {
+            panic!("expected a text preview");
+        };
+        strip_ansi(&text)
+    }
+
+    #[test]
+    fn missing_path_choices_use_badges_and_styled_previews() {
+        for (kind, icon, color, title) in [
+            (
+                MissingPathChoiceKind::UseAnyway,
+                NerdFont::Folder,
+                colors::YELLOW,
+                "Use This Path Anyway",
+            ),
+            (
+                MissingPathChoiceKind::Reselect,
+                NerdFont::Edit,
+                colors::BLUE,
+                "Choose a Different Save Path",
+            ),
+            (
+                MissingPathChoiceKind::Cancel,
+                NerdFont::CrossCircle,
+                colors::RED,
+                "Cancel Setup",
+            ),
+        ] {
+            let choice = MissingPathChoice::new(kind, "Save directory", "~/.config/game");
+            assert!(
+                choice
+                    .fzf_display_text()
+                    .contains(&format_icon_colored(icon, color))
+            );
+            let text = plain_preview(&choice);
+            assert!(text.contains('─'), "missing the styled header: {text}");
+            assert!(text.contains(title), "{text}");
+        }
+
+        let keep = MissingPathChoice::new(
+            MissingPathChoiceKind::UseAnyway,
+            "Save directory",
+            "~/.config/game",
+        );
+        let text = plain_preview(&keep);
+        assert!(text.contains("Keep '~/.config/game' as the Save directory"));
+        assert!(text.contains("Create it manually before the game can use it."));
+    }
+
+    #[test]
+    fn save_type_chooser_returns_the_picked_kind_and_nothing_when_dismissed() -> Result<()> {
+        let directory = SavePathKindOption::new(PathContentKind::Directory, "~/saves");
+        assert!(
+            directory
+                .fzf_display_text()
+                .contains(&format_icon_colored(NerdFont::Folder, colors::LAVENDER))
+        );
+        let file = SavePathKindOption::new(PathContentKind::File, "~/save.dat");
+        let text = plain_preview(&file);
+        assert!(text.contains('─'));
+        assert!(text.contains("Single File"));
+        assert!(text.contains("~/save.dat"));
+
+        let _mock = MockQueue::new().select_index(1).cancel_selection().guard();
+        assert_eq!(
+            prompt_save_path_kind("~/save.dat")?,
+            Some(PathContentKind::File)
+        );
+        assert!(prompt_save_path_kind("~/save.dat")?.is_none());
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
 
     #[test]
     fn missing_directory_escape_cancels_without_followup() -> Result<()> {

@@ -8,10 +8,13 @@ use crate::game::utils::path::{
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, PathInputBuilder, PathInputSelection,
+    DialogOutcome, FilePickerScope, FzfSelectable, FzfWrapper, HeaderBuilder, PathInputBuilder,
+    PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
+use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 pub(super) fn extract_unique_paths_from_snapshots(snapshots: &[Snapshot]) -> Result<Vec<PathInfo>> {
     let mut path_frequency: HashMap<String, PathInfo> = HashMap::new();
@@ -155,11 +158,6 @@ pub(super) fn choose_installation_path(
     paths: &[PathInfo],
     original_save_path: Option<&str>,
 ) -> Result<Option<SelectedSavePath>> {
-    println!(
-        "\n{} Select the save path for '{game_name}':",
-        char::from(NerdFont::Folder)
-    );
-
     let mut options = vec![SavePathOption::custom()];
 
     for path_info in paths {
@@ -167,12 +165,23 @@ pub(super) fn choose_installation_path(
     }
 
     let selected = FzfWrapper::builder()
+        .prompt("Select")
+        .header(
+            HeaderBuilder::new(
+                NerdFont::Folder,
+                format!("Choose the save path for '{game_name}'"),
+            )
+            .subtitle("Pick a path from the backups or enter your own.")
+            .build(),
+        )
+        .responsive_layout()
         .items(options)
+        .padded()
         .select_one()
         .map_err(|e| anyhow!("Failed to select path option: {e}"))?;
 
     match selected {
-        crate::menu_utils::DialogOutcome::Submitted(option) => match option.kind {
+        DialogOutcome::Submitted(option) => match option.kind {
             SavePathOptionKind::Custom => {
                 // Enable wine prefix support if any snapshot paths are from wine prefixes
                 let enable_wine_prefix = paths.iter().any(|path_info| {
@@ -194,7 +203,7 @@ pub(super) fn choose_installation_path(
                 Ok(Some(SelectedSavePath::from_path_info(&path_info)))
             }
         },
-        crate::menu_utils::DialogOutcome::Cancelled => {
+        DialogOutcome::Cancelled => {
             println!(
                 "{} No path selected. Setup cancelled.",
                 char::from(NerdFont::Warning)
@@ -216,19 +225,11 @@ pub(super) struct PathInfo {
 
 impl FzfSelectable for PathInfo {
     fn fzf_display_text(&self) -> String {
-        let devices_str = if self.devices.len() == 1 {
-            format!("1 device: {}", self.devices.iter().next().unwrap())
-        } else {
-            format!(
-                "{} devices: {}",
-                self.devices.len(),
-                self.devices.iter().cloned().collect::<Vec<_>>().join(", ")
-            )
-        };
-
         format!(
-            "{} (used {} times on {})",
-            self.display_path, self.frequency, devices_str
+            "{} {}  {}",
+            format_icon_colored(NerdFont::Folder, colors::LAVENDER),
+            self.display_path,
+            format_with_color(&format!("({})", self.usage()), colors::SUBTEXT0)
         )
     }
 
@@ -237,46 +238,7 @@ impl FzfSelectable for PathInfo {
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
-        let mut preview = String::new();
-        preview.push_str(&format!(
-            "{} SAVE PATH DETAILS\n\n",
-            char::from(NerdFont::Folder)
-        ));
-        preview.push_str(&format!("Path:           {}\n", self.display_path));
-        preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
-        preview.push_str(&format!(
-            "Device Count:   {} unique devices\n",
-            self.devices.len()
-        ));
-
-        if let Some(original) = self.preferred_snapshot_path() {
-            preview.push_str(&format!("Stored As:      {}\n", original));
-        }
-
-        preview.push_str(&format!(
-            "\n{}  DEVICES USING THIS PATH:\n",
-            char::from(NerdFont::Desktop)
-        ));
-        for device in &self.devices {
-            preview.push_str(&format!("  • {device}\n"));
-        }
-
-        if let (Ok(first), Ok(last)) = (
-            chrono::DateTime::parse_from_rfc3339(&self.first_seen),
-            chrono::DateTime::parse_from_rfc3339(&self.last_seen),
-        ) {
-            let first_str = first.format("%Y-%m-%d %H:%M:%S").to_string();
-            let last_str = last.format("%Y-%m-%d %H:%M:%S").to_string();
-
-            preview.push_str(&format!(
-                "\n{} USAGE TIMELINE:\n",
-                char::from(NerdFont::Calendar)
-            ));
-            preview.push_str(&format!("First Seen:     {first_str}\n"));
-            preview.push_str(&format!("Last Seen:      {last_str}\n"));
-        }
-
-        protocol::FzfPreview::Text(preview)
+        protocol::FzfPreview::Text(self.build_preview())
     }
 }
 
@@ -287,6 +249,79 @@ impl PathInfo {
             .find(|path| path.starts_with('/'))
             .map(|p| p.as_str())
             .or_else(|| self.snapshot_paths.iter().next().map(|p| p.as_str()))
+    }
+
+    /// How many backups used this path, and on which devices.
+    fn usage(&self) -> String {
+        let devices = if self.devices.len() == 1 {
+            let device = self
+                .devices
+                .iter()
+                .next()
+                .map(String::as_str)
+                .unwrap_or_default();
+            format!("1 device: {device}")
+        } else {
+            format!(
+                "{} devices: {}",
+                self.devices.len(),
+                self.devices.iter().cloned().collect::<Vec<_>>().join(", ")
+            )
+        };
+        format!(
+            "used {} {times} on {devices}",
+            self.frequency,
+            times = if self.frequency == 1 { "time" } else { "times" }
+        )
+    }
+
+    /// Plain path and usage, for previews that suggest this path.
+    pub(super) fn summary(&self) -> String {
+        format!("{} ({})", self.display_path, self.usage())
+    }
+
+    fn build_preview(&self) -> String {
+        let device_count = match self.devices.len() {
+            1 => "1 unique device".to_string(),
+            count => format!("{count} unique devices"),
+        };
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Folder, "Save Path")
+            .field("Path", &self.display_path)
+            .field("Snapshots", &format!("{} snapshots", self.frequency))
+            .field("Devices", &device_count);
+
+        if let Some(original) = self.preferred_snapshot_path() {
+            builder = builder.field("Stored as", original);
+        }
+
+        builder = builder
+            .blank()
+            .separator()
+            .line(
+                colors::MAUVE,
+                Some(NerdFont::Desktop),
+                "Devices Using This Path",
+            )
+            .blank();
+        for device in &self.devices {
+            builder = builder.bullet(device);
+        }
+
+        if let (Ok(first), Ok(last)) = (
+            chrono::DateTime::parse_from_rfc3339(&self.first_seen),
+            chrono::DateTime::parse_from_rfc3339(&self.last_seen),
+        ) {
+            builder = builder
+                .blank()
+                .separator()
+                .line(colors::MAUVE, Some(NerdFont::Calendar), "Usage Timeline")
+                .blank()
+                .field_indented("First seen", &first.format("%Y-%m-%d %H:%M:%S").to_string())
+                .field_indented("Last seen", &last.format("%Y-%m-%d %H:%M:%S").to_string());
+        }
+
+        builder.build_string()
     }
 }
 
@@ -331,19 +366,22 @@ impl SavePathOption {
 impl FzfSelectable for SavePathOption {
     fn fzf_display_text(&self) -> String {
         match &self.kind {
-            SavePathOptionKind::Custom => {
-                format!("{} Enter a different path", char::from(NerdFont::Edit))
-            }
+            SavePathOptionKind::Custom => format!(
+                "{} Enter a different path",
+                format_icon_colored(NerdFont::Edit, colors::BLUE)
+            ),
             SavePathOptionKind::Snapshot(info) => info.fzf_display_text(),
         }
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
         match &self.kind {
-            SavePathOptionKind::Custom => protocol::FzfPreview::Text(format!(
-                "{} Provide a custom path for the game's save data.",
-                char::from(NerdFont::Info)
-            )),
+            SavePathOptionKind::Custom => PreviewBuilder::new()
+                .header(NerdFont::Edit, "Enter a Different Path")
+                .text("Provide a custom path for the game's save data.")
+                .blank()
+                .text("Browse for the save data or type its exact path.")
+                .build(),
             SavePathOptionKind::Snapshot(info) => info.fzf_preview(),
         }
     }
@@ -404,40 +442,219 @@ fn handle_differently_named_folders(
             .build();
 
         let options = vec![
-            format!(
-                "{} Use selected path as is: {}",
-                NerdFont::Folder,
-                selected_path.display()
-            ),
-            format!(
-                "{} Append original directory name: {}",
-                NerdFont::FolderOpen,
-                alternative_path.display()
-            ),
+            FolderNameOption::keep_selected(selected_path),
+            FolderNameOption::append_original(&alternative_path),
         ];
 
         match FzfWrapper::builder()
             .header(header)
+            .responsive_layout()
             .items(options)
             .padded()
             .select_one()?
         {
-            crate::menu_utils::DialogOutcome::Submitted(option) => {
-                if option.contains("as is") {
-                    Ok(Some(selected_path.to_path_buf()))
-                } else {
-                    Ok(Some(alternative_path))
-                }
-            }
-            crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
+            DialogOutcome::Submitted(option) => Ok(Some(option.path)),
+            DialogOutcome::Cancelled => Ok(None),
         }
     } else {
         Ok(None)
     }
 }
+
+/// What to do when the picked folder is named differently than the backed-up one.
+#[derive(Clone, Copy)]
+enum FolderNameChoice {
+    /// Use the picked folder as the save path.
+    KeepSelected,
+    /// Use a folder with the backed-up name inside the picked one.
+    AppendOriginal,
+}
+
+#[derive(Clone)]
+struct FolderNameOption {
+    choice: FolderNameChoice,
+    /// The save path this option leads to.
+    path: std::path::PathBuf,
+}
+
+impl FolderNameOption {
+    fn keep_selected(selected_path: &Path) -> Self {
+        Self {
+            choice: FolderNameChoice::KeepSelected,
+            path: selected_path.to_path_buf(),
+        }
+    }
+
+    fn append_original(alternative_path: &Path) -> Self {
+        Self {
+            choice: FolderNameChoice::AppendOriginal,
+            path: alternative_path.to_path_buf(),
+        }
+    }
+}
+
+impl FzfSelectable for FolderNameOption {
+    fn fzf_display_text(&self) -> String {
+        match self.choice {
+            FolderNameChoice::KeepSelected => format!(
+                "{} Use the selected path as is",
+                format_icon_colored(NerdFont::Folder, colors::LAVENDER)
+            ),
+            FolderNameChoice::AppendOriginal => format!(
+                "{} Append the original folder name",
+                format_icon_colored(NerdFont::FolderOpen, colors::TEAL)
+            ),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.choice {
+            FolderNameChoice::KeepSelected => "keep-selected",
+            FolderNameChoice::AppendOriginal => "append-original",
+        }
+        .to_string()
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        let (icon, title, summary) = match self.choice {
+            FolderNameChoice::KeepSelected => (
+                NerdFont::Folder,
+                "Use Selected Path",
+                "Keep the folder you picked as the save path.",
+            ),
+            FolderNameChoice::AppendOriginal => (
+                NerdFont::FolderOpen,
+                "Append Original Folder",
+                "Use a folder with the backed-up name inside the one you picked, matching the snapshot layout.",
+            ),
+        };
+
+        protocol::FzfPreview::Text(
+            PreviewBuilder::new()
+                .header(icon, title)
+                .text(summary)
+                .blank()
+                .field("Result", &self.path.display().to_string())
+                .build_string(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+    use crate::ui::text::strip_ansi;
+
+    fn path_info(display_path: &str, frequency: usize, devices: &[&str]) -> PathInfo {
+        PathInfo {
+            display_path: display_path.to_string(),
+            snapshot_paths: BTreeSet::new(),
+            frequency,
+            devices: devices.iter().map(|device| device.to_string()).collect(),
+            first_seen: "2024-01-01T10:00:00Z".to_string(),
+            last_seen: "2024-06-01T10:00:00Z".to_string(),
+        }
+    }
+
+    fn plain_preview(item: &impl FzfSelectable) -> String {
+        let protocol::FzfPreview::Text(text) = item.fzf_preview() else {
+            panic!("expected a text preview");
+        };
+        strip_ansi(&text)
+    }
+
+    #[test]
+    fn save_path_rows_pair_a_badge_with_the_usage() {
+        let info = path_info("~/.config/celeste", 1, &["desktop"]);
+        let row = info.fzf_display_text();
+        assert!(row.contains(&format_icon_colored(NerdFont::Folder, colors::LAVENDER)));
+        assert!(
+            strip_ansi(&row).ends_with("~/.config/celeste  (used 1 time on 1 device: desktop)"),
+            "{row:?}"
+        );
+        assert_eq!(
+            info.summary(),
+            "~/.config/celeste (used 1 time on 1 device: desktop)"
+        );
+
+        assert_eq!(
+            path_info("~/saves", 3, &["desktop"]).usage(),
+            "used 3 times on 1 device: desktop"
+        );
+    }
+
+    #[test]
+    fn save_path_previews_are_styled() {
+        let text = plain_preview(&path_info("~/.config/celeste", 2, &["desktop"]));
+        assert!(text.contains('─'), "missing the styled header: {text}");
+        for expected in [
+            "Save Path",
+            "Path:",
+            "~/.config/celeste",
+            "Snapshots: 2 snapshots",
+            "Devices: 1 unique device",
+            "Devices Using This Path",
+            "• desktop",
+            "Usage Timeline",
+            "First seen:",
+            "2024-01-01 10:00:00",
+            "Last seen:",
+            "2024-06-01 10:00:00",
+        ] {
+            assert!(
+                text.contains(expected),
+                "{expected:?} missing from:\n{text}"
+            );
+        }
+        assert!(!text.contains("SAVE PATH DETAILS"));
+    }
+
+    #[test]
+    fn custom_path_row_matches_the_manual_entry_style() {
+        let custom = SavePathOption::custom();
+        assert!(
+            custom
+                .fzf_display_text()
+                .contains(&format_icon_colored(NerdFont::Edit, colors::BLUE))
+        );
+        assert!(plain_preview(&custom).contains("Enter a Different Path"));
+
+        let snapshot = SavePathOption::snapshot(path_info("~/saves", 1, &["desktop"]));
+        assert_eq!(snapshot.fzf_key(), "~/saves");
+        assert!(plain_preview(&snapshot).contains("Devices Using This Path"));
+    }
+
+    #[test]
+    fn folder_name_mismatch_returns_the_chosen_path_or_nothing() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let picked = temp.path().join("picked");
+        // A matching folder name needs no choice at all.
+        assert_eq!(
+            handle_differently_named_folders(&picked, "/tmp/picked")?,
+            None
+        );
+
+        let _mock = MockQueue::new()
+            .select_index(0)
+            .select_index(1)
+            .cancel_selection()
+            .guard();
+        assert_eq!(
+            handle_differently_named_folders(&picked, "/tmp/SaveData")?,
+            Some(picked.clone())
+        );
+        assert_eq!(
+            handle_differently_named_folders(&picked, "/tmp/SaveData")?,
+            Some(picked.join("SaveData"))
+        );
+        assert_eq!(
+            handle_differently_named_folders(&picked, "/tmp/SaveData")?,
+            None
+        );
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
 
     #[test]
     fn test_normalize_path_for_cross_device() {

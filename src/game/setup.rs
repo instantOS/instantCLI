@@ -11,7 +11,8 @@ use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::games::{AddGameOptions, GameManager};
 use crate::game::platforms::{LaunchCommandBuilderContext, build_optional_launch_command};
 use crate::menu::protocol;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use install::SetupStepOutcome;
 
@@ -36,6 +37,9 @@ pub fn setup_uninstalled_games() -> Result<()> {
     }
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
+    // The list reopens after every finished or cancelled task; keep the
+    // cursor on the game the user was working on.
+    let mut cursor = MenuCursor::new();
 
     loop {
         let snapshot_overview = restic::collect_snapshot_overview(&game_config)?;
@@ -56,7 +60,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
             return Ok(());
         }
 
-        let selection = prompt_installation_choice(&candidates)?;
+        let selection = prompt_installation_choice(&candidates, &mut cursor)?;
 
         match selection {
             Selection::Candidate(candidate) => {
@@ -74,7 +78,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
                 installations = InstallationsConfig::load()
                     .context("Failed to reload installations configuration")?;
             }
-            Selection::Done | Selection::Cancelled => break,
+            Selection::Back | Selection::Cancelled => break,
         }
     }
 
@@ -162,13 +166,32 @@ impl CandidateCategory {
             CandidateCategory::InstallationWithoutGame => 3,
         }
     }
+
+    /// The icon shown in the badge of the menu row and in the preview.
+    fn icon(self) -> NerdFont {
+        match self {
+            CandidateCategory::MissingInstallation => NerdFont::Folder,
+            CandidateCategory::MissingDependencies => NerdFont::Package,
+            CandidateCategory::SnapshotWithoutGame => NerdFont::BackupRestore,
+            CandidateCategory::InstallationWithoutGame => NerdFont::FileConfig,
+        }
+    }
+
+    fn color(self) -> &'static str {
+        match self {
+            CandidateCategory::MissingInstallation => colors::PEACH,
+            CandidateCategory::MissingDependencies => colors::YELLOW,
+            CandidateCategory::SnapshotWithoutGame => colors::BLUE,
+            CandidateCategory::InstallationWithoutGame => colors::MAUVE,
+        }
+    }
 }
 
 #[derive(Clone)]
 enum Selection {
     Candidate(SetupCandidate),
     Manual,
-    Done,
+    Back,
     Cancelled,
 }
 
@@ -181,7 +204,7 @@ struct CandidateOption {
 enum CandidateOptionKind {
     Candidate(SetupCandidate),
     Manual,
-    Done,
+    Back,
 }
 
 impl CandidateOption {
@@ -197,59 +220,97 @@ impl CandidateOption {
         }
     }
 
-    fn done() -> Self {
+    fn back() -> Self {
         Self {
-            kind: CandidateOptionKind::Done,
+            kind: CandidateOptionKind::Back,
         }
     }
+}
+
+/// Rows of the setup list: every candidate, then the manual entry and the
+/// way back to the game menu.
+fn candidate_options(candidates: &[SetupCandidate]) -> Vec<CandidateOption> {
+    let mut options: Vec<CandidateOption> = candidates
+        .iter()
+        .cloned()
+        .map(CandidateOption::candidate)
+        .collect();
+    options.push(CandidateOption::manual());
+    options.push(CandidateOption::back());
+    options
 }
 
 impl FzfSelectable for CandidateOption {
     fn fzf_display_text(&self) -> String {
         match &self.kind {
             CandidateOptionKind::Candidate(candidate) => candidate.summary_line(),
-            CandidateOptionKind::Manual => {
-                format!("{} Enter a new game manually", char::from(NerdFont::Edit))
-            }
-            CandidateOptionKind::Done => {
-                format!("{} Finish game setup", char::from(NerdFont::Check))
-            }
+            CandidateOptionKind::Manual => format!(
+                "{} Enter a new game manually",
+                format_icon_colored(NerdFont::Edit, colors::BLUE)
+            ),
+            CandidateOptionKind::Back => format!("{} Back", format_back_icon()),
+        }
+    }
+
+    /// A candidate is identified by its game, so the cursor can follow it
+    /// when its pending task changes and its label with it.
+    fn fzf_key(&self) -> String {
+        match &self.kind {
+            CandidateOptionKind::Candidate(candidate) => candidate.name.clone(),
+            CandidateOptionKind::Manual => "!__manual__".to_string(),
+            CandidateOptionKind::Back => "!__back__".to_string(),
         }
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
         match &self.kind {
             CandidateOptionKind::Candidate(candidate) => candidate.preview(),
-            CandidateOptionKind::Manual => protocol::FzfPreview::Text(format!(
-                "{} Choose this to run the interactive game addition flow.",
-                char::from(NerdFont::Info)
-            )),
-            CandidateOptionKind::Done => {
-                protocol::FzfPreview::Text("Exit the setup assistant.".to_string())
-            }
+            CandidateOptionKind::Manual => PreviewBuilder::new()
+                .header(NerdFont::Edit, "Manual Entry")
+                .text("Enter the game's details by hand.")
+                .blank()
+                .text("You will be prompted for:")
+                .bullet("Game name")
+                .bullet("Description (optional)")
+                .bullet("Launch command (optional)")
+                .bullet("Save data path")
+                .build(),
+            CandidateOptionKind::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Back")
+                .text("Leave the setup assistant.")
+                .blank()
+                .subtext("Games that still need setup are offered again next time.")
+                .build(),
         }
     }
 }
 
 impl SetupCandidate {
+    /// Menu row: a badge for the kind of setup, the game, and what it needs.
     fn summary_line(&self) -> String {
-        let icon = char::from(NerdFont::Gamepad);
+        let category = self.category;
+        format!(
+            "{} {}  {}",
+            format_icon_colored(category.icon(), category.color()),
+            self.name,
+            format_with_color(&format!("— {}", self.task_hint()), category.color())
+        )
+    }
+
+    /// Short description of the setup this candidate still needs.
+    fn task_hint(&self) -> String {
         match self.category {
             CandidateCategory::MissingInstallation => {
                 if self.snapshot.is_some() {
-                    format!(
-                        "{icon} {}  — Configure save path (backups available)",
-                        self.name
-                    )
+                    "Configure save path (backups available)".to_string()
                 } else {
-                    format!("{icon} {}  — Configure save path", self.name)
+                    "Configure save path".to_string()
                 }
             }
             CandidateCategory::MissingDependencies => {
                 let missing = self.missing_dependencies.len();
                 format!(
-                    "{icon} {}  — Install {missing} pending {}",
-                    self.name,
+                    "Install {missing} pending {}",
                     if missing == 1 {
                         "dependency"
                     } else {
@@ -268,19 +329,202 @@ impl SetupCandidate {
                 } else {
                     "snapshots"
                 };
-                format!(
-                    "{icon} {}  — Backups detected ({snapshot_count} {snapshot_label})",
-                    self.name
-                )
+                format!("Backups detected ({snapshot_count} {snapshot_label})")
             }
-            CandidateCategory::InstallationWithoutGame => {
-                format!("{icon} {}  — Add entry to games.toml", self.name)
-            }
+            CandidateCategory::InstallationWithoutGame => "Add entry to games.toml".to_string(),
         }
     }
 
     fn preview(&self) -> protocol::FzfPreview {
-        protocol::FzfPreview::Text(SetupPreview::new(self).render())
+        protocol::FzfPreview::Text(self.build_preview())
+    }
+
+    /// What choosing this candidate leads to.
+    fn next_step(&self) -> String {
+        match self.category {
+            CandidateCategory::MissingInstallation if self.snapshot.is_some() => {
+                "Press Enter to choose the save path, then decide between the backup and local saves."
+            }
+            CandidateCategory::MissingInstallation => {
+                "Press Enter to choose where this game stores its saves."
+            }
+            CandidateCategory::MissingDependencies if self.missing_dependencies.len() > 1 => {
+                "Press Enter to choose which dependency to install first."
+            }
+            CandidateCategory::MissingDependencies => {
+                "Press Enter to install the missing dependency."
+            }
+            CandidateCategory::SnapshotWithoutGame => {
+                "Press Enter to register the game, choose its save path and restore a backup."
+            }
+            CandidateCategory::InstallationWithoutGame => {
+                "Press Enter to register the game with a description and launch command."
+            }
+        }
+        .to_string()
+    }
+
+    fn build_preview(&self) -> String {
+        let builder = PreviewBuilder::new()
+            .header(self.category.icon(), &self.name)
+            .line(
+                self.category.color(),
+                Some(self.category.icon()),
+                &self.status_text(),
+            );
+        let builder = self.add_pending_tasks(builder);
+        let builder = self.add_game_details(builder);
+        let builder = self.add_installation(builder);
+        let builder = self.add_snapshots(builder);
+
+        builder.blank().subtext(&self.next_step()).build_string()
+    }
+
+    fn add_pending_tasks(&self, mut builder: PreviewBuilder) -> PreviewBuilder {
+        let mut tasks = Vec::new();
+        if self.game.is_none() {
+            tasks.push("Missing games.toml entry".to_string());
+        }
+        if self.installation.is_none() {
+            tasks.push("Save path not configured on this device".to_string());
+        }
+        if !self.missing_dependencies.is_empty() {
+            let dependencies = self
+                .missing_dependencies
+                .iter()
+                .map(|dependency| {
+                    format!("{} ({})", dependency.id, kind_label(dependency.source_type))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            tasks.push(format!("Missing dependencies: {dependencies}"));
+        }
+        if tasks.is_empty() {
+            return builder;
+        }
+
+        builder = builder
+            .blank()
+            .separator()
+            .line(colors::YELLOW, Some(NerdFont::Warning), "Pending Tasks")
+            .blank();
+        for task in &tasks {
+            builder = builder.bullet(task);
+        }
+        builder
+    }
+
+    fn add_game_details(&self, mut builder: PreviewBuilder) -> PreviewBuilder {
+        let Some(game) = self.game.as_ref() else {
+            return builder;
+        };
+        let description = game
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|description| !description.is_empty());
+        let command = game
+            .launch_command
+            .as_ref()
+            .map(ToString::to_string)
+            .map(|command| command.trim().to_string())
+            .filter(|command| !command.is_empty());
+        if description.is_none() && command.is_none() {
+            return builder;
+        }
+
+        builder = builder
+            .blank()
+            .separator()
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::Gamepad), "Game")
+            .blank();
+        if let Some(description) = description {
+            builder = builder.field_indented("Description", description);
+        }
+        if let Some(command) = &command {
+            builder = builder.field_indented("Launch command", command);
+        }
+        builder
+    }
+
+    fn add_installation(&self, mut builder: PreviewBuilder) -> PreviewBuilder {
+        let Some(installation) = self.installation.as_ref() else {
+            return builder;
+        };
+        let Ok(saves) = installation.owned() else {
+            return builder;
+        };
+
+        builder = builder
+            .blank()
+            .separator()
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::Desktop), "This Device")
+            .blank()
+            .field_indented("Save Path", &saves.save_path.display_string());
+
+        if let Some(checkpoint) = saves.nearest_checkpoint.as_deref() {
+            builder = builder.field_indented("Checkpoint", checkpoint);
+        }
+
+        if !installation.dependencies.is_empty() {
+            let installed = installation
+                .dependencies
+                .iter()
+                .map(|dependency| dependency.dependency_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            builder = builder.field_indented("Dependencies", &installed);
+        }
+
+        builder
+    }
+
+    fn add_snapshots(&self, mut builder: PreviewBuilder) -> PreviewBuilder {
+        let Some(snapshot) = self.snapshot.as_ref() else {
+            return builder;
+        };
+
+        builder = builder
+            .blank()
+            .separator()
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::BackupRestore), "Backups")
+            .blank()
+            .field_indented("Snapshots", &snapshot.snapshot_count.to_string());
+
+        if let Some(timestamp) = snapshot.latest_snapshot_time.as_deref().and_then(|iso| {
+            restic::format_snapshot_timestamp(iso, snapshot.latest_snapshot_host.as_deref())
+        }) {
+            builder = builder.field_indented("Latest backup", &timestamp);
+        }
+
+        if !snapshot.hosts.is_empty() {
+            let hosts = snapshot
+                .hosts
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            builder = builder.field_indented("Hosts", &hosts);
+        }
+
+        if !snapshot.unique_paths.is_empty() {
+            const MAX_SUGGESTED_PATHS: usize = 6;
+            builder = builder.blank().subtext("Suggested save paths:");
+            for path_info in snapshot.unique_paths.iter().take(MAX_SUGGESTED_PATHS) {
+                builder = builder.bullet(&path_info.summary());
+            }
+            if snapshot.unique_paths.len() > MAX_SUGGESTED_PATHS {
+                builder = builder.subtext(&format!(
+                    "  … and {} more",
+                    snapshot.unique_paths.len() - MAX_SUGGESTED_PATHS
+                ));
+            }
+        }
+
+        builder
     }
 
     fn status_text(&self) -> String {
@@ -345,26 +589,41 @@ impl SetupTask {
         }
     }
 
-    fn preview(&self, game_name: &str) -> String {
+    fn icon(&self) -> NerdFont {
         match self {
-            SetupTask::ConfigureSavePath => format!(
-                "{} Configure the save location for '{game_name}'.
+            SetupTask::ConfigureSavePath => NerdFont::Folder,
+            SetupTask::ConfigureDependency { .. } => NerdFont::Package,
+        }
+    }
 
-Selecting this will prompt for the correct save path and optionally restore the latest backup.",
-                char::from(NerdFont::Folder)
-            ),
+    fn color(&self) -> &'static str {
+        match self {
+            SetupTask::ConfigureSavePath => colors::PEACH,
+            SetupTask::ConfigureDependency { .. } => colors::YELLOW,
+        }
+    }
+
+    fn build_preview(&self, game_name: &str) -> String {
+        match self {
+            SetupTask::ConfigureSavePath => PreviewBuilder::new()
+                .header(NerdFont::Folder, "Configure Save Path")
+                .text(&format!("Configure the save location for '{game_name}'."))
+                .blank()
+                .text("Selecting this will prompt for the correct save path")
+                .text("and optionally restore the latest backup.")
+                .build_string(),
             SetupTask::ConfigureDependency { id, source_type } => {
-                let kind = if source_type.is_file() {
-                    "file"
-                } else {
-                    "directory"
-                };
-                format!(
-                    "{} Install dependency '{id}'.
-
-The dependency stores a {kind} and will be restored from the latest backup if available.",
-                    char::from(NerdFont::Info)
-                )
+                let kind = kind_label(*source_type);
+                PreviewBuilder::new()
+                    .header(NerdFont::Package, "Install Dependency")
+                    .field("Dependency", id)
+                    .field("Stores", kind)
+                    .blank()
+                    .text(&format!(
+                        "The dependency stores a {kind} and will be restored"
+                    ))
+                    .text("from the latest backup if available.")
+                    .build_string()
             }
         }
     }
@@ -413,37 +672,34 @@ fn prompt_task_choice(game_name: &str, tasks: &[SetupTask]) -> Result<Option<Set
         .map(|task| TaskOption::new(game_name, task))
         .collect();
 
-    match FzfWrapper::builder()
-        .prompt("step")
+    let selection = FzfWrapper::builder()
+        .prompt("Select")
         .header(
-            HeaderBuilder::new(
-                NerdFont::Info,
-                format!("Select the next setup step for '{game_name}'"),
-            )
-            .build(),
+            HeaderBuilder::new(NerdFont::Wrench, format!("Set up '{game_name}'"))
+                .subtitle("Choose the next setup step.")
+                .build(),
         )
+        .responsive_layout()
         .items(options)
-        .select_one()?
-    {
-        crate::menu_utils::DialogOutcome::Submitted(option) => Ok(Some(option.task)),
-        crate::menu_utils::DialogOutcome::Cancelled => Ok(None),
-    }
+        .padded()
+        .select_one()?;
+
+    Ok(match selection {
+        DialogOutcome::Submitted(option) => Some(option.task),
+        DialogOutcome::Cancelled => None,
+    })
 }
 
 #[derive(Clone)]
 struct TaskOption {
-    label: String,
-    preview: String,
+    game_name: String,
     task: SetupTask,
 }
 
 impl TaskOption {
     fn new(game_name: &str, task: SetupTask) -> Self {
-        let label = task.label(game_name);
-        let preview = task.preview(game_name);
         Self {
-            label,
-            preview,
+            game_name: game_name.to_string(),
             task,
         }
     }
@@ -451,46 +707,69 @@ impl TaskOption {
 
 impl FzfSelectable for TaskOption {
     fn fzf_display_text(&self) -> String {
-        self.label.clone()
+        format!(
+            "{} {}",
+            format_icon_colored(self.task.icon(), self.task.color()),
+            self.task.label(&self.game_name)
+        )
+    }
+
+    fn fzf_key(&self) -> String {
+        match &self.task {
+            SetupTask::ConfigureSavePath => "save-path".to_string(),
+            SetupTask::ConfigureDependency { id, .. } => format!("dependency:{id}"),
+        }
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
-        protocol::FzfPreview::Text(self.preview.clone())
+        protocol::FzfPreview::Text(self.task.build_preview(&self.game_name))
     }
 }
 
-fn prompt_installation_choice(candidates: &[SetupCandidate]) -> Result<Selection> {
-    let mut options: Vec<CandidateOption> = candidates
-        .iter()
-        .cloned()
-        .map(CandidateOption::candidate)
-        .collect();
-    options.push(CandidateOption::manual());
-    options.push(CandidateOption::done());
+fn prompt_installation_choice(
+    candidates: &[SetupCandidate],
+    cursor: &mut MenuCursor,
+) -> Result<Selection> {
+    let options = candidate_options(candidates);
 
-    let header = if candidates.is_empty() {
-        HeaderBuilder::new(NerdFont::Info, "No pending games detected")
-            .subtitle("Choose an option below.")
-            .build()
+    let subtitle = if candidates.is_empty() {
+        "No pending games detected. Choose an option below.".to_string()
     } else {
-        HeaderBuilder::new(NerdFont::Info, "Select a game to configure")
-            .subtitle(format!("Pending games: {}.", candidates.len()))
-            .build()
+        format!(
+            "{} {} setup.",
+            candidates.len(),
+            if candidates.len() == 1 {
+                "game needs"
+            } else {
+                "games need"
+            }
+        )
     };
+    let header = HeaderBuilder::new(NerdFont::Wrench, "Set Up Existing Games")
+        .subtitle(subtitle)
+        .build();
 
-    match FzfWrapper::builder()
-        .prompt("setup")
+    let mut builder = FzfWrapper::builder()
+        .prompt("Select")
         .header(header)
-        .items(options)
-        .select_one()?
-    {
-        crate::menu_utils::DialogOutcome::Submitted(option) => match option.kind {
-            CandidateOptionKind::Candidate(candidate) => Ok(Selection::Candidate(candidate)),
-            CandidateOptionKind::Manual => Ok(Selection::Manual),
-            CandidateOptionKind::Done => Ok(Selection::Done),
-        },
-        crate::menu_utils::DialogOutcome::Cancelled => Ok(Selection::Cancelled),
+        .responsive_layout();
+    if let Some(index) = cursor.initial_index(&options) {
+        builder = builder.initial_index(index);
     }
+
+    let selection = builder.items(options.clone()).padded().select_one()?;
+
+    Ok(match selection {
+        DialogOutcome::Submitted(option) => {
+            cursor.update(&option, &options);
+            match option.kind {
+                CandidateOptionKind::Candidate(candidate) => Selection::Candidate(candidate),
+                CandidateOptionKind::Manual => Selection::Manual,
+                CandidateOptionKind::Back => Selection::Back,
+            }
+        }
+        DialogOutcome::Cancelled => Selection::Cancelled,
+    })
 }
 
 fn handle_candidate(
@@ -605,174 +884,11 @@ fn ensure_game_entry(
     Ok(true)
 }
 
-struct SetupPreview<'a> {
-    candidate: &'a SetupCandidate,
-    sections: Vec<String>,
-}
-
-impl<'a> SetupPreview<'a> {
-    fn new(candidate: &'a SetupCandidate) -> Self {
-        Self {
-            candidate,
-            sections: Vec::new(),
-        }
-    }
-
-    fn render(mut self) -> String {
-        self.sections.push(self.overview_section());
-        if let Some(pending) = self.pending_tasks_section() {
-            self.sections.push(pending);
-        }
-        if let Some(game_details) = self.game_details_section() {
-            self.sections.push(game_details);
-        }
-        if let Some(installation_details) = self.installation_section() {
-            self.sections.push(installation_details);
-        }
-        if let Some(snapshot_details) = self.snapshot_section() {
-            self.sections.push(snapshot_details);
-        }
-
-        self.sections.join("\n\n")
-    }
-
-    fn overview_section(&self) -> String {
-        format!(
-            "{} GAME OVERVIEW\n\nName: {}\nStatus: {}",
-            char::from(NerdFont::Gamepad),
-            self.candidate.name,
-            self.candidate.status_text()
-        )
-    }
-
-    fn pending_tasks_section(&self) -> Option<String> {
-        let mut pending = Vec::new();
-
-        if self.candidate.game.is_none() {
-            pending.push("• Missing games.toml entry".to_string());
-        }
-
-        if self.candidate.installation.is_none() {
-            pending.push("• Save path not configured on this device".to_string());
-        }
-
-        if !self.candidate.missing_dependencies.is_empty() {
-            let mut lines = vec!["• Missing dependencies:".to_string()];
-            for dependency in &self.candidate.missing_dependencies {
-                let label = if dependency.source_type.is_file() {
-                    "file"
-                } else {
-                    "directory"
-                };
-                lines.push(format!("  ◦ {} ({label})", dependency.id));
-            }
-            pending.push(lines.join("\n"));
-        }
-
-        if pending.is_empty() {
-            None
-        } else {
-            Some(format!(
-                "{} PENDING TASKS\n\n{}",
-                char::from(NerdFont::Info),
-                pending.join("\n")
-            ))
-        }
-    }
-
-    fn game_details_section(&self) -> Option<String> {
-        let game = self.candidate.game.as_ref()?;
-        let mut details = Vec::new();
-
-        if let Some(desc) = game.description.as_deref() {
-            let trimmed = desc.trim();
-            if !trimmed.is_empty() {
-                details.push(format!("Description: {}", trimmed));
-            }
-        }
-
-        if let Some(cmd) = game.launch_command.as_ref().map(ToString::to_string) {
-            let trimmed = cmd.trim();
-            if !trimmed.is_empty() {
-                details.push(format!("Launch command: {}", trimmed));
-            }
-        }
-
-        if details.is_empty() {
-            None
-        } else {
-            Some(details.join("\n"))
-        }
-    }
-
-    fn installation_section(&self) -> Option<String> {
-        let installation = self.candidate.installation.as_ref()?;
-        let mut info = Vec::new();
-
-        info.push(format!(
-            "{} Existing save path: {}",
-            char::from(NerdFont::Folder),
-            installation.owned().ok()?.save_path.display_string()
-        ));
-
-        if let Some(checkpoint) = installation.owned().ok()?.nearest_checkpoint.as_deref() {
-            info.push(format!("Nearest checkpoint: {}", checkpoint));
-        }
-
-        if !installation.dependencies.is_empty() {
-            let deps = installation
-                .dependencies
-                .iter()
-                .map(|dep| format!("  • {}", dep.dependency_id))
-                .collect::<Vec<_>>()
-                .join("\n");
-            info.push(format!("Installed dependencies:\n{deps}"));
-        }
-
-        Some(info.join("\n"))
-    }
-
-    fn snapshot_section(&self) -> Option<String> {
-        let snapshot = self.candidate.snapshot.as_ref()?;
-        let mut lines = Vec::new();
-
-        lines.push(format!(
-            "{} Restic snapshots: {}",
-            char::from(NerdFont::BackupRestore),
-            snapshot.snapshot_count
-        ));
-
-        if let Some(timestamp) = snapshot.latest_snapshot_time.as_deref().and_then(|iso| {
-            restic::format_snapshot_timestamp(iso, snapshot.latest_snapshot_host.as_deref())
-        }) {
-            lines.push(format!("Latest backup: {}", timestamp));
-        }
-
-        if !snapshot.hosts.is_empty() {
-            let hosts = snapshot
-                .hosts
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ");
-            lines.push(format!("Hosts: {}", hosts));
-        }
-
-        if !snapshot.unique_paths.is_empty() {
-            const MAX_SUGGESTED_PATHS: usize = 6;
-            lines.push("Suggested save paths:".to_string());
-            for path_info in snapshot.unique_paths.iter().take(MAX_SUGGESTED_PATHS) {
-                lines.push(format!("  • {}", path_info.fzf_display_text()));
-            }
-            if snapshot.unique_paths.len() > MAX_SUGGESTED_PATHS {
-                lines.push(format!(
-                    "  • … and {} more",
-                    snapshot.unique_paths.len() - MAX_SUGGESTED_PATHS
-                ));
-            }
-        }
-
-        Some(lines.join("\n"))
+/// Human-readable label for the kind of content a dependency stores.
+fn kind_label(kind: PathContentKind) -> &'static str {
+    match kind {
+        PathContentKind::Directory => "directory",
+        PathContentKind::File => "file",
     }
 }
 
@@ -913,5 +1029,239 @@ impl<'a> CandidateCollector<'a> {
         });
 
         self.candidates
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::TildePath;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
+    use crate::ui::text::strip_ansi;
+
+    const CATEGORIES: [CandidateCategory; 4] = [
+        CandidateCategory::MissingInstallation,
+        CandidateCategory::MissingDependencies,
+        CandidateCategory::SnapshotWithoutGame,
+        CandidateCategory::InstallationWithoutGame,
+    ];
+
+    fn candidate(name: &str, category: CandidateCategory) -> SetupCandidate {
+        SetupCandidate {
+            name: name.to_string(),
+            category,
+            game: Some(Game::new(name)),
+            installation: None,
+            snapshot: None,
+            missing_dependencies: Vec::new(),
+        }
+    }
+
+    fn dependency(id: &str) -> GameDependency {
+        GameDependency {
+            id: id.to_string(),
+            source_path: "/tmp/dependency".to_string(),
+            source_type: PathContentKind::Directory,
+        }
+    }
+
+    fn backups(count: usize) -> restic::SnapshotOverview {
+        restic::SnapshotOverview {
+            snapshot_count: count,
+            hosts: BTreeSet::new(),
+            latest_snapshot_id: None,
+            latest_snapshot_time: None,
+            latest_snapshot_host: None,
+            unique_paths: Vec::new(),
+        }
+    }
+
+    fn plain_preview(item: &impl FzfSelectable) -> String {
+        let protocol::FzfPreview::Text(text) = item.fzf_preview() else {
+            panic!("expected a text preview");
+        };
+        strip_ansi(&text)
+    }
+
+    #[test]
+    fn candidate_rows_pair_a_badge_with_the_pending_setup() {
+        for category in CATEGORIES {
+            let row = candidate("Hades", category).summary_line();
+            let hint = candidate("Hades", category).task_hint();
+            assert!(
+                row.contains(&format_icon_colored(category.icon(), category.color())),
+                "{row:?}"
+            );
+            assert!(row.contains("Hades"), "{row:?}");
+            assert!(
+                row.contains(&format_with_color(&format!("— {hint}"), category.color())),
+                "{row:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hints_count_what_is_pending() {
+        let mut dependencies = candidate("Hades", CandidateCategory::MissingDependencies);
+        dependencies.missing_dependencies = vec![dependency("dxvk")];
+        assert_eq!(dependencies.task_hint(), "Install 1 pending dependency");
+        dependencies.missing_dependencies.push(dependency("proton"));
+        assert_eq!(dependencies.task_hint(), "Install 2 pending dependencies");
+
+        let mut restored = candidate("Sable", CandidateCategory::SnapshotWithoutGame);
+        restored.snapshot = Some(backups(1));
+        assert_eq!(restored.task_hint(), "Backups detected (1 snapshot)");
+    }
+
+    #[test]
+    fn candidate_previews_are_styled_and_list_pending_tasks() {
+        let text = plain_preview(&CandidateOption::candidate(candidate(
+            "Celeste",
+            CandidateCategory::MissingInstallation,
+        )));
+        assert!(text.contains('─'), "missing the styled header: {text}");
+        assert!(text.contains("Pending Tasks"));
+        assert!(text.contains("• Save path not configured on this device"));
+        assert!(text.contains("Game registered (needs installation on this device)"));
+        assert!(text.contains("Press Enter to choose where this game stores its saves."));
+        assert!(!text.contains("GAME OVERVIEW"));
+
+        let mut backed_up = candidate("Celeste", CandidateCategory::MissingInstallation);
+        backed_up.snapshot = Some(backups(3));
+        let text = plain_preview(&CandidateOption::candidate(backed_up));
+        assert!(text.contains("Backups"));
+        assert!(text.contains("Snapshots:"));
+        assert!(text.contains("3"));
+        assert!(
+            text.contains(
+                "Press Enter to choose the save path, then decide between the backup and"
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn previews_show_the_game_this_device_and_its_backups() {
+        let mut game = Game::new("Hades");
+        game.description = Some("A roguelike".to_string());
+        let mut dependencies = candidate("Hades", CandidateCategory::MissingDependencies);
+        dependencies.game = Some(game);
+        dependencies.missing_dependencies = vec![dependency("dxvk")];
+        dependencies.installation = Some(GameInstallation::with_kind(
+            "Hades",
+            TildePath::new("/tmp/hades".into()),
+            PathContentKind::Directory,
+        ));
+        dependencies.snapshot = Some(backups(2));
+
+        let text = plain_preview(&CandidateOption::candidate(dependencies));
+        for expected in [
+            "Game",
+            "Description:",
+            "A roguelike",
+            "• Missing dependencies: dxvk (directory)",
+            "This Device",
+            "Save Path:",
+            "Backups",
+            "Snapshots: 2",
+            "Press Enter to install the missing dependency.",
+        ] {
+            assert!(
+                text.contains(expected),
+                "{expected:?} missing from:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn candidates_are_keyed_by_game_so_the_cursor_can_follow_them() {
+        let mut dependencies = candidate("Hades", CandidateCategory::MissingDependencies);
+        let key = CandidateOption::candidate(dependencies.clone()).fzf_key();
+        dependencies.missing_dependencies = vec![dependency("dxvk")];
+
+        assert_eq!(key, "Hades");
+        assert_eq!(CandidateOption::candidate(dependencies).fzf_key(), key);
+        assert_eq!(CandidateOption::manual().fzf_key(), "!__manual__");
+        assert_eq!(CandidateOption::back().fzf_key(), "!__back__");
+    }
+
+    #[test]
+    fn fixed_rows_match_the_other_game_menus() {
+        let manual = CandidateOption::manual();
+        assert!(
+            manual
+                .fzf_display_text()
+                .contains(&format_icon_colored(NerdFont::Edit, colors::BLUE))
+        );
+        assert!(plain_preview(&manual).contains("Game name"));
+
+        let back = CandidateOption::back();
+        assert!(back.fzf_display_text().contains(&format_back_icon()));
+        assert!(plain_preview(&back).contains("Leave the setup assistant."));
+    }
+
+    #[test]
+    fn setup_list_keeps_the_cursor_on_the_game_being_set_up() -> Result<()> {
+        let candidates = [
+            candidate("Alpha", CandidateCategory::MissingInstallation),
+            candidate("Beta", CandidateCategory::MissingInstallation),
+            candidate("Gamma", CandidateCategory::SnapshotWithoutGame),
+        ];
+        let mut cursor = MenuCursor::new();
+        let _mock = MockQueue::new().select_index(1).cancel_selection().guard();
+
+        assert!(matches!(
+            prompt_installation_choice(&candidates, &mut cursor)?,
+            Selection::Candidate(picked) if picked.name == "Beta"
+        ));
+        assert_eq!(
+            cursor.initial_index(&candidate_options(&candidates)),
+            Some(1),
+            "a cancelled task reopens the list on the same game"
+        );
+        // Beta is finished, so the game that took its row is focused next.
+        let remaining = [candidates[0].clone(), candidates[2].clone()];
+        assert_eq!(
+            cursor.initial_index(&candidate_options(&remaining)),
+            Some(1)
+        );
+
+        assert!(matches!(
+            prompt_installation_choice(&candidates, &mut cursor)?,
+            Selection::Cancelled
+        ));
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn task_chooser_returns_the_picked_step_and_nothing_when_dismissed() -> Result<()> {
+        let tasks = vec![
+            SetupTask::ConfigureDependency {
+                id: "dxvk".to_string(),
+                source_type: PathContentKind::Directory,
+            },
+            SetupTask::ConfigureDependency {
+                id: "proton".to_string(),
+                source_type: PathContentKind::Directory,
+            },
+        ];
+        let option = TaskOption::new("Hades", tasks[1].clone());
+        let row = option.fzf_display_text();
+        assert!(row.contains(&format_icon_colored(NerdFont::Package, colors::YELLOW)));
+        assert!(strip_ansi(&row).contains("Install dependency 'proton'"));
+        let text = plain_preview(&option);
+        assert!(text.contains('─'));
+        assert!(text.contains("Install Dependency"));
+        assert!(text.contains("Dependency:"));
+
+        let _mock = MockQueue::new().select_index(1).cancel_selection().guard();
+        assert!(matches!(
+            prompt_task_choice("Hades", &tasks)?,
+            Some(SetupTask::ConfigureDependency { id, .. }) if id == "proton"
+        ));
+        assert!(prompt_task_choice("Hades", &tasks)?.is_none());
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
     }
 }
