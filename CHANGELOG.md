@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0](https://github.com/instantOS/instantCLI/compare/v0.15.1...v0.16.0) - 2026-11-24
+
+### Added
+
+- expose noninteractive dual-boot discovery
+
+### Fixed
+
+- long standing xdg bug workaround
+- guide game launches through backup dependency setup
+- improve installer navigation and partition previews
+- support installation from Ubuntu live media
+- ins video cutting out words
+- tests
+
+### Other
+
+- Add Artix installation support and separate wizard availability from relevance
+- Resolve installer compatibility during immutable plan construction
+- Fix OpenRC shell quoting and saved mirror fallback
+- Refactor screen recording modules and guard audio cleanup
+- Refactor dot reset flow and repository action menus
+- improve ins open menu
+- add graphical ins open
+- fix placeholder thingy
+- add execute to ins open
+- sanity check for open
+- frecency for ins open binaries
+- bump
+- add agent friendly installer editing
+- clippy happy
+- Prepare live installer keyrings and isolate test fixtures
+- ins open retain ability to set itself as default
+- proper clearvoice progress reporting
+- init frecency sorting for games
+- prettier game setup
+- remove unused code and stale lint allowances
+- publish ins and ins-bin to the AUR
+
 ## [0.15.1](https://github.com/instantOS/instantCLI/compare/v0.15.0...v0.15.1) - 2026-11-16
 
 ### Fixed
