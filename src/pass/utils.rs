@@ -196,10 +196,13 @@ pub(super) fn write_export_file(destination: &Path, output: &[u8]) -> Result<()>
 
     if destination.exists()
         && !matches!(
-            FzfWrapper::confirm(&format!(
-                "{} already exists.\n\nOverwrite it?",
-                destination.display()
-            ))?,
+            FzfWrapper::builder()
+                .confirm(format!(
+                    "{} already exists.\n\nOverwrite it?",
+                    destination.display()
+                ))
+                .default_no()
+                .confirm_dialog()?,
             ConfirmResult::Yes
         )
     {
@@ -247,7 +250,10 @@ pub(super) fn maybe_confirm_overwrite(key: &str) -> Result<()> {
         return Ok(());
     }
 
-    let confirm = FzfWrapper::confirm(&format!("Entry '{key}' already exists.\n\nOverwrite it?"))?;
+    let confirm = FzfWrapper::builder()
+        .confirm(format!("Entry '{key}' already exists.\n\nOverwrite it?"))
+        .default_no()
+        .confirm_dialog()?;
     if matches!(confirm, ConfirmResult::Yes) {
         Ok(())
     } else {

@@ -392,6 +392,7 @@ fn handle_recipient_actions(
                         ))
                         .yes_text("De-authorize")
                         .no_text("Cancel")
+                        .default_no()
                         .confirm_dialog()?;
                     if confirm_result != crate::menu_utils::ConfirmResult::Yes {
                         continue;

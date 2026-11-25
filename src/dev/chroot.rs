@@ -753,6 +753,7 @@ fn confirm_unverified_root(mountpoint: &Path) -> Result<bool> {
         ))
         .yes_text("Chroot Anyway")
         .no_text("Abort")
+        .default_no()
         .confirm_dialog()?;
 
     Ok(matches!(result, ConfirmResult::Yes))

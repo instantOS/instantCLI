@@ -211,6 +211,7 @@ fn handle_steam_action(game_name: &str, launch_cmd: &str) -> Result<()> {
             ))
             .yes_text("Remove from Steam")
             .no_text("Keep it")
+            .default_no()
             .confirm_dialog()?
             == ConfirmResult::Yes
         {
@@ -271,6 +272,7 @@ fn handle_desktop_action(game_name: &str, launch_cmd: &str) -> Result<()> {
             ))
             .yes_text("Remove from Desktop")
             .no_text("Keep it")
+            .default_no()
             .confirm_dialog()?
             == ConfirmResult::Yes
         {

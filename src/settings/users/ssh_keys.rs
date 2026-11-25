@@ -382,6 +382,7 @@ fn manage_key(
                     .confirm(format!("Remove SSH key {:?}?", key.label()))
                     .yes_text("Remove key")
                     .no_text("Cancel")
+                    .default_no()
                     .confirm_dialog()?;
                 if matches!(result, crate::menu_utils::ConfirmResult::Yes) {
                     keys.remove_key_line(ctx, key)?;

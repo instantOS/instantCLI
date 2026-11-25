@@ -599,6 +599,7 @@ fn handle_delete_key(key: &EncryptionKeyKind, config: &DotfileConfig) -> Result<
         ))
         .yes_text("Delete")
         .no_text("Cancel")
+        .default_no()
         .confirm_dialog()?;
 
     if result != ConfirmResult::Yes {

@@ -118,6 +118,7 @@ pub fn handle_global_units_menu(config: &mut DotfileConfig, db: &Database) -> Re
                             .confirm(format!("Remove global unit '{}' ?", display))
                             .yes_text("Remove")
                             .no_text("Cancel")
+                            .default_no()
                             .confirm_dialog()?;
                         if matches!(confirm, ConfirmResult::Yes) {
                             crate::dot::unit_manager::remove_unit(&scope, config, db, &unit, None)?;
@@ -276,6 +277,7 @@ fn handle_manage_units(
                             .confirm(format!("Remove unit '{}' from {}?", display, repo_name))
                             .yes_text("Remove")
                             .no_text("Cancel")
+                            .default_no()
                             .confirm_dialog()?;
                         if matches!(confirm, ConfirmResult::Yes) {
                             metadata.units.retain(|entry| entry != &unit);

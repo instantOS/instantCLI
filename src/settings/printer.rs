@@ -94,6 +94,7 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
             .confirm("Disable printer services? Jobs will stop printing.")
             .yes_text("Disable")
             .no_text("Cancel")
+            .default_no()
             .confirm_dialog()?;
 
         if result != ConfirmResult::Yes {

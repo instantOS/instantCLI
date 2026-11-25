@@ -95,11 +95,15 @@ pub(crate) fn restore_owner(
     }
     println!("{}", owner.scope());
     if !force
-        && crate::menu_utils::FzfWrapper::confirm(&format!(
-            "{}\nRestore snapshot {}? Existing local saves will be replaced.",
-            owner.scope(),
-            snapshot.short_id
-        ))? != crate::menu_utils::ConfirmResult::Yes
+        && crate::menu_utils::FzfWrapper::builder()
+            .confirm(format!(
+                "{}\nRestore snapshot {}? Existing local saves will be replaced.",
+                owner.scope(),
+                snapshot.short_id
+            ))
+            .default_no()
+            .confirm_dialog()?
+            != crate::menu_utils::ConfirmResult::Yes
     {
         return Ok(());
     }
