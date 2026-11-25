@@ -76,6 +76,7 @@ impl WizardStep for PrepareDiskStep {
             .title(format!("Disk {device_name} is in use"))
             .yes_text("Unmount and continue")
             .no_text("Go back")
+            .default_no()
             .confirm_dialog()?;
 
         match confirmed {

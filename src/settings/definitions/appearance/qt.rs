@@ -26,9 +26,12 @@ impl Setting for ResetQt {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let confirmation = FzfWrapper::confirm(
-            "Are you sure you want to reset all Qt theme customizations? This will remove qt5ct, qt6ct, and Kvantum configurations.",
-        )?;
+        let confirmation = FzfWrapper::builder()
+            .confirm(
+                "Are you sure you want to reset all Qt theme customizations? This will remove qt5ct, qt6ct, and Kvantum configurations.",
+            )
+            .default_no()
+            .confirm_dialog()?;
 
         if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes)
             && let Ok(config_dir) = dirs::config_dir().context("Could not find config directory")

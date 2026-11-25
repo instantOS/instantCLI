@@ -93,6 +93,7 @@ fn confirm_empty_input(label: &str) -> Result<TextEditOutcome> {
         ))
         .yes_text("Clear Value")
         .no_text("Go Back")
+        .default_no()
         .confirm_dialog()?;
 
     Ok(match confirm {

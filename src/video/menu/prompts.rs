@@ -373,6 +373,7 @@ pub fn confirm_action(message: &str, yes_text: &str, no_text: &str) -> Result<Co
         .confirm(message)
         .yes_text(yes_text)
         .no_text(no_text)
+        .default_no()
         .confirm_dialog()
 }
 

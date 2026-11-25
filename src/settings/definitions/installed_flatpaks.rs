@@ -165,6 +165,7 @@ fn uninstall_flatpaks(app_ids: &[String]) -> Result<()> {
         .confirm(&confirm_msg)
         .yes_text("Uninstall")
         .no_text("Cancel")
+        .default_no()
         .confirm_dialog()?;
 
     if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {

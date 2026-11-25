@@ -426,10 +426,13 @@ fn handle_scan_dir_action(
             Ok(ActionResult::Stay)
         }
         ScanDirAction::Remove => {
-            let confirm = FzfWrapper::confirm(&format!(
-                "Remove {} from configured scan directories?",
-                resolved.display_path()
-            ))?;
+            let confirm = FzfWrapper::builder()
+                .confirm(format!(
+                    "Remove {} from configured scan directories?",
+                    resolved.display_path()
+                ))
+                .default_no()
+                .confirm_dialog()?;
             if matches!(confirm, ConfirmResult::Yes) {
                 remove_scan_directory(index)?;
                 Ok(ActionResult::Back)

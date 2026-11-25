@@ -269,7 +269,13 @@ fn confirm_auto_resize(
          Back up important data before proceeding.\n\nProceed with automatic resize?",
     );
 
-    Ok(matches!(FzfWrapper::confirm(&message)?, ConfirmResult::Yes))
+    Ok(matches!(
+        FzfWrapper::builder()
+            .confirm(&message)
+            .default_no()
+            .confirm_dialog()?,
+        ConfirmResult::Yes
+    ))
 }
 
 async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<StepOutcome> {

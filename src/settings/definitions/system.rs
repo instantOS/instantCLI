@@ -445,6 +445,7 @@ impl Setting for ClearPacmanCache {
             .confirm(message)
             .yes_text("Clear cache")
             .no_text("Keep cache")
+            .default_no()
             .confirm_dialog()?;
 
         if matches!(result, crate::menu_utils::ConfirmResult::Yes) {

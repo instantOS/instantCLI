@@ -175,6 +175,7 @@ fn remove_repo(
         ))
         .yes_text("Remove")
         .no_text("Cancel")
+        .default_no()
         .confirm_dialog()?;
 
     if !matches!(confirm, ConfirmResult::Yes) {
@@ -187,7 +188,13 @@ fn remove_repo(
         .no_text("Remove Files")
         .confirm_dialog()?;
 
-    let keep_files = matches!(keep_files_result, ConfirmResult::Yes);
+    let keep_files = match keep_files_result {
+        ConfirmResult::Yes => true,
+        ConfirmResult::No => false,
+        // Cancelling this second question aborts the removal entirely rather
+        // than silently choosing the destructive "Remove Files" branch.
+        ConfirmResult::Cancelled => return Ok(false),
+    };
 
     let command = RepoCommands::Remove {
         name: repo_name.to_string(),
@@ -260,6 +267,7 @@ fn confirm_make_writable(repo_name: &str) -> Result<bool> {
         ))
         .yes_text("Make Writable")
         .no_text("Cancel")
+        .default_no()
         .confirm_dialog()?;
 
     Ok(matches!(confirm, ConfirmResult::Yes))

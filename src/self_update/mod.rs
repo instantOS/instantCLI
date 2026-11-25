@@ -228,8 +228,9 @@ fn confirm_update() -> Result<bool> {
 
     Ok(Confirm::new()
         .with_prompt("Do you want to update?")
-        .default(true)
-        .interact()?)
+        .default(false)
+        .interact_opt()?
+        .unwrap_or(false))
 }
 
 /// Find the appropriate asset for the target architecture

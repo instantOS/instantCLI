@@ -125,7 +125,11 @@ fn delete(id: &str) -> Result<()> {
 
 fn clear(skip_confirmation: bool) -> Result<()> {
     if !skip_confirmation
-        && FzfWrapper::confirm("Permanently clear all clipboard history?")? != ConfirmResult::Yes
+        && FzfWrapper::builder()
+            .confirm("Permanently clear all clipboard history?")
+            .default_no()
+            .confirm_dialog()?
+            != ConfirmResult::Yes
     {
         return Ok(());
     }

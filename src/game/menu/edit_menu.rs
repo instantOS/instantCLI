@@ -188,6 +188,7 @@ fn confirm_discard_changes() -> Result<bool> {
         .confirm("You have unsaved changes. Exit without saving?")
         .yes_text("Exit Without Saving")
         .no_text("Go Back")
+        .default_no()
         .confirm_dialog()?;
 
     Ok(result == ConfirmResult::Yes)
