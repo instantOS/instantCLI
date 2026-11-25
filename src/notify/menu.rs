@@ -162,16 +162,6 @@ fn run_main_menu(
     loop {
         let (items, unread) = build_main_items(db, daemon_running, *sort)?;
 
-        if items.is_empty() {
-            emit(
-                Level::Info,
-                "notify.empty",
-                &format!("{} No notifications.", char::from(NerdFont::Bell)),
-                None,
-            );
-            return Ok(MenuAction::Exit);
-        }
-
         // When the menu is opened fresh (no prior cursor state), default to the
         // first notification — the options at the top are always visible and
         // immediately accessible via a single up-arrow press.
@@ -467,6 +457,21 @@ mod tests {
             notification_ids(&db, NotifySort::Application)?,
             [3, 2, 1, 4]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn empty_database_still_offers_the_fixed_actions() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let db = NotifyDb::open_at(&dir.path().join("notifications.db"))?;
+
+        let (items, unread) = build_main_items(&db, false, NotifySort::default())?;
+
+        assert_eq!(unread, 0);
+        assert_eq!(items.len(), 3);
+        assert!(matches!(items[0], NotifyMainItem::Close));
+        assert!(matches!(items[1], NotifyMainItem::Options));
+        assert!(matches!(items[2], NotifyMainItem::EnableCapture));
         Ok(())
     }
 
