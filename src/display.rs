@@ -42,14 +42,15 @@ impl DisplayProvider for InstantWM {
     }
 
     fn apply(&self, outputs: &[DisplayModes], layout: &Layout) -> Result<()> {
+        let server = DisplayServer::detect();
         let mirror_outputs;
-        let outputs = if matches!(layout, Layout::Mirror) && DisplayServer::detect().is_x11() {
+        let outputs = if matches!(layout, Layout::Mirror) && server.is_x11() {
             mirror_outputs = x11_mirror_outputs(outputs)?;
             &mirror_outputs
         } else {
             outputs
         };
-        let commands = layout_commands(outputs, layout)?;
+        let commands = layout_commands(outputs, layout, server.is_wayland())?;
         for args in commands {
             instantwmctl::run(&args).context("Failed to apply display layout")?;
         }
@@ -81,7 +82,11 @@ fn x11_mirror_outputs(outputs: &[DisplayModes]) -> Result<Vec<DisplayModes>> {
 
 // Enable the source first and disable unwanted heads last, so switching from
 // one single-output preset to another never deliberately disables every head.
-fn layout_commands(outputs: &[DisplayModes], layout: &Layout) -> Result<Vec<Vec<String>>> {
+fn layout_commands(
+    outputs: &[DisplayModes],
+    layout: &Layout,
+    preserve_mode: bool,
+) -> Result<Vec<Vec<String>>> {
     let source = match layout {
         Layout::Only(name) => outputs.iter().find(|output| &output.name == name),
         _ => outputs.first(),
@@ -89,6 +94,7 @@ fn layout_commands(outputs: &[DisplayModes], layout: &Layout) -> Result<Vec<Vec<
     .context("No connected display matches the requested layout")?;
     let mut commands = Vec::new();
     let mut x = 0u64;
+    let mut previous_output = None;
     for output in
         std::iter::once(source).chain(outputs.iter().filter(|output| output.name != source.name))
     {
@@ -96,21 +102,6 @@ fn layout_commands(outputs: &[DisplayModes], layout: &Layout) -> Result<Vec<Vec<
         if !enabled {
             continue;
         }
-        let mode = output
-            .modes
-            .iter()
-            .max_by_key(|mode| {
-                (
-                    i64::from(mode.width) * i64::from(mode.height),
-                    mode.refresh_millihertz,
-                )
-            })
-            .context("Connected display has no available modes")?;
-        ensure!(
-            mode.width > 0 && mode.height > 0 && mode.refresh_millihertz >= 0,
-            "Invalid display mode for {}: {mode:?}",
-            output.name
-        );
         let mirror = matches!(layout, Layout::Mirror) && output.name != source.name;
         let mut args = vec![
             "monitor".into(),
@@ -124,21 +115,40 @@ fn layout_commands(outputs: &[DisplayModes], layout: &Layout) -> Result<Vec<Vec<
             } else {
                 "none".into()
             },
-            "--resolution".into(),
-            format!("{}x{}", mode.width, mode.height),
-            "--refresh-rate".into(),
-            format!("{:.3}", f64::from(mode.refresh_millihertz) / 1000.0),
-            "--transform".into(),
-            "normal".into(),
         ];
-        if !mirror {
+        let position = if preserve_mode {
+            previous_output.map_or_else(|| "0,0".into(), |name| format!("right-of:{name}"))
+        } else {
+            let mode = output
+                .modes
+                .iter()
+                .max_by_key(|mode| {
+                    (
+                        i64::from(mode.width) * i64::from(mode.height),
+                        mode.refresh_millihertz,
+                    )
+                })
+                .context("Connected display has no available modes")?;
+            ensure!(
+                mode.width > 0 && mode.height > 0 && mode.refresh_millihertz >= 0,
+                "Invalid display mode for {}: {mode:?}",
+                output.name
+            );
             args.extend([
-                "--scale".into(),
-                "1".into(),
-                "--position".into(),
-                format!("{x},0"),
+                "--resolution".into(),
+                format!("{}x{}", mode.width, mode.height),
+                "--refresh-rate".into(),
+                format!("{:.3}", f64::from(mode.refresh_millihertz) / 1000.0),
+                "--transform".into(),
+                "normal".into(),
             ]);
+            let position = format!("{x},0");
             x += u64::try_from(mode.width).context("Invalid display mode width")?;
+            position
+        };
+        if !mirror {
+            args.extend(["--scale".into(), "1".into(), "--position".into(), position]);
+            previous_output = Some(output.name.as_str());
         }
         commands.push(args);
     }
@@ -226,7 +236,7 @@ mod tests {
     }
     #[test]
     fn extend_clears_mirrors_and_places_heads_side_by_side() {
-        let commands = layout_commands(&outputs(), &Layout::Extend).unwrap();
+        let commands = layout_commands(&outputs(), &Layout::Extend, true).unwrap();
         assert!(
             commands[0]
                 .windows(2)
@@ -235,7 +245,7 @@ mod tests {
         assert!(
             commands[1]
                 .windows(2)
-                .any(|pair| pair == ["--position", "1920,0"])
+                .any(|pair| pair == ["--position", "right-of:eDP-1"])
         );
         assert!(
             commands
@@ -253,7 +263,7 @@ mod tests {
             refresh_millihertz: 60000,
         });
         let shared = x11_mirror_outputs(&displays).unwrap();
-        let commands = layout_commands(&shared, &Layout::Mirror).unwrap();
+        let commands = layout_commands(&shared, &Layout::Mirror, false).unwrap();
         assert!(commands.iter().all(|args| {
             args.windows(2)
                 .any(|pair| pair == ["--resolution", "1920x1080"])
@@ -264,12 +274,12 @@ mod tests {
     fn invalid_mode_does_not_generate_layout_commands() {
         let mut displays = outputs();
         displays[0].modes[0].height = -1080;
-        assert!(layout_commands(&displays, &Layout::Extend).is_err());
+        assert!(layout_commands(&displays, &Layout::Extend, false).is_err());
     }
 
     #[test]
     fn mirror_uses_first_head_as_source() {
-        let commands = layout_commands(&outputs(), &Layout::Mirror).unwrap();
+        let commands = layout_commands(&outputs(), &Layout::Mirror, true).unwrap();
         assert!(
             commands[1]
                 .windows(2)
@@ -277,9 +287,21 @@ mod tests {
         );
         assert!(!commands[1].iter().any(|arg| arg == "--position"));
     }
+
+    #[test]
+    fn wayland_presets_leave_output_timings_and_transforms_to_the_compositor() {
+        for layout in [Layout::Mirror, Layout::Extend, Layout::Only("DP-1".into())] {
+            let commands = layout_commands(&outputs(), &layout, true).unwrap();
+            assert!(commands.iter().flatten().all(|arg| !matches!(
+                arg.as_str(),
+                "--resolution" | "--refresh-rate" | "--transform"
+            )));
+        }
+    }
+
     #[test]
     fn only_enables_target_before_disabling_others() {
-        let commands = layout_commands(&outputs(), &Layout::Only("DP-1".into())).unwrap();
+        let commands = layout_commands(&outputs(), &Layout::Only("DP-1".into()), true).unwrap();
         assert_eq!(commands[0][2], "DP-1");
         assert!(
             commands[0]
@@ -292,6 +314,6 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["--enable", "false"])
         );
-        assert!(layout_commands(&outputs(), &Layout::Only("missing".into())).is_err());
+        assert!(layout_commands(&outputs(), &Layout::Only("missing".into()), true).is_err());
     }
 }
