@@ -13,6 +13,7 @@ mod mock;
 mod path_input;
 pub(crate) mod process;
 mod slider;
+mod sort;
 mod text_input;
 
 pub use crate::ui::preview::FzfPreview;
@@ -26,6 +27,7 @@ pub use fzf::{
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection, SuggestionProducer};
 pub use slider::{SliderCommand, SliderConfig};
+pub use sort::{MenuSort, SortRequested, choose_sort, compare_names, sort_keybind};
 pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};
 
 #[cfg(test)]

@@ -2,19 +2,9 @@
 
 use std::cmp::Ordering;
 
-use anyhow::Result;
-
 use crate::game::games::selection::GameMenuEntry;
-use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{
-    DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder, MenuKey, MenuKeybind,
-};
-use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
+use crate::menu_utils::{MenuSort, compare_names};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::preview::PreviewBuilder;
-
-/// Key that opens the sort chooser from the game menu.
-const SORT_KEY: &str = "ctrl-s";
 
 /// How the games in the game menu are ordered.
 ///
@@ -38,11 +28,14 @@ impl Default for GameSort {
     }
 }
 
-impl GameSort {
-    const ALL: [Self; 3] = [Self::Recent, Self::Installed, Self::Alphabetical];
+impl MenuSort for GameSort {
+    const ALL: &'static [Self] = &[Self::Recent, Self::Installed, Self::Alphabetical];
 
-    /// Short name shown in the game menu header and the sort chooser.
-    pub fn label(self) -> &'static str {
+    const CHOOSER_TITLE: &'static str = "Sort Games";
+
+    const CHOOSER_SUBTITLE: &'static str = "Choose the order of the game list.";
+
+    fn label(self) -> &'static str {
         match self {
             Self::Recent => "Recently played",
             Self::Installed => "Installed first",
@@ -77,19 +70,6 @@ impl GameSort {
     }
 }
 
-/// The sort key was pressed in the game menu; the focused row rides along.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SortRequested;
-
-/// The game menu binding that opens the sort chooser.
-pub fn sort_keybind() -> Result<MenuKeybind<SortRequested>> {
-    Ok(MenuKeybind::new(
-        MenuKey::new(SORT_KEY)?,
-        "sort",
-        SortRequested,
-    ))
-}
-
 /// Order the menu's game rows.
 ///
 /// `score` reports how recently and often a game was launched; it is only
@@ -109,11 +89,7 @@ pub fn sort_games(
         else {
             return Ordering::Equal;
         };
-        let by_name = || {
-            ignore_case(left_name)
-                .cmp(ignore_case(right_name))
-                .then_with(|| left_name.cmp(right_name))
-        };
+        let by_name = || compare_names(left_name, right_name);
         match sort {
             GameSort::Recent => score(right_name)
                 .total_cmp(&score(left_name))
@@ -125,94 +101,9 @@ pub fn sort_games(
     games
 }
 
-/// Compare `text` letter by letter, ignoring case, without allocating.
-fn ignore_case(text: &str) -> impl Iterator<Item = char> + '_ {
-    text.chars().flat_map(char::to_lowercase)
-}
-
-/// One selectable order in the sort chooser.
-#[derive(Clone)]
-struct SortOption {
-    sort: GameSort,
-    current: bool,
-}
-
-impl FzfSelectable for SortOption {
-    fn fzf_display_text(&self) -> String {
-        let color = if self.current {
-            colors::GREEN
-        } else {
-            colors::MAUVE
-        };
-        let current = if self.current {
-            format!("  {}", format_with_color("current", colors::GREEN))
-        } else {
-            String::new()
-        };
-        format!(
-            "{} {}{current}",
-            format_icon_colored(self.sort.icon(), color),
-            self.sort.label()
-        )
-    }
-
-    fn fzf_key(&self) -> String {
-        self.sort.label().to_string()
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        let status = if self.current {
-            "This is the current order."
-        } else {
-            "Press Enter to switch to this order."
-        };
-        PreviewBuilder::new()
-            .header(self.sort.icon(), self.sort.label())
-            .text(self.sort.detail())
-            .text(self.sort.note())
-            .blank()
-            .subtext(status)
-            .build()
-    }
-}
-
-/// Let the user choose the order of the game list.
-///
-/// Returns `None` when the chooser is dismissed, which keeps `current`.
-pub fn choose_sort(current: GameSort) -> Result<Option<GameSort>> {
-    let options = GameSort::ALL
-        .iter()
-        .map(|&sort| SortOption {
-            sort,
-            current: sort == current,
-        })
-        .collect::<Vec<_>>();
-    let initial = options
-        .iter()
-        .position(|option| option.current)
-        .unwrap_or_default();
-    let selection = FzfWrapper::builder()
-        .header(
-            HeaderBuilder::new(NerdFont::Sliders, "Sort Games")
-                .subtitle("Choose the order of the game list.")
-                .build(),
-        )
-        .prompt("Sort by")
-        .responsive_layout()
-        .initial_index(initial)
-        .items(options)
-        .padded()
-        .select_one()?;
-    Ok(match selection {
-        DialogOutcome::Submitted(option) => Some(option.sort),
-        DialogOutcome::Cancelled => None,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
 
     fn games(names: &[(&str, bool)]) -> Vec<GameMenuEntry> {
         names
@@ -282,52 +173,5 @@ mod tests {
     #[test]
     fn recent_is_the_default_order() {
         assert_eq!(GameSort::default(), GameSort::Recent);
-    }
-
-    #[test]
-    fn sort_is_bound_to_ctrl_s() {
-        let bind = sort_keybind().unwrap();
-
-        assert_eq!(bind.key.as_str(), "ctrl-s");
-        assert_eq!(bind.label, "sort");
-        assert_eq!(bind.action, SortRequested);
-    }
-
-    #[test]
-    fn options_mark_the_current_order() {
-        let current = SortOption {
-            sort: GameSort::Recent,
-            current: true,
-        };
-        let other = SortOption {
-            sort: GameSort::Alphabetical,
-            current: false,
-        };
-
-        assert!(current.fzf_display_text().contains("Recently played"));
-        assert!(current.fzf_display_text().contains("current"));
-        assert!(other.fzf_display_text().contains("Alphabetical"));
-        assert!(!other.fzf_display_text().contains("current"));
-        assert_ne!(current.fzf_key(), other.fzf_key());
-    }
-
-    #[test]
-    fn chooser_returns_the_picked_order_and_nothing_when_dismissed() {
-        let _guard = MockQueue::new()
-            .select_index(0)
-            .cancel_selection()
-            .select_index(2)
-            .guard();
-
-        assert_eq!(
-            choose_sort(GameSort::Installed).unwrap(),
-            Some(GameSort::Recent)
-        );
-        assert_eq!(choose_sort(GameSort::Recent).unwrap(), None);
-        assert_eq!(
-            choose_sort(GameSort::Recent).unwrap(),
-            Some(GameSort::Alphabetical)
-        );
-        assert_eq!(scripted_responses_remaining(), 0);
     }
 }
