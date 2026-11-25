@@ -9,7 +9,9 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewWriter;
 
 use super::context::InstallContext;
-use super::install_plan::{DualBootResizeMethod, FREE_SPACE_ANSWER};
+use super::install_plan::{
+    DualBootResizeMethod, FREE_SPACE_ANSWER, HomePartition, partition_action,
+};
 use super::types::{BootMode, PartitioningMethod, StepId};
 
 pub(crate) struct InstallSummary {
@@ -223,12 +225,18 @@ fn format_filesystem_label(context: &InstallContext) -> String {
     }
 
     let compression = BtrfsCompression::selected_or_default(context);
-    let subvolumes = if context.get_answer(&StepId::HomePartition).is_some() {
+    let subvolumes = if selected_home_partition(context).is_some() {
         BTRFS_ROOT_SUBVOLUME.to_string()
     } else {
         format!("{BTRFS_ROOT_SUBVOLUME}, {BTRFS_HOME_SUBVOLUME}")
     };
     format!("btrfs ({subvolumes}; {})", compression.label())
+}
+
+fn selected_home_partition(context: &InstallContext) -> Option<HomePartition> {
+    context
+        .get_answer(&StepId::HomePartition)
+        .and_then(|answer| HomePartition::from_answer(answer).ok().flatten())
 }
 
 fn format_encryption_label(
@@ -328,16 +336,20 @@ fn format_storage_details(
             })
         }
         PartitioningMethod::Manual => Some(StorageDetails::Manual {
-            root: answer_or(context, StepId::RootPartition, NOT_SET),
-            boot: answer_or(context, StepId::BootPartition, NOT_SET),
-            swap: context
-                .get_answer(&StepId::SwapPartition)
-                .cloned()
-                .unwrap_or_else(|| "none".to_string()),
-            home: context
-                .get_answer(&StepId::HomePartition)
-                .cloned()
-                .unwrap_or_else(|| "none".to_string()),
+            root: context.get_answer(&StepId::RootPartition).map_or_else(
+                || NOT_SET.to_owned(),
+                |path| partition_action(path, "format as /"),
+            ),
+            boot: context.get_answer(&StepId::BootPartition).map_or_else(
+                || NOT_SET.to_owned(),
+                |path| partition_action(path, "format as /boot"),
+            ),
+            swap: context.get_answer(&StepId::SwapPartition).map_or_else(
+                || "none".to_owned(),
+                |path| partition_action(path, "initialize as swap"),
+            ),
+            home: selected_home_partition(context)
+                .map_or_else(|| "Use space on root".to_owned(), |home| home.description()),
         }),
     }
 }
@@ -679,6 +691,38 @@ mod tests {
             with_home.storage.root_filesystem,
             "btrfs (@; zstd (recommended))"
         );
+
+        context.set_answer(StepId::HomePartition, "root".to_owned());
+        let home_on_root = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
+        assert_eq!(
+            home_on_root.storage.root_filesystem,
+            without_home.storage.root_filesystem
+        );
+    }
+
+    #[test]
+    fn manual_summary_shows_the_action_for_each_partition() {
+        let context = context_with(&[
+            (StepId::PartitioningMethod, "manual"),
+            (StepId::RootPartition, "/dev/sda2"),
+            (StepId::BootPartition, "/dev/sda1"),
+            (StepId::SwapPartition, "/dev/sda3"),
+            (StepId::HomePartition, "keep:/dev/sda4"),
+        ]);
+        let facts = SummaryFacts::from_context(&context, Some(ArchLinuxVariant::Arch));
+        let Some(StorageDetails::Manual {
+            root,
+            boot,
+            swap,
+            home,
+        }) = facts.storage.details
+        else {
+            panic!("Expected manual partition actions");
+        };
+        assert_eq!(root, "/dev/sda2 → format as /");
+        assert_eq!(boot, "/dev/sda1 → format as /boot");
+        assert_eq!(swap, "/dev/sda3 → initialize as swap");
+        assert_eq!(home, "/dev/sda4 → keep and mount as /home");
     }
 
     #[test]

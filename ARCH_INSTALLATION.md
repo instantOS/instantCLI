@@ -6,6 +6,20 @@ x86_64 foreign Linux distribution such as Ubuntu or Debian, it automatically
 creates an authenticated Arch bootstrap environment and runs the same installer
 there. Select Minimal Mode for vanilla Arch instead of instantOS.
 
+## Reuse an existing home partition
+
+In manual partitioning, choose **Keep an existing partition** at the
+`/home` prompt. The installer can reuse a separate, unencrypted ext2, ext3,
+ext4, or XFS partition on the selected disk. The review lists the action for
+each selected device. Root and boot are still formatted. The new system mounts
+the kept partition at `/home` and skips applying the default instantOS dotfiles
+and wallpaper. Use the same username if you want to reuse its existing home
+directory. Check that the new account's numeric UID and GID match the files.
+
+For an unattended install, set `HomePartition = "keep:/dev/nvme0n1p3"`.
+Omit `HomePartition` or set it to `"root"` to use the new root filesystem.
+A plain partition path selects formatting as ext4.
+
 ## Unattended install configurations
 
 Run `ins arch --skill` for the authoring guide. Generate a starter config on the

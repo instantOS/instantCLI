@@ -1,8 +1,10 @@
-use super::filesystem;
+use super::{filesystem, home};
 use crate::arch::engine::{
-    BootMode, DualBootPartitions, EspNeedsFormat, FilesystemPlan, InstallContext, ManualPartitions,
+    BootMode, DualBootPartitions, EspNeedsFormat, FilesystemPlan, HomePartition, InstallContext,
+    ManualPartitions,
 };
 use crate::arch::execution::CommandRunner;
+use crate::common::blockdev::Filesystem;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -16,6 +18,10 @@ pub fn format_and_mount_partitions(
     println!("Formatting and mounting partitions...");
 
     let dualboot_paths = context.get::<DualBootPartitions>();
+    let kept_home_filesystem = manual_partitions
+        .map(|partitions| home::preflight(partitions, executor))
+        .transpose()?
+        .flatten();
 
     let root_path = if let Some(ref paths) = dualboot_paths {
         paths.root.clone()
@@ -95,22 +101,67 @@ pub fn format_and_mount_partitions(
         super::activate_swap(&swap_path, executor)?;
     }
 
-    if let Some(home_path) = manual_partitions
-        .and_then(|parts| parts.home.as_ref())
-        .map(|path| path.as_str())
-    {
-        println!("Formatting Home partition: {}", home_path);
-        filesystem::wipe_signatures(home_path, executor)?;
-        executor.run(Command::new("mkfs.ext4").args(["-F", home_path]))?;
-        println!("Mounting Home partition...");
-        executor.run(Command::new("mount").args([
-            "--mkdir",
-            "-t",
-            "ext4",
-            home_path,
-            "/mnt/home",
-        ]))?;
+    if let Some(home) = manual_partitions.and_then(|parts| parts.home.as_ref()) {
+        mount_home(home, kept_home_filesystem.as_ref(), executor)?;
     }
 
     Ok(())
+}
+
+fn mount_home(
+    home: &HomePartition,
+    kept_filesystem: Option<&Filesystem>,
+    executor: &dyn CommandRunner,
+) -> Result<()> {
+    let path = home.path().as_str();
+    let filesystem_type = match home {
+        HomePartition::Format(_) => {
+            println!("Formatting Home partition: {path}");
+            filesystem::wipe_signatures(path, executor)?;
+            executor.run(Command::new("mkfs.ext4").args(["-F", path]))?;
+            "ext4"
+        }
+        HomePartition::Keep(_) => {
+            println!("Keeping Home partition: {path}");
+            kept_filesystem.map_or("auto", Filesystem::as_str)
+        }
+    };
+    println!("Mounting Home partition: {path}");
+    executor.run(Command::new("mount").args(["--mkdir", "-t", filesystem_type, path, "/mnt/home"]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::execution::mock::MockRunner;
+
+    #[test]
+    fn kept_home_is_mounted_without_formatting() {
+        let runner = MockRunner::new();
+        let home = HomePartition::from_answer("keep:/dev/home")
+            .unwrap()
+            .unwrap();
+        mount_home(&home, Some(&Filesystem::parse("xfs")), &runner).unwrap();
+
+        assert_eq!(
+            runner.command_log(),
+            ["mount --mkdir -t xfs /dev/home /mnt/home"]
+        );
+    }
+
+    #[test]
+    fn legacy_home_path_formats_ext4_before_mounting() {
+        let runner = MockRunner::new();
+        let home = HomePartition::from_answer("/dev/home").unwrap().unwrap();
+        mount_home(&home, None, &runner).unwrap();
+
+        assert_eq!(
+            runner.command_log(),
+            [
+                "wipefs -a /dev/home",
+                "mkfs.ext4 -F /dev/home",
+                "mount --mkdir -t ext4 /dev/home /mnt/home",
+            ]
+        );
+    }
 }

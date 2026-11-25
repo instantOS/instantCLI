@@ -415,11 +415,47 @@ pub enum DualBootTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HomePartition {
+    Format(PartitionPath),
+    Keep(PartitionPath),
+}
+
+impl HomePartition {
+    pub(crate) fn from_answer(answer: &str) -> Result<Option<Self>> {
+        if answer == "root" {
+            return Ok(None);
+        }
+        if let Some(path) = answer.strip_prefix("keep:") {
+            return Ok(Some(Self::Keep(PartitionPath::parse(path)?)));
+        }
+        Ok(Some(Self::Format(PartitionPath::parse(answer)?)))
+    }
+
+    pub(crate) fn path(&self) -> &PartitionPath {
+        match self {
+            Self::Format(path) | Self::Keep(path) => path,
+        }
+    }
+
+    pub(crate) fn description(&self) -> String {
+        let action = match self {
+            Self::Format(_) => "format as /home (ext4)",
+            Self::Keep(_) => "keep and mount as /home",
+        };
+        partition_action(self.path().as_str(), action)
+    }
+}
+
+pub(crate) fn partition_action(path: &str, action: &str) -> String {
+    format!("{path} → {action}")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManualPartitions {
     pub root: PartitionPath,
     pub boot: PartitionPath,
     pub swap: Option<PartitionPath>,
-    pub home: Option<PartitionPath>,
+    pub(crate) home: Option<HomePartition>,
 }
 
 /// The mutually exclusive storage operations available to the installer.
@@ -444,6 +480,10 @@ pub enum StoragePlan {
 }
 
 impl StoragePlan {
+    pub(crate) fn keeps_home(&self) -> bool {
+        matches!(self, Self::Manual { partitions, .. } if matches!(partitions.home, Some(HomePartition::Keep(_))))
+    }
+
     pub fn disk(&self) -> &DiskPath {
         match self {
             Self::Automatic { disk, .. }
@@ -698,8 +738,9 @@ impl InstallPlan {
                             .transpose()?,
                         home: context
                             .get_answer(&StepId::HomePartition)
-                            .map(|value| PartitionPath::parse(value))
-                            .transpose()?,
+                            .map(|value| HomePartition::from_answer(value))
+                            .transpose()?
+                            .flatten(),
                     },
                 }
             }
@@ -1034,6 +1075,33 @@ mod tests {
         context.set_answer(StepId::BootPartition, "/dev/sda1".to_owned());
         let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
         assert!(matches!(plan.storage(), StoragePlan::Manual { .. }));
+    }
+
+    #[test]
+    fn manual_home_answers_remain_compatible_and_require_explicit_reuse() {
+        let mut context = required_context("manual");
+        context.set_answer(StepId::RootPartition, "/dev/sda2".to_owned());
+        context.set_answer(StepId::BootPartition, "/dev/sda1".to_owned());
+        let partition = PartitionPath::parse("/dev/sda3").unwrap();
+
+        for (answer, expected) in [
+            (None, None),
+            (Some("root"), None),
+            (
+                Some("/dev/sda3"),
+                Some(HomePartition::Format(partition.clone())),
+            ),
+            (Some("keep:/dev/sda3"), Some(HomePartition::Keep(partition))),
+        ] {
+            if let Some(answer) = answer {
+                context.set_answer(StepId::HomePartition, answer.to_owned());
+            }
+            let plan = InstallPlan::from_context(&context, ArchLinuxVariant::Arch).unwrap();
+            let StoragePlan::Manual { partitions, .. } = plan.storage() else {
+                panic!("Expected a manual storage plan");
+            };
+            assert_eq!(partitions.home, expected);
+        }
     }
 
     #[test]

@@ -21,6 +21,7 @@ struct SetupOptions {
     autologin: bool,
     use_xorg: bool,
     minimal_mode: bool,
+    keep_home: bool,
     linux_variant: ArchLinuxVariant,
 }
 
@@ -39,6 +40,7 @@ impl SetupOptions {
             autologin: session.autologin,
             use_xorg: session.use_xorg,
             minimal_mode: session.minimal_mode,
+            keep_home: false,
             linux_variant,
         })
     }
@@ -53,6 +55,7 @@ impl SetupOptions {
             autologin: plan.autologin(),
             use_xorg: plan.use_xorg(),
             minimal_mode: plan.minimal_mode(),
+            keep_home: plan.storage().keeps_home(),
             linux_variant,
         }
     }
@@ -129,16 +132,17 @@ async fn setup_instantos_with_options(
     if let Some(user) = username.as_ref() {
         super::config::add_user_to_groups(user, executor)?;
 
-        // Create standard XDG user directories (Desktop, Documents, etc.)
-        println!("Creating XDG user directories for {}...", user);
-        let mut cmd_xdg = Command::new("su");
-        cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(user);
-        executor.run_best_effort(&mut cmd_xdg, "XDG user directory creation");
+        if !options.keep_home {
+            println!("Creating XDG user directories for {}...", user);
+            let mut cmd_xdg = Command::new("su");
+            cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(user);
+            executor.run_best_effort(&mut cmd_xdg, "XDG user directory creation");
+        }
     } else {
         println!("No username provided, skipping user group membership.");
     }
 
-    if !minimal_mode {
+    if !minimal_mode && !options.keep_home {
         if let Some(user) = username.clone() {
             setup_user_dotfiles(&user, executor)?;
             setup_wallpaper(&user, executor);

@@ -765,11 +765,37 @@ fn configure_users(plan: &InstallPlan, executor: &dyn CommandRunner) -> Result<(
     let mut cmd_pass = Command::new("chpasswd");
     executor.run_with_secret_input(&mut cmd_pass, &user_input)?;
 
-    // Create standard XDG user directories (Desktop, Documents, etc.)
-    let mut cmd_xdg = Command::new("su");
-    cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(username);
-    executor.run(&mut cmd_xdg)?;
+    if plan.storage().keeps_home() {
+        if !executor.dry_run() {
+            warn_about_home_ownership(username)?;
+        }
+    } else {
+        // Initialize standard XDG directories for a freshly installed home.
+        let mut cmd_xdg = Command::new("su");
+        cmd_xdg.arg("-c").arg("xdg-user-dirs-update").arg(username);
+        executor.run(&mut cmd_xdg)?;
+    }
 
+    Ok(())
+}
+
+fn warn_about_home_ownership(username: &str) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let account = nix::unistd::User::from_name(username)?
+        .with_context(|| format!("Could not read the installed account {username}"))?;
+    let home = std::fs::symlink_metadata(&account.dir)
+        .with_context(|| format!("Could not inspect {}", account.dir.display()))?;
+    if home.uid() != account.uid.as_raw() || home.gid() != account.gid.as_raw() {
+        eprintln!(
+            "Warning: {} is owned by UID:GID {}:{}, and the account {username} uses {}:{}. Check ownership before logging in.",
+            account.dir.display(),
+            home.uid(),
+            home.gid(),
+            account.uid,
+            account.gid,
+        );
+    }
     Ok(())
 }
 
