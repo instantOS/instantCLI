@@ -8,6 +8,8 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, hex_t
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
+use super::db::Notification;
+
 const RESET: &str = "\x1b[0m";
 
 /// A notification item for display in the main FZF menu.
@@ -19,6 +21,19 @@ pub struct NotificationListItem {
     pub body: String,
     pub timestamp: String,
     pub read: bool,
+}
+
+impl From<Notification> for NotificationListItem {
+    fn from(notification: Notification) -> Self {
+        Self {
+            id: notification.id,
+            app_name: notification.app_name,
+            title: notification.title,
+            body: notification.body,
+            timestamp: notification.timestamp,
+            read: notification.read,
+        }
+    }
 }
 
 /// Top-level menu items in the notification center.
