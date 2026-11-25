@@ -193,6 +193,11 @@ the systemd user service rather than a self-forking process.
 The history database defaults to 1,000 entries and can be changed from the
 interactive notification options menu. Transient notifications are not stored.
 
+The notification list opens with the newest notification first. Press Ctrl+S
+to list the oldest first, unread first, or grouped by application. The menu's
+actions stay above the list, and the chosen order lasts until the notification
+center is closed.
+
 Notification actions (for example, Bluetooth pairing approval) must be invoked
 while the original notification is live. `ins notify` records the advertised
 actions and their live/expired state, but it does not replay expired actions:

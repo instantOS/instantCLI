@@ -7,7 +7,10 @@
 
 use anyhow::{Context, Result};
 
-use crate::menu_utils::{FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind};
+use crate::menu_utils::{
+    FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuSort, choose_sort,
+    sort_keybind,
+};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -18,15 +21,17 @@ use super::items::{
     NotificationDetailAction, NotificationDetailItem, NotificationDetailPreview,
     NotificationListItem, NotifyMainItem,
 };
+use super::sort::{NotifySort, sort_notifications};
 
 /// Run the interactive notification center UI.
 pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
     let db = NotifyDb::open().context("opening notification database")?;
 
     let mut cursor = MenuCursor::new();
+    let mut sort = NotifySort::default();
 
     loop {
-        match run_main_menu(&db, daemon_running, &mut cursor)? {
+        match run_main_menu(&db, daemon_running, &mut cursor, &mut sort)? {
             MenuAction::OpenNotification { id, main_cursor } => {
                 cursor = main_cursor;
                 handle_notification_detail(&db, id)?;
@@ -76,6 +81,7 @@ enum MenuAction {
 enum NotifyKeybindAction {
     Delete,
     MarkUnread,
+    Sort,
     Options,
     EnableCapture,
 }
@@ -92,6 +98,7 @@ fn notification_keybinds(daemon_running: bool) -> Result<Vec<MenuKeybind<NotifyK
             "mark unread",
             NotifyKeybindAction::MarkUnread,
         ),
+        sort_keybind()?.map_action(NotifyKeybindAction::Sort),
         MenuKeybind::new(
             MenuKey::new("ctrl-o")?,
             "options",
@@ -111,9 +118,19 @@ fn notification_keybinds(daemon_running: bool) -> Result<Vec<MenuKeybind<NotifyK
 /// Build the main menu items from the database.
 ///
 /// Options are placed at the top so they are always immediately accessible;
-/// individual notifications follow below.
-fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMainItem>, i64)> {
-    let notifications = db.list()?;
+/// individual notifications follow below in `sort` order.
+fn build_main_items(
+    db: &NotifyDb,
+    daemon_running: bool,
+    sort: NotifySort,
+) -> Result<(Vec<NotifyMainItem>, i64)> {
+    let notifications = sort_notifications(
+        db.list()?
+            .into_iter()
+            .map(NotificationListItem::from)
+            .collect(),
+        sort,
+    );
     let unread = db.unread_count()?;
 
     let mut items: Vec<NotifyMainItem> = Vec::new();
@@ -126,106 +143,118 @@ fn build_main_items(db: &NotifyDb, daemon_running: bool) -> Result<(Vec<NotifyMa
     }
 
     // Individual notifications
-    for n in notifications {
-        items.push(NotifyMainItem::Notification(NotificationListItem {
-            id: n.id,
-            app_name: n.app_name,
-            title: n.title,
-            body: n.body,
-            timestamp: n.timestamp,
-            read: n.read,
-        }));
-    }
+    items.extend(notifications.into_iter().map(NotifyMainItem::Notification));
 
     Ok((items, unread))
 }
 
+/// Show the main menu until an entry is chosen or the menu is dismissed.
+///
+/// Pressing the sort key chooses a new order for the notifications and
+/// reopens the menu with the entry that was focused still under the cursor.
 fn run_main_menu(
     db: &NotifyDb,
     daemon_running: bool,
     cursor: &mut MenuCursor,
+    sort: &mut NotifySort,
 ) -> Result<MenuAction> {
-    let (items, unread) = build_main_items(db, daemon_running)?;
-
-    if items.is_empty() {
-        emit(
-            Level::Info,
-            "notify.empty",
-            &format!("{} No notifications.", char::from(NerdFont::Bell)),
-            None,
-        );
-        return Ok(MenuAction::Exit);
-    }
-
-    // When the menu is opened fresh (no prior cursor state), default to the
-    // first notification — the options at the top are always visible and
-    // immediately accessible via a single up-arrow press.
-    let initial_index = cursor.initial_index(&items).or_else(|| {
-        items
-            .iter()
-            .position(|item| matches!(item, NotifyMainItem::Notification(_)))
-    });
-    let count_color = if unread > 0 {
-        colors::YELLOW
-    } else {
-        colors::SUBTEXT0
-    };
-    let header = HeaderBuilder::new(NerdFont::Bell, "Notification Center")
-        .status(
-            NerdFont::EnvelopeOpen,
-            format!("{unread} unread"),
-            count_color,
-        )
-        .build();
     let keybinds = notification_keybinds(daemon_running)?;
-    let selection = FzfWrapper::menu()
-        .cursor(initial_index)
-        .header(header)
-        .items(items.clone())
-        .keybinds(&keybinds)
-        .select()?;
+    loop {
+        let (items, unread) = build_main_items(db, daemon_running, *sort)?;
 
-    let action = match selection {
-        crate::menu_utils::DialogOutcome::Submitted(selection) => {
-            let selected_item = selection.items.into_iter().next();
-            if let Some(item) = &selected_item {
-                cursor.update(item, &items);
-            }
-            let main_cursor = cursor.clone();
-            match (selection.action, selected_item) {
-                (Some(NotifyKeybindAction::Delete), Some(NotifyMainItem::Notification(n))) => {
-                    MenuAction::DeleteNotification {
-                        id: n.id,
-                        main_cursor,
-                    }
-                }
-                (Some(NotifyKeybindAction::MarkUnread), Some(NotifyMainItem::Notification(n))) => {
-                    MenuAction::MarkUnread {
-                        id: n.id,
-                        main_cursor,
-                    }
-                }
-                (Some(NotifyKeybindAction::Options), _) => MenuAction::OpenOptions { main_cursor },
-                (Some(NotifyKeybindAction::EnableCapture), _) => {
-                    MenuAction::EnableCapture { main_cursor }
-                }
-                (Some(NotifyKeybindAction::Delete | NotifyKeybindAction::MarkUnread), _)
-                | (None, None) => MenuAction::Refresh { main_cursor },
-                (None, Some(NotifyMainItem::Notification(n))) => MenuAction::OpenNotification {
-                    id: n.id,
-                    main_cursor,
-                },
-                (None, Some(NotifyMainItem::Options)) => MenuAction::OpenOptions { main_cursor },
-                (None, Some(NotifyMainItem::EnableCapture)) => {
-                    MenuAction::EnableCapture { main_cursor }
-                }
-                (None, Some(NotifyMainItem::Close)) => MenuAction::Exit,
-            }
+        if items.is_empty() {
+            emit(
+                Level::Info,
+                "notify.empty",
+                &format!("{} No notifications.", char::from(NerdFont::Bell)),
+                None,
+            );
+            return Ok(MenuAction::Exit);
         }
-        crate::menu_utils::DialogOutcome::Cancelled => MenuAction::Exit,
-    };
 
-    Ok(action)
+        // When the menu is opened fresh (no prior cursor state), default to the
+        // first notification — the options at the top are always visible and
+        // immediately accessible via a single up-arrow press.
+        let initial_index = cursor.initial_index(&items).or_else(|| {
+            items
+                .iter()
+                .position(|item| matches!(item, NotifyMainItem::Notification(_)))
+        });
+        let count_color = if unread > 0 {
+            colors::YELLOW
+        } else {
+            colors::SUBTEXT0
+        };
+        let header = HeaderBuilder::new(NerdFont::Bell, "Notification Center")
+            .status(
+                NerdFont::EnvelopeOpen,
+                format!("{unread} unread"),
+                count_color,
+            )
+            .field("Sort", sort.label())
+            .build();
+        let selection = FzfWrapper::menu()
+            .cursor(initial_index)
+            .header(header)
+            .items(items.clone())
+            .keybinds(&keybinds)
+            .select()?;
+
+        let action = match selection {
+            crate::menu_utils::DialogOutcome::Submitted(selection) => {
+                let selected_item = selection.items.into_iter().next();
+                if let Some(item) = &selected_item {
+                    cursor.update(item, &items);
+                }
+                let main_cursor = cursor.clone();
+                match (selection.action, selected_item) {
+                    // Reordering the notifications must not move the cursor
+                    // off the one the user was on.
+                    (Some(NotifyKeybindAction::Sort), _) => {
+                        if let Some(chosen) = choose_sort(*sort)? {
+                            *sort = chosen;
+                        }
+                        continue;
+                    }
+                    (Some(NotifyKeybindAction::Delete), Some(NotifyMainItem::Notification(n))) => {
+                        MenuAction::DeleteNotification {
+                            id: n.id,
+                            main_cursor,
+                        }
+                    }
+                    (
+                        Some(NotifyKeybindAction::MarkUnread),
+                        Some(NotifyMainItem::Notification(n)),
+                    ) => MenuAction::MarkUnread {
+                        id: n.id,
+                        main_cursor,
+                    },
+                    (Some(NotifyKeybindAction::Options), _) => {
+                        MenuAction::OpenOptions { main_cursor }
+                    }
+                    (Some(NotifyKeybindAction::EnableCapture), _) => {
+                        MenuAction::EnableCapture { main_cursor }
+                    }
+                    (Some(NotifyKeybindAction::Delete | NotifyKeybindAction::MarkUnread), _)
+                    | (None, None) => MenuAction::Refresh { main_cursor },
+                    (None, Some(NotifyMainItem::Notification(n))) => MenuAction::OpenNotification {
+                        id: n.id,
+                        main_cursor,
+                    },
+                    (None, Some(NotifyMainItem::Options)) => {
+                        MenuAction::OpenOptions { main_cursor }
+                    }
+                    (None, Some(NotifyMainItem::EnableCapture)) => {
+                        MenuAction::EnableCapture { main_cursor }
+                    }
+                    (None, Some(NotifyMainItem::Close)) => MenuAction::Exit,
+                }
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => MenuAction::Exit,
+        };
+
+        return Ok(action);
+    }
 }
 
 /// Handle the detail view for a single notification.
@@ -319,6 +348,7 @@ fn build_detail_items(notif: &super::db::Notification) -> Vec<NotificationDetail
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_utils::{MockQueue, scripted_responses_remaining};
     use crate::notify::db::{Notification, NotificationAction};
 
     fn notification() -> Notification {
@@ -381,8 +411,140 @@ mod tests {
 
         assert!(stopped.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
         assert!(!running.iter().any(|bind| bind.key.as_str() == "ctrl-e"));
-        for key in ["ctrl-d", "ctrl-u", "ctrl-o"] {
+        for key in ["ctrl-d", "ctrl-u", "ctrl-s", "ctrl-o"] {
             assert!(running.iter().any(|bind| bind.key.as_str() == key));
         }
+        let sort = running
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-s")
+            .unwrap();
+        assert_eq!(sort.label, "sort");
+        assert_eq!(sort.action, NotifyKeybindAction::Sort);
+    }
+
+    /// Notifications in arrival order. The database lists them newest first:
+    /// Spotify, Discord, Discord, Slack. Spotify and the earlier Discord
+    /// message were read.
+    fn populated_db() -> Result<(tempfile::TempDir, NotifyDb)> {
+        let dir = tempfile::tempdir()?;
+        let db = NotifyDb::open_at(&dir.path().join("notifications.db"))?;
+        db.add("2026-11-24 09:00", "Slack", "Build finished", "main passed")?;
+        let read_discord = db.add(
+            "2026-11-24 09:05",
+            "Discord",
+            "Second message",
+            "anyone there?",
+        )?;
+        db.add("2026-11-24 09:10", "Discord", "First message", "hello")?;
+        let spotify = db.add(
+            "2026-11-24 09:15",
+            "Spotify",
+            "Now playing",
+            "Song - Artist",
+        )?;
+        db.mark_read(read_discord)?;
+        db.mark_read(spotify)?;
+        Ok((dir, db))
+    }
+
+    fn notification_ids(db: &NotifyDb, sort: NotifySort) -> Result<Vec<i64>> {
+        Ok(build_main_items(db, false, sort)?
+            .0
+            .into_iter()
+            .filter_map(|item| match item {
+                NotifyMainItem::Notification(notification) => Some(notification.id),
+                _ => None,
+            })
+            .collect())
+    }
+
+    #[test]
+    fn notifications_default_to_the_newest_first() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+
+        assert_eq!(notification_ids(&db, NotifySort::default())?, [4, 3, 2, 1]);
+        assert_eq!(
+            notification_ids(&db, NotifySort::Application)?,
+            [3, 2, 1, 4]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn menu_keeps_its_fixed_entries_above_the_notifications() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+
+        let (items, unread) = build_main_items(&db, false, NotifySort::Unread)?;
+
+        assert_eq!(unread, 2);
+        assert!(matches!(items[0], NotifyMainItem::Close));
+        assert!(matches!(items[1], NotifyMainItem::Options));
+        assert!(matches!(items[2], NotifyMainItem::EnableCapture));
+        assert_eq!(items.len(), 7);
+        Ok(())
+    }
+
+    #[test]
+    fn sort_key_reorders_notifications_and_keeps_the_focused_one() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+        let mut cursor = MenuCursor::new();
+        let mut sort = NotifySort::default();
+        // Rows: three fixed entries, then Spotify, Discord, Discord, Slack.
+        // Spotify is focused when the sort key is pressed; Unread first is the
+        // third option.
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![3])
+            .select_index(2)
+            .select_index(5)
+            .guard();
+
+        let action = run_main_menu(&db, false, &mut cursor, &mut sort)?;
+
+        assert!(matches!(action, MenuAction::OpenNotification { id: 4, .. }));
+        assert_eq!(sort, NotifySort::Unread);
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn focused_notification_follows_the_new_order() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+        let mut cursor = MenuCursor::new();
+        let mut sort = NotifySort::default();
+        // By application groups Discord above Slack, so Slack moves from row 6
+        // to row 5.
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![6])
+            .select_index(3)
+            .cancel_selection()
+            .guard();
+
+        let action = run_main_menu(&db, false, &mut cursor, &mut sort)?;
+
+        assert!(matches!(action, MenuAction::Exit));
+        assert_eq!(sort, NotifySort::Application);
+        let (items, _) = build_main_items(&db, false, sort)?;
+        assert_eq!(cursor.initial_index(&items), Some(5));
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn dismissing_the_sort_chooser_keeps_the_order() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+        let mut cursor = MenuCursor::new();
+        let mut sort = NotifySort::default();
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![3])
+            .cancel_selection()
+            .select_index(3)
+            .guard();
+
+        let action = run_main_menu(&db, false, &mut cursor, &mut sort)?;
+
+        assert!(matches!(action, MenuAction::OpenNotification { id: 4, .. }));
+        assert_eq!(sort, NotifySort::Newest);
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
     }
 }
