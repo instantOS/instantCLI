@@ -147,6 +147,7 @@ pub struct ConfirmBuilder {
     pub(crate) shared: SharedConfig,
     pub(crate) yes_text: String,
     pub(crate) no_text: String,
+    pub(crate) default_no: bool,
     pub(crate) back_option: bool,
     pub(crate) title: Option<String>,
 }
@@ -352,6 +353,11 @@ impl FzfBuilder {
         }
     }
 
+    /// Build a confirmation dialog.
+    ///
+    /// Yes is focused by default, so Enter confirms. For destructive prompts,
+    /// chain [`ConfirmBuilder::default_no`] so Enter cannot perform the
+    /// destructive action.
     pub fn confirm<S: Into<String>>(self, message: S) -> ConfirmBuilder {
         let mut shared = self.shared.with_dialog_args(confirm_args());
         let message_str = message.into();
@@ -374,6 +380,7 @@ impl FzfBuilder {
             shared,
             yes_text: "Yes".to_string(),
             no_text: "No".to_string(),
+            default_no: false,
             back_option: false,
             title: None,
         }
@@ -477,6 +484,15 @@ impl PasswordBuilder {
 // ---------------------------------------------------------------------------
 
 impl ConfirmBuilder {
+    /// Put No first so Enter is not the affirmative action.
+    ///
+    /// Use this for destructive prompts: the initial selection must not
+    /// perform the destructive action.
+    pub fn default_no(mut self) -> Self {
+        self.default_no = true;
+        self
+    }
+
     /// Offer Back as an explicit cancellation action beside Yes and No.
     pub fn back_option(mut self) -> Self {
         self.back_option = true;
