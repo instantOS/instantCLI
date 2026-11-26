@@ -457,6 +457,7 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
                 ))
                 .yes_text("Remove Command")
                 .no_text("Keep Command")
+                .default_no()
                 .confirm_dialog()?
             {
                 crate::menu_utils::ConfirmResult::Yes => {
@@ -554,6 +555,7 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
                 ))
                 .yes_text("Remove Override")
                 .no_text("Keep Override")
+                .default_no()
                 .confirm_dialog()?
             {
                 crate::menu_utils::ConfirmResult::Yes => {

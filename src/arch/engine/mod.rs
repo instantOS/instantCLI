@@ -20,7 +20,9 @@ pub use install_plan::{
     EncryptionPassword, EncryptionPlan, FilesystemPlan, Hostname, InstallPlan, LocaleName,
     LoginPassword, ManualPartitions, PartitionPath, StoragePlan, Timezone, Username,
 };
-pub(crate) use install_plan::{FREE_SPACE_ANSWER, InstallInputs, SessionAnswers};
+pub(crate) use install_plan::{
+    FREE_SPACE_ANSWER, HomePartition, InstallInputs, SessionAnswers, partition_action,
+};
 pub use step::{AskPolicy, AsyncDataProvider, StepOutcome, WizardStep};
 pub(crate) use summary::{InstallSummary, build_install_summary};
 pub use types::{AnswerPrivacy, BootMode, GpuKind, Kernel, PartitioningMethod, StepId, SystemInfo};

@@ -444,9 +444,12 @@ impl Setting for ResetGtk {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let confirmation = FzfWrapper::confirm(
-            "Are you sure you want to reset all GTK theme customizations? This will clear settings.ini and remove GTK4 overrides.",
-        )?;
+        let confirmation = FzfWrapper::builder()
+            .confirm(
+                "Are you sure you want to reset all GTK theme customizations? This will clear settings.ini and remove GTK4 overrides.",
+            )
+            .default_no()
+            .confirm_dialog()?;
 
         if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes) {
             // 1. Reset GSettings

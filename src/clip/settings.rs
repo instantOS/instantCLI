@@ -255,6 +255,7 @@ fn confirm_clear(entries: &[ClipEntry]) -> Result<bool> {
         ))
         .yes_text(format!("Clear {}", entries.len()))
         .no_text("Keep")
+        .default_no()
         .confirm_dialog()?
         == ConfirmResult::Yes)
 }

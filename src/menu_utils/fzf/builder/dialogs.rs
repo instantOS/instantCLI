@@ -249,29 +249,16 @@ impl ConfirmBuilder {
             self.shared.header = Some(Header::Manual(header_text));
         }
 
-        let mut options = vec![
-            ConfirmOption::new(
-                self.yes_text.clone(),
-                colors::GREEN,
-                NerdFont::Check,
-                ConfirmResult::Yes,
-            ),
-            ConfirmOption::new(
-                self.no_text.clone(),
-                colors::RED,
-                NerdFont::Cross,
-                ConfirmResult::No,
-            ),
-        ];
+        // A confirmation's focus comes from the option order. Do not let a
+        // cursor configured on the entry builder override `default_no`.
+        self.shared.initial_cursor = None;
 
-        if self.back_option {
-            options.push(ConfirmOption::new(
-                "Back".to_string(),
-                colors::OVERLAY1,
-                NerdFont::ArrowLeft,
-                ConfirmResult::Cancelled,
-            ));
-        }
+        let options = build_confirm_options(
+            self.yes_text,
+            self.no_text,
+            self.default_no,
+            self.back_option,
+        );
 
         // Reuse the padded selection terminal on the entry FzfBuilder by
         // constructing one with the prepared shared config.
@@ -284,6 +271,36 @@ impl ConfirmBuilder {
             crate::menu_utils::DialogOutcome::Cancelled => Ok(ConfirmResult::Cancelled),
         }
     }
+}
+
+fn build_confirm_options(
+    yes_text: String,
+    no_text: String,
+    default_no: bool,
+    back_option: bool,
+) -> Vec<ConfirmOption> {
+    let yes = ConfirmOption::new(yes_text, colors::GREEN, NerdFont::Check, ConfirmResult::Yes);
+    let no = ConfirmOption::new(no_text, colors::RED, NerdFont::Cross, ConfirmResult::No);
+
+    let mut options = Vec::with_capacity(2 + usize::from(back_option));
+    if default_no {
+        options.push(no);
+        options.push(yes);
+    } else {
+        options.push(yes);
+        options.push(no);
+    }
+
+    if back_option {
+        options.push(ConfirmOption::new(
+            "Back".to_string(),
+            colors::OVERLAY1,
+            NerdFont::ArrowLeft,
+            ConfirmResult::Cancelled,
+        ));
+    }
+
+    options
 }
 
 // ---------------------------------------------------------------------------
@@ -534,5 +551,42 @@ mod mock_tests {
         assert_eq!(fallback_password_label(Some("P:"), Some("")), "P:");
         assert_eq!(fallback_password_label(None, Some("hint")), "[hint]");
         assert_eq!(fallback_password_label(None, None), "Enter password");
+    }
+}
+
+#[cfg(test)]
+mod confirm_tests {
+    use super::build_confirm_options;
+    use crate::menu_utils::ConfirmResult;
+
+    #[test]
+    fn default_confirm_starts_with_yes() {
+        let options = build_confirm_options("Yes".into(), "No".into(), false, false);
+        assert_eq!(
+            options.iter().map(|o| &o.result).collect::<Vec<_>>(),
+            vec![&ConfirmResult::Yes, &ConfirmResult::No]
+        );
+    }
+
+    #[test]
+    fn default_no_starts_with_no() {
+        let options = build_confirm_options("Yes".into(), "No".into(), true, false);
+        assert_eq!(
+            options.iter().map(|o| &o.result).collect::<Vec<_>>(),
+            vec![&ConfirmResult::No, &ConfirmResult::Yes]
+        );
+    }
+
+    #[test]
+    fn back_option_stays_last() {
+        let options = build_confirm_options("Yes".into(), "No".into(), true, true);
+        assert_eq!(
+            options.iter().map(|o| &o.result).collect::<Vec<_>>(),
+            vec![
+                &ConfirmResult::No,
+                &ConfirmResult::Yes,
+                &ConfirmResult::Cancelled
+            ]
+        );
     }
 }

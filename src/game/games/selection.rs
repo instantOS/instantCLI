@@ -1,11 +1,14 @@
 use crate::game::config::{Game, InstallationsConfig, InstantGameConfig, PathContentKind};
 use crate::game::frecency::LaunchHistory;
-use crate::game::menu::sort::{GameSort, SortRequested, choose_sort, sort_games, sort_keybind};
+use crate::game::menu::sort::{GameSort, sort_games};
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor};
+use crate::menu_utils::{
+    DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder, MenuCursor, MenuSort, SortRequested,
+    choose_sort, sort_keybind,
+};
 use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;

@@ -455,6 +455,11 @@ fn abort_preview() -> FzfPreview {
 fn display_step_answer(id: StepId, answer: &str, is_sensitive: bool) -> String {
     if id == StepId::ConsoleFont && !is_sensitive {
         crate::common::console_font::answer_label(answer)
+    } else if id == StepId::HomePartition
+        && !is_sensitive
+        && let Ok(home) = crate::arch::engine::HomePartition::from_answer(answer)
+    {
+        home.map_or_else(|| "Use space on root".to_owned(), |home| home.description())
     } else {
         display_answer(answer, is_sensitive)
     }

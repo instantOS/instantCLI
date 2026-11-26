@@ -223,7 +223,13 @@ pub(super) fn delete_entry_flow(name: Option<String>) -> Result<()> {
         DeleteMode::Otp => format!("Delete OTP entry '{}'?", entry.display_name),
     };
 
-    if !matches!(FzfWrapper::confirm(&confirm_message)?, ConfirmResult::Yes) {
+    if !matches!(
+        FzfWrapper::builder()
+            .confirm(&confirm_message)
+            .default_no()
+            .confirm_dialog()?,
+        ConfirmResult::Yes
+    ) {
         return Ok(());
     }
 

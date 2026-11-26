@@ -91,6 +91,10 @@ impl Filesystem {
         self.matches_any(&["ext2", "ext3", "ext4"])
     }
 
+    pub(crate) fn supports_home_reuse(&self) -> bool {
+        self.is_ext() || self.matches("xfs")
+    }
+
     /// NTFS, which has its own resize tool and its own safety rules.
     pub fn matches_ntfs(&self) -> bool {
         self.matches("ntfs")

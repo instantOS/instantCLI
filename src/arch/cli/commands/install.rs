@@ -33,6 +33,7 @@ fn confirm_battery_power() -> Result<bool> {
             )
             .yes_text("Continue")
             .no_text("Abort installation")
+            .default_no()
             .confirm_dialog()?,
         ConfirmResult::Yes
     ))

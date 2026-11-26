@@ -1,78 +1,30 @@
-use crate::arch::engine::{
-    AskPolicy, InstallContext, PartitionPath, StepId, StepOutcome, WizardStep,
-};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
-use crate::preview::{PreviewId, preview_command};
-use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
-/// Represents a partition entry with path and size information
-#[derive(Clone, Debug)]
-pub struct PartitionEntry {
-    /// Device path (e.g., /dev/sda1)
-    pub path: String,
-    /// Human-readable size (e.g., "512M")
-    pub size: String,
-}
+use crate::arch::engine::{
+    AskPolicy, HomePartition, InstallContext, PartitionPath, StepId, StepOutcome, WizardStep,
+};
+use crate::common::blockdev::{BlockDevice, Filesystem, load_lsblk};
+use crate::common::format::format_size;
+use crate::menu_utils::{DialogOutcome, FzfPreview, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::preview::{PreviewId, preview_command};
+use crate::ui::nerd_font::NerdFont;
 
-impl PartitionEntry {
-    pub fn new(path: String, size: String) -> Self {
-        Self { path, size }
-    }
-}
+#[derive(Clone)]
+pub(crate) struct PartitionEntry(BlockDevice);
 
 /// Discover the current partitions belonging to a whole-disk device.
-///
-/// This is shared by the manual partitioning action and the role selectors so
-/// both use the same fresh view of kernel device state.
 pub(crate) fn list_partitions(disk_path: &str) -> Result<Vec<PartitionEntry>> {
-    let output = std::process::Command::new("lsblk")
-        .args(["-n", "-o", "NAME,SIZE,TYPE", "-r", disk_path])
-        .output()
-        .context("Failed to run lsblk to get partitions")?;
-
-    anyhow::ensure!(
-        output.status.success(),
-        "lsblk failed while inspecting {disk_path}: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-
-    Ok(parse_lsblk_partitions(&String::from_utf8_lossy(
-        &output.stdout,
-    )))
+    let output = load_lsblk(&["--list", "--", disk_path])
+        .with_context(|| format!("Could not read partitions on {disk_path}"))?;
+    Ok(partition_entries(output.blockdevices))
 }
 
-fn parse_lsblk_partitions(stdout: &str) -> Vec<PartitionEntry> {
-    stdout
-        .lines()
-        .filter_map(|line| {
-            let mut parts = line.split_whitespace();
-            let name = parts.next()?;
-            let size = parts.next()?;
-            (parts.next()? == "part").then(|| {
-                let path = if name.starts_with('/') {
-                    name.to_string()
-                } else {
-                    format!("/dev/{name}")
-                };
-                PartitionEntry::new(path, size.to_string())
-            })
-        })
+fn partition_entries(devices: Vec<BlockDevice>) -> Vec<PartitionEntry> {
+    devices
+        .into_iter()
+        .filter(BlockDevice::is_partition)
+        .map(PartitionEntry)
         .collect()
-}
-
-impl FzfSelectable for PartitionEntry {
-    fn fzf_display_text(&self) -> String {
-        format!("{} ({})", self.path, self.size)
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Command(preview_command(PreviewId::Partition))
-    }
-
-    fn fzf_key(&self) -> String {
-        self.path.clone()
-    }
 }
 
 /// Represents size in megabytes with parsing capabilities
@@ -222,51 +174,198 @@ impl WizardStep for PartitionSelectorQuestion {
         )?;
 
         // Store just the path, not the formatted display string
-        Ok(StepOutcome::from_dialog(result, |entry| entry.path))
+        Ok(StepOutcome::from_dialog(result, |entry| entry.0.path()))
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
-        PartitionPath::parse(answer).map_err(|error| error.to_string())?;
+        let partition = PartitionPath::parse(answer).map_err(|error| error.to_string())?;
+        validate_partition_role(context, self.id, partition.as_str())?;
+        self.validator
+            .validate_partition(partition.as_str(), get_partition_size(partition.as_str()))
+    }
+}
 
-        let part_path = answer;
-        let current_id = self.id();
+fn validate_partition_role(
+    context: &InstallContext,
+    current_id: StepId,
+    path: &str,
+) -> Result<(), String> {
+    if let Some(id) = assigned_role(context, current_id, path) {
+        return Err(format!("Partition {path} is already selected for {id:?}"));
+    }
 
-        for (id, val) in context.answers() {
-            if id == &current_id {
+    if let Some(disk) = context.get_answer(&StepId::Disk)
+        && !partition_belongs_to_disk(path, disk)
+    {
+        return Err(format!(
+            "Partition {path} is not on the selected disk {disk}"
+        ));
+    }
+    Ok(())
+}
+
+fn assigned_role(context: &InstallContext, current_id: StepId, path: &str) -> Option<StepId> {
+    context.answers().find_map(|(&id, answer)| {
+        if id == current_id {
+            return None;
+        }
+        let matches = match id {
+            StepId::RootPartition | StepId::BootPartition | StepId::SwapPartition => path == answer,
+            StepId::HomePartition => path == answer.strip_prefix("keep:").unwrap_or(answer),
+            _ => false,
+        };
+        matches.then_some(id)
+    })
+}
+
+pub(crate) struct HomePartitionQuestion;
+
+#[derive(Clone, Copy)]
+enum HomeChoice {
+    Root,
+    Keep,
+    Format,
+}
+
+impl FzfSelectable for HomeChoice {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Root => "Use space on root",
+            Self::Keep => "Keep an existing partition",
+            Self::Format => "Format a partition as ext4",
+        }
+        .to_owned()
+    }
+}
+
+impl FzfSelectable for PartitionEntry {
+    fn fzf_display_text(&self) -> String {
+        let filesystem = self
+            .0
+            .fstype
+            .as_ref()
+            .map_or("no filesystem", Filesystem::as_str);
+        let mut label = String::new();
+        for character in self.0.label.as_deref().unwrap_or("no label").chars() {
+            if character.is_control() {
+                label.extend(character.escape_default());
+            } else {
+                label.push(character);
+            }
+        }
+        let size = self
+            .0
+            .size
+            .map_or_else(|| "unknown size".to_owned(), format_size);
+        format!("{}  |  {size}  |  {filesystem}  |  {label}", self.0.path())
+    }
+
+    fn fzf_key(&self) -> String {
+        self.0.path()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Command(preview_command(PreviewId::Partition))
+    }
+}
+
+#[async_trait::async_trait]
+impl WizardStep for HomePartitionQuestion {
+    fn id(&self) -> StepId {
+        StepId::HomePartition
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Choose where to store /home")
+    }
+
+    fn is_relevant(&self, context: &InstallContext) -> bool {
+        context.partitioning_method() == Some(crate::arch::engine::PartitioningMethod::Manual)
+    }
+
+    fn depends_on(&self) -> &[StepId] {
+        &[StepId::Disk, StepId::PartitioningMethod, StepId::RunCfdisk]
+    }
+
+    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
+        let disk = context
+            .get_answer(&StepId::Disk)
+            .context("No disk selected")?;
+        let previous = context
+            .previous_answer(&self.id())
+            .and_then(|answer| HomePartition::from_answer(answer).ok().flatten());
+        let mut index = match previous {
+            Some(HomePartition::Keep(_)) => 1,
+            Some(HomePartition::Format(_)) => 2,
+            None => 0,
+        };
+
+        loop {
+            let choice = FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Home, "Where should /home live?").build())
+                .items(vec![HomeChoice::Root, HomeChoice::Keep, HomeChoice::Format])
+                .initial_index(index)
+                .select_one()?;
+            let keep = match choice {
+                DialogOutcome::Submitted(HomeChoice::Root) => {
+                    return Ok(StepOutcome::Answer("root".to_owned()));
+                }
+                DialogOutcome::Submitted(HomeChoice::Keep) => true,
+                DialogOutcome::Submitted(HomeChoice::Format) => false,
+                DialogOutcome::Cancelled => return Ok(StepOutcome::Pause),
+            };
+            index = if keep { 1 } else { 2 };
+            let candidates: Vec<_> = list_partitions(disk)?
+                .into_iter()
+                .filter(|entry| assigned_role(context, self.id(), &entry.0.path()).is_none())
+                .filter(|entry| {
+                    !keep
+                        || entry
+                            .0
+                            .fstype
+                            .as_ref()
+                            .is_some_and(Filesystem::supports_home_reuse)
+                })
+                .collect();
+            if candidates.is_empty() {
+                let message = if keep {
+                    "No unassigned ext2, ext3, ext4, or XFS partition is available to keep as /home."
+                } else {
+                    "No unassigned partition is available to format as /home."
+                };
+                FzfWrapper::message(message)?;
                 continue;
             }
 
-            if matches!(
-                id,
-                StepId::RootPartition
-                    | StepId::BootPartition
-                    | StepId::HomePartition
-                    | StepId::SwapPartition
-            ) && part_path == val
-            {
-                return Err(format!(
-                    "Partition {} is already selected for {:?}",
-                    part_path, id
-                ));
+            let prompt = if keep {
+                "Keep and mount as /home"
+            } else {
+                "Erase and format as /home"
+            };
+            let initial = previous.as_ref().and_then(|home| {
+                candidates
+                    .iter()
+                    .position(|candidate| candidate.0.path() == home.path().as_str())
+            });
+            let picker = FzfWrapper::builder()
+                .header(HeaderBuilder::new(NerdFont::Home, prompt).build())
+                .items(candidates)
+                .initial_index(initial.unwrap_or(0));
+            if let DialogOutcome::Submitted(candidate) = picker.select_one_with_back()? {
+                let path = candidate.0.path();
+                return Ok(StepOutcome::Answer(if keep {
+                    format!("keep:{path}")
+                } else {
+                    path
+                }));
             }
         }
+    }
 
-        let size = get_partition_size(part_path);
-
-        // The partition must live on the currently selected disk. ask() only
-        // offers partitions of that disk, so a mismatch means the answer was
-        // given for a different disk (e.g. before a review edit).
-        if let Some(disk) = context.get_answer(&StepId::Disk)
-            && !partition_belongs_to_disk(part_path, disk)
-        {
-            return Err(format!(
-                "Partition {} is not on the selected disk {}",
-                part_path, disk
-            ));
+    fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
+        if let Some(home) = HomePartition::from_answer(answer).map_err(|error| error.to_string())? {
+            validate_partition_role(context, self.id(), home.path().as_str())?;
         }
-
-        self.validator.validate_partition(part_path, size)?;
-
         Ok(())
     }
 }
@@ -300,20 +399,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_only_partition_rows_from_lsblk() {
-        let partitions = parse_lsblk_partitions(
-            "vda 20G disk\nvda1 512M part\nvda2 19.5G part\nloop0 1G loop\n",
-        );
-
+    fn displays_partition_metadata_from_lsblk() {
+        let output: crate::common::blockdev::LsblkOutput = serde_json::from_str(
+            r#"{
+            "blockdevices": [
+                {"name":"vda","size":21474836480,"type":"disk"},
+                {"name":"vda1","size":536870912,"type":"part"},
+                {"name":"vda2","size":20937965568,"type":"part","fstype":"ext4","label":"My Home"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        let partitions = partition_entries(output.blockdevices);
         assert_eq!(partitions.len(), 2);
-        assert_eq!(partitions[0].path, "/dev/vda1");
-        assert_eq!(partitions[0].size, "512M");
-        assert_eq!(partitions[1].path, "/dev/vda2");
-    }
-
-    #[test]
-    fn empty_disk_lsblk_output_has_no_partitions() {
-        assert!(parse_lsblk_partitions("vda 20G disk\n").is_empty());
+        assert_eq!(partitions[0].fzf_key(), "/dev/vda1");
+        assert_eq!(
+            partitions[1].fzf_display_text(),
+            "/dev/vda2  |  19.5 GB  |  ext4  |  My Home",
+        );
     }
 
     #[test]
@@ -365,5 +468,24 @@ mod tests {
         let context = InstallContext::new();
         assert!(question.validate(&context, "/dev/../etc/passwd").is_err());
         assert!(question.validate(&context, "not-dev").is_err());
+    }
+
+    #[test]
+    fn kept_home_cannot_share_a_partition_with_a_format_role() {
+        let mut context = InstallContext::new();
+        context.set_answer(StepId::Disk, "/dev/sda".to_owned());
+        context.set_answer(StepId::RootPartition, "/dev/sda2".to_owned());
+        let question = HomePartitionQuestion;
+        assert!(question.validate(&context, "keep:/dev/sda2").is_err());
+        assert!(question.validate(&context, "keep:/dev/sdb3").is_err());
+        assert!(
+            question
+                .validate(&context, "keep:/dev/../etc/passwd")
+                .is_err()
+        );
+        assert!(question.validate(&context, "keep:/dev/sda3").is_ok());
+
+        context.set_answer(StepId::HomePartition, "keep:/dev/sda3".to_owned());
+        assert!(validate_partition_role(&context, StepId::BootPartition, "/dev/sda3").is_err());
     }
 }

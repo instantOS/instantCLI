@@ -310,6 +310,7 @@ fn toggle_user_sudo(
                 )
                 .yes_text("Remove sudo")
                 .no_text("Cancel")
+                .default_no()
                 .confirm_dialog()?;
 
             if result != crate::menu_utils::ConfirmResult::Yes {

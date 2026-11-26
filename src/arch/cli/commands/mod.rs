@@ -158,15 +158,7 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
             )
             .optional(),
         ),
-        Box::new(
-            PartitionSelectorQuestion::new(
-                crate::arch::engine::StepId::HomePartition,
-                "Select Home Partition",
-                crate::ui::nerd_font::NerdFont::Home,
-                None,
-            )
-            .optional(),
-        ),
+        Box::new(crate::arch::questions::partition::HomePartitionQuestion),
         Box::new(hostname_question()),
         Box::new(username_question()),
         Box::new(PasswordQuestion),

@@ -557,6 +557,18 @@ impl<A> MenuKeybind<A> {
             action,
         }
     }
+
+    /// Keep the key and label, but report `action` when the key is pressed.
+    ///
+    /// Lets a menu with its own action type register a binding that was
+    /// built for another action type.
+    pub fn map_action<B>(self, action: B) -> MenuKeybind<B> {
+        MenuKeybind {
+            key: self.key,
+            label: self.label,
+            action,
+        }
+    }
 }
 
 /// A displayed shortcut handled inside the renderer (rather than a submitted action).
@@ -850,5 +862,16 @@ mod tests {
     fn default_fzf_key_preserves_plain_text() {
         let display = "Plain item";
         assert_eq!(default_fzf_key(display), "Plain item");
+    }
+
+    #[test]
+    fn keybind_action_can_be_remapped() {
+        let bind = MenuKeybind::new(MenuKey::new("ctrl-e").unwrap(), "edit", 7u8);
+
+        let remapped = bind.map_action("edit-entry");
+
+        assert_eq!(remapped.key.as_str(), "ctrl-e");
+        assert_eq!(remapped.label, "edit");
+        assert_eq!(remapped.action, "edit-entry");
     }
 }

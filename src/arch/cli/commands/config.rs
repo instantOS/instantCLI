@@ -9,7 +9,7 @@ use crate::arch::cli::ConfigCommands;
 use crate::arch::config::{BtrfsCompression, DesktopEnvironment, DisplayManager, RootFilesystem};
 use crate::arch::engine::{
     DualBootTarget, FREE_SPACE_ANSWER, InstallContext, InstallPlan, Kernel, PartitioningMethod,
-    StepId, StoragePlan, SystemInfo, WizardStep,
+    StepId, StoragePlan, SystemInfo, WizardStep, partition_action,
 };
 
 pub fn print_config_guide() {
@@ -143,7 +143,7 @@ fn field_help(id: StepId) -> Option<String> {
             "Optional with manual partitioning. Path of the partition to initialize as swap."
         }
         StepId::HomePartition => {
-            "Optional with manual partitioning. Path of the partition to format and mount at `/home`."
+            "Optional with manual partitioning. Use `root` (or omit) to use space on root, `keep:/dev/...` to mount an existing ext2, ext3, ext4, or XFS partition, or a plain `/dev/...` path to erase and format it as ext4."
         }
         StepId::DualBootPartition => {
             return Some(format!(
@@ -261,20 +261,28 @@ pub(super) fn check_config(steps: &[Box<dyn WizardStep>], path: &Path, target: b
             }
         }
         StoragePlan::Manual { partitions, .. } => {
-            let devices = [
-                Some(&partitions.root),
-                Some(&partitions.boot),
-                partitions.swap.as_ref(),
-                partitions.home.as_ref(),
-            ];
-            let mut paths = Vec::new();
-            for device in devices.into_iter().flatten() {
-                if target {
+            if target {
+                for device in [&partitions.root, &partitions.boot]
+                    .into_iter()
+                    .chain(partitions.swap.iter())
+                    .chain(partitions.home.iter().map(|home| home.path()))
+                {
                     require_block_device(device.as_str())?;
                 }
-                paths.push(device.as_str());
+                crate::arch::execution::disk::validate_kept_home_devices(partitions)?;
             }
-            format!("Format selected partitions ({})", paths.join(", "))
+            let mut actions = vec![
+                partition_action(partitions.root.as_str(), "format as /"),
+                partition_action(partitions.boot.as_str(), "format as /boot"),
+            ];
+            if let Some(swap) = &partitions.swap {
+                actions.push(partition_action(swap.as_str(), "initialize as swap"));
+            }
+            actions.push(partitions.home.as_ref().map_or_else(
+                || "/home → use space on root".to_owned(),
+                |home| home.description(),
+            ));
+            actions.join("\n")
         }
         StoragePlan::DualBoot {
             target: dual_boot, ..

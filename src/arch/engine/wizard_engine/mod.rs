@@ -840,7 +840,11 @@ impl WizardEngine {
     }
 
     fn confirm_abort(&self) -> Result<bool> {
-        Ok(FzfWrapper::confirm(self.flow.abort_confirmation())? == ConfirmResult::Yes)
+        Ok(FzfWrapper::builder()
+            .confirm(self.flow.abort_confirmation())
+            .default_no()
+            .confirm_dialog()?
+            == ConfirmResult::Yes)
     }
 }
 

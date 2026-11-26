@@ -111,6 +111,7 @@ impl ChecklistBuilder {
                             .confirm("Discard selections and exit?")
                             .yes_text("Discard")
                             .no_text("Keep")
+                            .default_no()
                             .confirm_dialog()?
                         {
                             ConfirmResult::Yes => return Ok(ChecklistResult::Cancelled),

@@ -140,6 +140,7 @@ impl WizardStep for DisplayManagerQuestion {
                      You will need to start your GUI session yourself after login.",
                     NerdFont::Warning
                 ))
+                .default_no()
                 .confirm_dialog()?;
 
             match confirmed {

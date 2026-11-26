@@ -2,6 +2,7 @@ mod automatic;
 mod dualboot;
 mod encryption;
 mod filesystem;
+mod home;
 mod mount;
 mod probe;
 mod util;
@@ -10,6 +11,7 @@ use super::CommandRunner;
 use crate::arch::engine::{BootMode, InstallContext, InstallPlan, StoragePlan};
 use anyhow::Result;
 
+pub(crate) use home::validate_kept_home_devices;
 pub use util::get_part_path;
 
 fn activate_swap(path: &str, executor: &dyn CommandRunner) -> Result<()> {

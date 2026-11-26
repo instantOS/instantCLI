@@ -55,6 +55,7 @@ pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
         ))
         .yes_text("Remove Game")
         .no_text("Keep Game")
+        .default_no()
         .confirm_dialog()
         .map_err(|e| anyhow!("Failed to get confirmation: {}", e))?
     {

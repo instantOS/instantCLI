@@ -167,6 +167,7 @@ fn confirm_uninstall(message: &str) -> Result<bool> {
         .confirm(message)
         .yes_text("Uninstall")
         .no_text("Cancel")
+        .default_no()
         .confirm_dialog()?;
     Ok(matches!(result, ConfirmResult::Yes))
 }
@@ -210,6 +211,7 @@ fn confirm_add_dependents(message: &str) -> Result<bool> {
         .confirm(message)
         .yes_text("Add dependents")
         .no_text("Cancel")
+        .default_no()
         .confirm_dialog()?;
     Ok(matches!(result, ConfirmResult::Yes))
 }

@@ -895,6 +895,10 @@ impl FzfWrapper {
         Self::builder().message(message).message_dialog()
     }
 
+    /// Show a confirmation dialog with Yes focused by default.
+    ///
+    /// Use [`Self::builder`] with `confirm(..).default_no()` for destructive
+    /// prompts so pressing Enter does not confirm them.
     pub fn confirm(message: &str) -> Result<ConfirmResult> {
         Self::builder().confirm(message).confirm_dialog()
     }

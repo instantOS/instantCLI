@@ -698,6 +698,7 @@ fn confirm_deletion(matches: &[Notification], postfix: Option<&str>) -> Result<b
         .confirm(popup)
         .yes_text(format!("Delete {count}"))
         .no_text("Keep")
+        .default_no()
         .confirm_dialog()?;
 
     Ok(matches!(result, ConfirmResult::Yes))
