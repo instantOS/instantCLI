@@ -279,6 +279,9 @@ fn print_system_checks(
     println!("  AMD CPU: {}", system_info.has_amd_cpu);
     println!("  Intel CPU: {}", system_info.has_intel_cpu);
     println!("  GPUs: {:?}", system_info.gpus);
+    if let Some(notice) = system_info.nvidia_fallback_notice(Some(linux_variant)) {
+        println!("  {notice}");
+    }
     println!("  Virtual Machine: {:?}", system_info.vm_type);
     println!("  RAM: {:?} GB", system_info.total_ram_gb);
 }

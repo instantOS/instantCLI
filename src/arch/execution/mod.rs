@@ -447,6 +447,15 @@ pub async fn execute_installation(
         plan.environment().host().label(),
         plan.environment().target_label()
     );
+    let in_chroot = is_chroot();
+    if !in_chroot
+        && let Some(notice) = plan
+            .system_info()
+            .nvidia_fallback_notice(Some(plan.linux_variant()))
+    {
+        println!("{notice}");
+        executor.log(&notice);
+    }
 
     if !plan.linux_variant().supports_offline_installation() && install_mode.is_offline() {
         anyhow::bail!(
@@ -456,7 +465,6 @@ pub async fn execute_installation(
         );
     }
 
-    let in_chroot = is_chroot();
     // The parent holds the lock through every target chroot invocation.
     let _installation_lock = (!dry_run && !in_chroot)
         .then(InstallState::lock)

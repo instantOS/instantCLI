@@ -267,7 +267,10 @@ pub enum BootMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum GpuKind {
+    /// NVIDIA GPU of unknown or pre-Turing architecture.
     Nvidia,
+    /// NVIDIA GPU from a family supported by the open kernel modules.
+    NvidiaOpen,
     Amd,
     Intel,
     Other(String),

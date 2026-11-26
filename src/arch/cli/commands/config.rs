@@ -331,6 +331,17 @@ pub(super) fn check_config(steps: &[Box<dyn WizardStep>], path: &Path, target: b
             "target_devices_checked": target,
         })),
     );
+    if let Some(notice) = plan
+        .system_info()
+        .nvidia_fallback_notice(Some(plan.linux_variant()))
+    {
+        crate::ui::emit(
+            crate::ui::Level::Warn,
+            "arch.graphics.nouveau",
+            &notice,
+            None,
+        );
+    }
     Ok(())
 }
 

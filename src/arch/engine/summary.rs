@@ -474,9 +474,13 @@ fn render_system(writer: &mut PreviewWriter, facts: &SystemFacts) {
 }
 
 pub(crate) fn build_install_summary(context: &InstallContext) -> InstallSummary {
-    let facts = SummaryFacts::from_context(context, ArchLinuxVariant::detect().ok());
+    let variant = ArchLinuxVariant::detect().ok();
+    let facts = SummaryFacts::from_context(context, variant);
 
     let mut writer = PreviewWriter::collect();
+    if let Some(notice) = context.system_info.nvidia_fallback_notice(variant) {
+        writer.line(colors::YELLOW, Some(NerdFont::Warning), &notice);
+    }
     render_identity(&mut writer, &facts.identity);
     render_locale(&mut writer, &facts.locale);
     render_storage(&mut writer, &facts.storage);

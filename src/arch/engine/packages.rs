@@ -1,5 +1,4 @@
 use super::system_configuration::{InitramfsConfiguration, SystemConfiguration};
-use crate::arch::arch_linux_variant::ArchLinuxVariant;
 use crate::arch::engine::{BootMode, GpuKind, InstallInputs, Kernel};
 use std::collections::HashSet;
 
@@ -129,20 +128,6 @@ fn collect_extended_packages(inputs: &InstallInputs, system: &SystemConfiguratio
         packages.push("artix-archlinux-support".to_string());
     }
 
-    // Kernel headers are only needed to build out-of-tree modules. Whether a
-    // GPU/driver pair needs them is decided next to the driver-package list
-    // in GpuKind, so this site stays oblivious to which kernels require
-    // headers and which do not.
-    if let Some(headers) = inputs
-        .system_info
-        .gpus
-        .iter()
-        .filter_map(|gpu| gpu_kernel_headers(gpu, kernel, linux_variant))
-        .next()
-    {
-        packages.push(headers);
-    }
-
     // Standard Arch desktop packages
     // Note: instantOS packages are selected separately from INSTANT_PACKAGES
     if !minimal_mode {
@@ -175,12 +160,42 @@ fn collect_extended_packages(inputs: &InstallInputs, system: &SystemConfiguratio
 
     // GPU packages (after multilib is enabled)
     let mut seen_gpus = HashSet::new();
+    let has_unconfirmed_nvidia = inputs.system_info.gpus.contains(&GpuKind::Nvidia);
     for gpu in &inputs.system_info.gpus {
         if !seen_gpus.insert(std::mem::discriminant(gpu)) {
             continue;
         }
 
-        packages.extend(gpu_packages(gpu, kernel, linux_variant));
+        match gpu {
+            // nvidia-utils blacklists Nouveau for all GPUs, including cards
+            // that the NVIDIA driver cannot drive in a mixed installation.
+            GpuKind::NvidiaOpen if !has_unconfirmed_nvidia => {
+                let module = match (kernel, linux_variant.is_artix()) {
+                    (Kernel::Linux, _) => "nvidia-open",
+                    (Kernel::Lts, false) => "nvidia-open-lts",
+                    // Artix LTS uses the DKMS package with matching headers.
+                    (Kernel::Lts, true) | (Kernel::Zen, _) => {
+                        packages.push(format!("{}-headers", kernel.label()));
+                        packages.push("dkms".to_owned());
+                        "nvidia-open-dkms"
+                    }
+                };
+                packages.extend(package_names(&[module, "nvidia-utils", "nvidia-settings"]));
+            }
+            // The kernel supplies Nouveau, and Mesa is in the standard batch.
+            GpuKind::Nvidia | GpuKind::NvidiaOpen => {}
+            GpuKind::Amd => packages.extend(package_names(&[
+                "vulkan-radeon",
+                "lib32-vulkan-radeon",
+                "lib32-mesa",
+            ])),
+            GpuKind::Intel => packages.extend(package_names(&[
+                "vulkan-intel",
+                "lib32-vulkan-intel",
+                "intel-media-driver",
+            ])),
+            GpuKind::Other(_) => packages.extend(package_names(&["mesa", "lib32-mesa"])),
+        }
     }
 
     if !minimal_mode {
@@ -191,42 +206,6 @@ fn collect_extended_packages(inputs: &InstallInputs, system: &SystemConfiguratio
     }
 
     packages
-}
-
-/// Driver packages for `gpu` on `kernel` and `linux_variant`.
-///
-/// Artix does not package `nvidia-open-lts`, so the LTS kernel uses the DKMS
-/// module there. Arch keeps its prebuilt LTS module.
-fn gpu_packages(gpu: &GpuKind, kernel: Kernel, linux_variant: ArchLinuxVariant) -> Vec<String> {
-    if linux_variant.is_artix() && matches!(gpu, GpuKind::Nvidia) && kernel == Kernel::Lts {
-        return package_names(&[
-            "nvidia-open-dkms",
-            "dkms",
-            "nvidia-utils",
-            "nvidia-settings",
-        ]);
-    }
-
-    gpu.get_driver_packages(Some(kernel))
-        .into_iter()
-        .map(String::from)
-        .collect()
-}
-
-/// Kernel headers required by the driver selected for `gpu`.
-///
-/// The DKMS fallback used for Nvidia on Artix's LTS kernel needs the LTS
-/// headers, which the Arch-oriented `GpuKind` helper does not ask for.
-fn gpu_kernel_headers(
-    gpu: &GpuKind,
-    kernel: Kernel,
-    linux_variant: ArchLinuxVariant,
-) -> Option<String> {
-    if linux_variant.is_artix() && matches!(gpu, GpuKind::Nvidia) && kernel == Kernel::Lts {
-        return Some(format!("{}-headers", kernel.label()));
-    }
-
-    gpu.get_kernel_headers(kernel)
 }
 
 /// PCI vendor IDs of common network interface controllers and the
@@ -262,7 +241,7 @@ fn firmware_packages(inputs: &InstallInputs) -> Vec<String> {
     let mut wanted: HashSet<&str> = HashSet::new();
     for gpu in &inputs.system_info.gpus {
         match gpu {
-            GpuKind::Nvidia => {
+            GpuKind::Nvidia | GpuKind::NvidiaOpen => {
                 wanted.insert("linux-firmware-nvidia");
             }
             GpuKind::Amd => {
@@ -656,7 +635,7 @@ mod tests {
             inputs.kernel = Kernel::Lts;
         });
         plan = plan.with_test_inputs(|inputs| {
-            inputs.system_info.gpus = vec![GpuKind::Nvidia];
+            inputs.system_info.gpus = vec![GpuKind::NvidiaOpen];
         });
 
         let packages = plan.standard_packages();
@@ -674,7 +653,7 @@ mod tests {
             inputs.kernel = Kernel::Lts;
         });
         plan = plan.with_test_inputs(|inputs| {
-            inputs.system_info.gpus = vec![GpuKind::Nvidia];
+            inputs.system_info.gpus = vec![GpuKind::NvidiaOpen];
         });
 
         let packages = plan.standard_packages();
@@ -682,6 +661,32 @@ mod tests {
         assert!(packages.iter().any(|pkg| pkg == "nvidia-open-lts"));
         assert!(!packages.iter().any(|pkg| pkg == "nvidia-open-dkms"));
         assert!(!packages.iter().any(|pkg| pkg == "linux-lts-headers"));
+    }
+
+    #[test]
+    fn unsupported_or_unidentified_nvidia_uses_nouveau_with_mesa() {
+        for nvidia in [
+            vec![GpuKind::Nvidia],
+            vec![GpuKind::Nvidia, GpuKind::NvidiaOpen],
+        ] {
+            let plan = base_plan().with_test_inputs(|inputs| {
+                inputs.kernel = Kernel::Zen;
+                inputs.system_info.gpus = vec![GpuKind::Intel];
+                inputs.system_info.gpus.extend(nvidia);
+            });
+
+            let packages = plan.standard_packages();
+            assert!(packages.iter().any(|pkg| pkg == "mesa"));
+            assert!(packages.iter().any(|pkg| pkg == "vulkan-intel"));
+            assert!(!packages.iter().any(|pkg| pkg.starts_with("nvidia-")));
+            assert!(!packages.iter().any(|pkg| pkg == "dkms"));
+            assert!(!packages.iter().any(|pkg| pkg == "linux-zen-headers"));
+            assert!(
+                plan.system_info()
+                    .nvidia_fallback_notice(Some(ArchLinuxVariant::Arch))
+                    .is_some_and(|notice| notice.contains("nvidia-580xx-dkms"))
+            );
+        }
     }
 
     #[test]

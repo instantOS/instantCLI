@@ -1,5 +1,7 @@
 use colored::Colorize;
 
+use crate::arch::arch_linux_variant::ArchLinuxVariant;
+
 use super::types::{BootMode, GpuKind, SystemInfo};
 
 impl std::fmt::Display for BootMode {
@@ -16,6 +18,7 @@ impl std::fmt::Display for GpuKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GpuKind::Nvidia => write!(f, "NVIDIA"),
+            GpuKind::NvidiaOpen => write!(f, "NVIDIA (open kernel modules supported)"),
             GpuKind::Amd => write!(f, "AMD"),
             GpuKind::Intel => write!(f, "Intel"),
             GpuKind::Other(name) => write!(f, "{}", name),
@@ -26,60 +29,75 @@ impl std::fmt::Display for GpuKind {
 impl GpuKind {
     pub fn to_colored_string(&self) -> colored::ColoredString {
         match self {
-            GpuKind::Nvidia => self.to_string().bright_green(),
+            GpuKind::Nvidia | GpuKind::NvidiaOpen => self.to_string().bright_green(),
             GpuKind::Amd => self.to_string().bright_red(),
             GpuKind::Intel => self.to_string().bright_blue(),
             GpuKind::Other(_) => self.to_string().normal(),
         }
     }
 
-    /// Returns driver packages for this GPU.
-    /// For NVIDIA, the kernel determines the driver: Arch ships the open
-    /// kernel modules as prebuilt packages for linux (`nvidia-open`) and
-    /// linux-lts (`nvidia-open-lts`); every other kernel builds them from
-    /// source with DKMS (`nvidia-open-dkms`). The proprietary module
-    /// packages (`nvidia`, `nvidia-lts`, `nvidia-dkms`) no longer exist.
-    pub fn get_driver_packages(
-        &self,
-        kernel: Option<crate::arch::engine::Kernel>,
-    ) -> Vec<&'static str> {
-        match self {
-            GpuKind::Nvidia => {
-                let mut packages = Vec::new();
-                match kernel.unwrap_or(crate::arch::engine::Kernel::Linux) {
-                    crate::arch::engine::Kernel::Linux => packages.push("nvidia-open"),
-                    crate::arch::engine::Kernel::Lts => packages.push("nvidia-open-lts"),
-                    crate::arch::engine::Kernel::Zen => {
-                        // Zen needs DKMS instead of a prebuilt module
-                        packages.push("nvidia-open-dkms");
-                        packages.push("dkms");
-                    }
-                }
-                packages.push("nvidia-utils");
-                packages.push("nvidia-settings");
-                packages
+    fn nvidia_from_pci_name(name: &str) -> Self {
+        // hwdata starts NVIDIA device names with the chip codename. NVIDIA's
+        // open modules require the GSP introduced in Turing (TU).
+        match name.as_bytes() {
+            [b'T', b'U', digit, ..]
+            | [b'G', b'A' | b'H' | b'B' | b'R', digit, ..]
+            | [b'A', b'D', digit, ..]
+                if digit.is_ascii_digit() =>
+            {
+                Self::NvidiaOpen
             }
-            // VA-API for Mesa ships inside (lib32-)mesa since the Mesa
-            // consolidation; the old libva-mesa-driver names are gone.
-            GpuKind::Amd => vec!["vulkan-radeon", "lib32-vulkan-radeon", "lib32-mesa"],
-            GpuKind::Intel => vec!["vulkan-intel", "lib32-vulkan-intel", "intel-media-driver"],
-            GpuKind::Other(_) => vec!["mesa", "lib32-mesa"],
+            _ => Self::Nvidia,
         }
     }
+}
 
-    /// Kernel headers required to build this GPU's driver on the given
-    /// kernel, if any. DKMS drivers (e.g. nvidia-dkms on Zen) need the
-    /// headers to compile the out-of-tree module; prebuilt drivers do not.
-    /// Sibling of [`Self::get_driver_packages`] so the DKMS/headers coupling
-    /// stays in one place.
-    pub fn get_kernel_headers(&self, kernel: crate::arch::engine::Kernel) -> Option<String> {
-        match (self, kernel) {
-            (GpuKind::Nvidia, crate::arch::engine::Kernel::Zen) => {
-                Some(format!("{}-headers", kernel.label()))
+fn nvidia_pci_name<'a>(pci_ids: &'a str, device: &str) -> Option<&'a str> {
+    pci_ids
+        .lines()
+        .skip_while(|line| !line.starts_with("10de "))
+        .skip(1)
+        .take_while(|line| line.is_empty() || line.starts_with(['\t', '#']))
+        .filter_map(|line| line.strip_prefix('\t'))
+        .filter(|line| !line.starts_with('\t'))
+        .filter_map(|line| line.split_once(' '))
+        .find_map(|(id, name)| id.eq_ignore_ascii_case(device).then(|| name.trim_start()))
+}
+
+/// Read PCI display controllers even if the live kernel has no driver for them.
+fn detect_pci_gpus(pci_devices: &std::path::Path, pci_ids: &str, info: &mut SystemInfo) {
+    let Ok(entries) = std::fs::read_dir(pci_devices) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(event) = std::fs::read_to_string(entry.path().join("uevent")) else {
+            continue;
+        };
+        let field = |key| event.lines().find_map(|line| line.strip_prefix(key));
+        let Some(class) = field("PCI_CLASS=").and_then(|hex| u32::from_str_radix(hex, 16).ok())
+        else {
+            continue;
+        };
+        if class >> 16 != 0x03 {
+            continue;
+        }
+        let Some((vendor, device)) = field("PCI_ID=").and_then(|id| id.split_once(':')) else {
+            continue;
+        };
+        let gpu = match vendor {
+            "10DE" => {
+                GpuKind::nvidia_from_pci_name(nvidia_pci_name(pci_ids, device).unwrap_or_default())
             }
-            _ => None,
+            "1002" => GpuKind::Amd,
+            "8086" => GpuKind::Intel,
+            _ => continue,
+        };
+        if !info.gpus.contains(&gpu) {
+            info.gpus.push(gpu);
         }
     }
+    info.gpus.sort_by_key(|gpu| gpu.to_string());
 }
 
 /// PCI/USB vendor IDs of every network interface, read from sysfs.
@@ -163,6 +181,23 @@ fn detect_vm_type_from_dmi() -> Option<String> {
 }
 
 impl SystemInfo {
+    pub(crate) fn nvidia_fallback_notice(
+        &self,
+        variant: Option<ArchLinuxVariant>,
+    ) -> Option<String> {
+        if !self.gpus.contains(&GpuKind::Nvidia) {
+            return None;
+        }
+
+        let mut notice = String::from(
+            "Using Nouveau for NVIDIA graphics because nvidia-open support could not be confirmed for every NVIDIA GPU. Graphics performance may be limited.",
+        );
+        if variant == Some(ArchLinuxVariant::Arch) {
+            notice.push_str(" After installation, GTX 10-series and supported Maxwell cards can use nvidia-580xx-dkms from the AUR with headers for the installed kernel.");
+        }
+        Some(notice)
+    }
+
     pub fn detect() -> Self {
         Self::detect_with_network(crate::common::network::check_internet())
     }
@@ -195,58 +230,12 @@ impl SystemInfo {
             info.has_intel_cpu = cpuinfo.contains("GenuineIntel");
         }
 
-        // GPU check using /sys/class/drm/ approach
-        let mut found_gpus = false;
-        if let Ok(drm_entries) = std::fs::read_dir("/sys/class/drm") {
-            let mut detected_gpus = std::collections::HashSet::new();
-
-            for entry in drm_entries.flatten() {
-                if let Ok(path) = entry.path().join("device").read_link()
-                    && let Some(path_str) = path.to_str()
-                {
-                    let path_lower = path_str.to_lowercase();
-                    if path_lower.contains("nvidia") {
-                        detected_gpus.insert(GpuKind::Nvidia);
-                        found_gpus = true;
-                    } else if path_lower.contains("amd") || path_lower.contains("radeon") {
-                        detected_gpus.insert(GpuKind::Amd);
-                        found_gpus = true;
-                    } else if path_lower.contains("intel") {
-                        detected_gpus.insert(GpuKind::Intel);
-                        found_gpus = true;
-                    }
-                }
-            }
-
-            if found_gpus {
-                info.gpus = detected_gpus.into_iter().collect();
-            }
-        }
-
-        // Fallback to lspci if drm detection didn't find anything
-        if !found_gpus && let Ok(lspci) = std::process::Command::new("lspci").output() {
-            let output = String::from_utf8_lossy(&lspci.stdout);
-            let mut detected_gpus = std::collections::HashSet::new();
-
-            if output.to_lowercase().contains("nvidia") {
-                detected_gpus.insert(GpuKind::Nvidia);
-            }
-            if output.to_lowercase().contains("amd")
-                || output.to_lowercase().contains("radeon")
-                || output.to_lowercase().contains("advanced micro devices")
-            {
-                detected_gpus.insert(GpuKind::Amd);
-            }
-            if output.to_lowercase().contains("intel")
-                || output.to_lowercase().contains("integrated graphics")
-                || output.to_lowercase().contains("hd graphics")
-                || output.to_lowercase().contains("iris")
-            {
-                detected_gpus.insert(GpuKind::Intel);
-            }
-
-            info.gpus = detected_gpus.into_iter().collect();
-        }
+        let pci_ids = std::fs::read_to_string("/usr/share/hwdata/pci.ids").unwrap_or_default();
+        detect_pci_gpus(
+            std::path::Path::new("/sys/bus/pci/devices"),
+            &pci_ids,
+            &mut info,
+        );
 
         // VM check. `systemd-detect-virt` is authoritative when it exists; on
         // non-systemd hosts (Artix) fall back to the DMI product name.
@@ -424,7 +413,53 @@ impl SystemInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::vm_type_from_dmi;
+    use super::{GpuKind, SystemInfo, detect_pci_gpus, vm_type_from_dmi};
+
+    #[test]
+    fn pci_detection_distinguishes_pascal_and_turing_without_counting_audio() -> anyhow::Result<()>
+    {
+        const PCI_IDS: &str = concat!(
+            "10de  NVIDIA Corporation\n",
+            "\t1c02  GP106 [GeForce GTX 1060 3GB]\n",
+            "\t1c81  GP107 [GeForce GTX 1050]\n",
+            "\t1f82  TU117 [GeForce GTX 1650]\n",
+            "\t10fa  TU117 High Definition Audio Controller\n",
+        );
+        let pci = tempfile::tempdir()?;
+        for (slot, event) in [
+            ("00:01.0", "PCI_CLASS=30000\nPCI_ID=8086:9A49\n"),
+            ("01:00.0", "PCI_CLASS=30200\nPCI_ID=10DE:1F82\n"),
+            ("01:00.1", "PCI_CLASS=40300\nPCI_ID=10DE:10FA\n"),
+        ] {
+            let path = pci.path().join(slot);
+            std::fs::create_dir(&path)?;
+            std::fs::write(path.join("uevent"), event)?;
+        }
+
+        let mut info = SystemInfo::default();
+        detect_pci_gpus(pci.path(), PCI_IDS, &mut info);
+        assert_eq!(info.gpus, vec![GpuKind::Intel, GpuKind::NvidiaOpen]);
+
+        let mut info = SystemInfo::default();
+        detect_pci_gpus(pci.path(), "", &mut info);
+        assert_eq!(info.gpus, vec![GpuKind::Intel, GpuKind::Nvidia]);
+
+        let legacy = pci.path().join("02:00.0");
+        std::fs::create_dir(&legacy)?;
+        for id in ["1C81", "1C02"] {
+            std::fs::write(
+                legacy.join("uevent"),
+                format!("PCI_CLASS=30000\nPCI_ID=10DE:{id}\n"),
+            )?;
+            let mut info = SystemInfo::default();
+            detect_pci_gpus(pci.path(), PCI_IDS, &mut info);
+            assert_eq!(
+                info.gpus,
+                vec![GpuKind::Intel, GpuKind::Nvidia, GpuKind::NvidiaOpen]
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn dmi_product_names_map_to_vm_types() {
