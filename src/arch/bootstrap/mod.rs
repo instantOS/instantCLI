@@ -148,7 +148,7 @@ fn preflight() -> Result<()> {
 }
 
 /// Called on the original host, after privilege escalation and before any
-/// wizard step. Logs and answers survive bootstrap teardown in /run/ins-install.
+/// wizard step. Logs, answers, and checkpoints survive teardown in /run/ins-install.
 pub async fn launch(mut request: Request) -> Result<()> {
     preflight()?;
     if !nix::unistd::Uid::effective().is_root() {
@@ -199,15 +199,6 @@ pub async fn launch(mut request: Request) -> Result<()> {
         _ = interrupt.recv() => anyhow::bail!("Bootstrap preparation interrupted"),
         _ = terminate.recv() => anyhow::bail!("Bootstrap preparation terminated"),
     };
-    // Completed disk steps refer to mounts in the previous namespace. They
-    // cannot be resumed in a fresh bootstrap. Keep answers/logs, but start a
-    // new execution attempt; the installed-identity check still makes a fully
-    // completed installation a no-op.
-    match std::fs::remove_file(paths::host_state_file()) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error).context("Could not reset bootstrap execution state"),
-    }
     let mut child = tokio::process::Command::new("unshare")
         .args([
             "--mount",

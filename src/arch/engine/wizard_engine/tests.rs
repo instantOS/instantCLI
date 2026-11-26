@@ -170,7 +170,7 @@ struct RetryOnceStep {
 #[async_trait::async_trait]
 impl WizardStep for RetryOnceStep {
     fn id(&self) -> StepId {
-        StepId::PrepareDisk
+        StepId::DualBootEspWarning
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
@@ -187,7 +187,7 @@ struct BackStep;
 #[async_trait::async_trait]
 impl WizardStep for BackStep {
     fn id(&self) -> StepId {
-        StepId::PrepareDisk
+        StepId::DualBootEspWarning
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
@@ -204,7 +204,7 @@ struct StaleCompletionStep;
 #[async_trait::async_trait]
 impl WizardStep for StaleCompletionStep {
     fn id(&self) -> StepId {
-        StepId::PrepareDisk
+        StepId::DualBootEspWarning
     }
 
     async fn run(&self, _context: &InstallContext) -> Result<StepOutcome> {
@@ -245,7 +245,7 @@ async fn retry_displays_feedback_and_repeats_the_same_step() {
         engine.run_step(0).await.unwrap(),
         super::StepInteraction::Completed
     ));
-    assert!(engine.context.is_step_completed(StepId::PrepareDisk));
+    assert!(engine.context.is_step_completed(StepId::DualBootEspWarning));
 }
 
 #[test]
@@ -253,10 +253,10 @@ fn stale_external_completion_is_rechecked_and_scheduled_again() {
     let mut engine = WizardEngine::new(vec![Box::new(StaleCompletionStep)]).unwrap();
     engine
         .step_graph
-        .record_completion(&mut engine.context, StepId::PrepareDisk);
+        .record_completion(&mut engine.context, StepId::DualBootEspWarning);
 
     assert_eq!(engine.find_next_step_index(), Some(0));
-    assert!(!engine.context.is_step_completed(StepId::PrepareDisk));
+    assert!(!engine.context.is_step_completed(StepId::DualBootEspWarning));
 }
 
 #[tokio::test]
@@ -1127,7 +1127,7 @@ fn changing_a_dependency_invalidates_completed_action_steps() {
     let steps = vec![
         question(StepId::Disk, &[]),
         Box::new(CompletingStep {
-            id: StepId::PrepareDisk,
+            id: StepId::DualBootEspWarning,
             dependencies: vec![StepId::Disk],
         }) as Box<dyn WizardStep>,
     ];
@@ -1135,12 +1135,12 @@ fn changing_a_dependency_invalidates_completed_action_steps() {
     let mut context = InstallContext::new();
 
     graph.record_answer(&mut context, StepId::Disk, "/dev/sda".into());
-    graph.record_completion(&mut context, StepId::PrepareDisk);
-    assert!(context.is_step_completed(StepId::PrepareDisk));
+    graph.record_completion(&mut context, StepId::DualBootEspWarning);
+    assert!(context.is_step_completed(StepId::DualBootEspWarning));
 
     graph.record_answer(&mut context, StepId::Disk, "/dev/vda".into());
 
-    assert!(!context.is_step_completed(StepId::PrepareDisk));
+    assert!(!context.is_step_completed(StepId::DualBootEspWarning));
 }
 
 fn single_optional_question_engine() -> WizardEngine {

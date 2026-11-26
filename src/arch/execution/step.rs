@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, clap::ValueEnum, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Deserialize, Serialize, clap::ValueEnum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum InstallStep {
-    /// Prepare disk (partition, format, mount)
+    /// Prepare the target storage and mount it
     Disk,
     /// Bootstrap the base system
     Base,

@@ -83,40 +83,6 @@ pub fn format_bios(
     Ok(())
 }
 
-pub fn mount_uefi(
-    filesystem: FilesystemPlan,
-    disk: &str,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
-    let p1 = get_part_path(disk, 1);
-    let p2 = get_part_path(disk, 2);
-    let p3 = get_part_path(disk, 3);
-
-    println!("Mounting partitions...");
-
-    filesystem::mount_root(filesystem, &p3, true, executor)?;
-    executor.run(Command::new("mount").args(["--mkdir", "-t", "vfat", &p1, "/mnt/boot"]))?;
-    super::activate_swap(&p2, executor)?;
-
-    Ok(())
-}
-
-pub fn mount_bios(
-    filesystem: FilesystemPlan,
-    disk: &str,
-    executor: &dyn CommandRunner,
-) -> Result<()> {
-    let p1 = get_part_path(disk, 1);
-    let p2 = get_part_path(disk, 2);
-
-    println!("Mounting partitions...");
-
-    filesystem::mount_root(filesystem, &p2, true, executor)?;
-    super::activate_swap(&p1, executor)?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use crate::arch::execution::CommandRunner;
@@ -190,17 +156,5 @@ mod tests {
         assert_eq!(log.get(2), Some(&"wipefs -a /dev/vda2".to_string()));
         assert_eq!(log.get(3), Some(&"mkfs.ext4 -F /dev/vda2".to_string()));
         assert_eq!(log.last(), Some(&"udevadm settle".to_string()));
-    }
-
-    #[test]
-    fn test_mount_bios_commands() {
-        let mock = crate::arch::execution::mock::MockRunner::new();
-        super::mount_bios(crate::arch::engine::FilesystemPlan::Ext4, "/dev/vda", &mock).unwrap();
-
-        let log = mock.command_log();
-        assert_eq!(
-            log,
-            vec!["mount -t ext4 /dev/vda2 /mnt", "swapon /dev/vda1"]
-        );
     }
 }

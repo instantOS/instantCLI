@@ -9,108 +9,6 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result};
 
-pub struct PrepareDiskStep;
-
-#[async_trait::async_trait]
-impl WizardStep for PrepareDiskStep {
-    fn id(&self) -> StepId {
-        StepId::PrepareDisk
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Prepare the selected disk for exclusive installer access")
-    }
-
-    fn depends_on(&self) -> &[StepId] {
-        &[StepId::Disk]
-    }
-
-    fn completion_is_current(&self, context: &InstallContext) -> bool {
-        let Some(device_name) = context.get_answer(&StepId::Disk) else {
-            return false;
-        };
-        crate::arch::disks::get_mounted_partitions(device_name).is_ok_and(|parts| parts.is_empty())
-            && crate::arch::disks::get_swap_partitions(device_name)
-                .is_ok_and(|parts| parts.is_empty())
-    }
-
-    async fn run(&self, context: &InstallContext) -> Result<StepOutcome> {
-        let device_name = context
-            .get_answer(&StepId::Disk)
-            .context("No disk selected")?;
-
-        // The disk question already refuses the running disk, but this step is
-        // reachable from a hand-authored configuration too, and its whole job
-        // is unmounting things. Refuse here rather than discover it halfway
-        // through a list of `umount` calls.
-        if let Err(refusal) = crate::arch::disks::ensure_not_running_disk(device_name) {
-            return Ok(StepOutcome::Retry(refusal.to_string()));
-        }
-
-        let mounted = crate::arch::disks::get_mounted_partitions(device_name)
-            .context("Failed to inspect mounted partitions")?;
-        let swap = crate::arch::disks::get_swap_partitions(device_name)
-            .context("Failed to inspect active swap partitions")?;
-
-        if mounted.is_empty() && swap.is_empty() {
-            return Ok(StepOutcome::Completed);
-        }
-
-        // Build a detailed confirmation message explaining what is in use and why.
-        let mut details =
-            format!("The selected disk {device_name} has active mounts or swap partitions.\n\n");
-
-        for part in &mounted {
-            details.push_str(&format!("  {part}  (mounted)\n"));
-        }
-        for part in &swap {
-            details.push_str(&format!("  {part}  (swap active)\n"));
-        }
-
-        details.push_str(
-            "\nThe installer needs exclusive access to this disk. It will unmount the partition(s)\nand disable swap so the disk can be safely repartitioned.",
-        );
-
-        let confirmed = FzfWrapper::builder()
-            .confirm(&details)
-            .title(format!("Disk {device_name} is in use"))
-            .yes_text("Unmount and continue")
-            .no_text("Go back")
-            .default_no()
-            .confirm_dialog()?;
-
-        match confirmed {
-            ConfirmResult::Yes => {}
-            ConfirmResult::No => return Ok(StepOutcome::back()),
-            ConfirmResult::Cancelled => return Ok(StepOutcome::Pause),
-        }
-        // Prepare the disk
-        match crate::arch::disks::prepare_disk(device_name) {
-            Ok(result) => {
-                if !result.unmounted.is_empty() {
-                    println!(
-                        "{} Unmounted {} partition(s)",
-                        NerdFont::Check,
-                        result.unmounted.len()
-                    );
-                }
-                if !result.swapoff.is_empty() {
-                    println!(
-                        "{} Disabled swap on {} partition(s)",
-                        NerdFont::Check,
-                        result.swapoff.len()
-                    );
-                }
-                Ok(StepOutcome::Completed)
-            }
-            Err(e) => Ok(StepOutcome::Retry(format!(
-                "Failed to prepare disk {}:\n{}\n\nPlease prepare the disk manually and try again.",
-                device_name, e
-            ))),
-        }
-    }
-}
-
 #[derive(Clone)]
 enum DiskSelection {
     Detected(crate::arch::disks::DiskEntry),
@@ -593,6 +491,25 @@ impl WizardStep for RunCfdiskStep {
 
         loop {
             crate::arch::disks::ensure_not_running_disk(disk_path)?;
+            let mounted = crate::arch::disks::get_mounted_partitions(disk_path)?;
+            let swap = crate::arch::disks::get_swap_partitions(disk_path)?;
+            if !mounted.is_empty() || !swap.is_empty() {
+                match FzfWrapper::builder()
+                    .confirm(format!(
+                        "Unmount filesystems and disable swap on {disk_path} before opening cfdisk?"
+                    ))
+                    .title(format!("Disk {disk_path} is in use"))
+                    .yes_text("Unmount and continue")
+                    .default_no()
+                    .confirm_dialog()?
+                {
+                    ConfirmResult::Yes => {
+                        crate::arch::disks::prepare_disk(disk_path)?;
+                    }
+                    ConfirmResult::No => return Ok(StepOutcome::back()),
+                    ConfirmResult::Cancelled => return Ok(StepOutcome::Pause),
+                }
+            }
             println!("Starting cfdisk on {}...", disk_path);
             println!("Please create your partitions and write changes before exiting.");
 

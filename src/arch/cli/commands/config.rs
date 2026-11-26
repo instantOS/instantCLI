@@ -216,7 +216,6 @@ fn field_help(id: StepId) -> Option<String> {
         }
         StepId::LogUpload
         | StepId::ConfirmInstall
-        | StepId::PrepareDisk
         | StepId::RunCfdisk
         | StepId::VirtualBoxWarning
         | StepId::WeakPasswordWarning

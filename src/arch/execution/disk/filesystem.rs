@@ -40,22 +40,17 @@ pub fn format_root(
     Ok(())
 }
 
-pub fn mount_root(
+pub fn create_root_subvolumes(
     filesystem: FilesystemPlan,
     device: &str,
     create_home_subvolume: bool,
     executor: &dyn CommandRunner,
 ) -> Result<()> {
-    let FilesystemPlan::Btrfs { compression } = filesystem else {
-        // Explicit fstype: auto-detection can be thrown off by stale
-        // signatures on re-partitioned disks.
-        executor.run(Command::new("mount").args(["-t", "ext4", device, "/mnt"]))?;
+    if !matches!(filesystem, FilesystemPlan::Btrfs { .. }) {
         return Ok(());
-    };
+    }
 
-    // Create subvolumes from the top-level btrfs tree, then remount the root
-    // subvolume. Keeping @home separate allows snapshots of @ without rolling
-    // back user data.
+    // Create subvolumes on the top-level tree before mounting the target.
     executor.run(Command::new("mount").args(["-t", "btrfs", device, "/mnt"]))?;
     let create_result = (|| -> Result<()> {
         let root_path = format!("/mnt/{BTRFS_ROOT_SUBVOLUME}");
@@ -75,32 +70,6 @@ pub fn mount_root(
         return Err(error);
     }
     unmount_result?;
-
-    let mount_options = |subvolume| {
-        let mut options = vec![subvolume, "noatime"];
-        if let Some(option) = compression.mount_option() {
-            options.push(option);
-        }
-        options.join(",")
-    };
-
-    let root_subvolume = format!("subvol={BTRFS_ROOT_SUBVOLUME}");
-    let options = mount_options(&root_subvolume);
-    executor.run(Command::new("mount").args(["-t", "btrfs", "-o", &options, device, "/mnt"]))?;
-
-    if create_home_subvolume {
-        let home_subvolume = format!("subvol={BTRFS_HOME_SUBVOLUME}");
-        let home_options = mount_options(&home_subvolume);
-        executor.run(Command::new("mount").args([
-            "--mkdir",
-            "-t",
-            "btrfs",
-            "-o",
-            &home_options,
-            device,
-            "/mnt/home",
-        ]))?;
-    }
 
     Ok(())
 }
@@ -144,14 +113,14 @@ mod tests {
     }
 
     #[test]
-    fn formats_and_mounts_btrfs_subvolumes() {
+    fn formats_and_creates_btrfs_subvolumes() {
         let runner = MockRunner::new();
         let filesystem = FilesystemPlan::Btrfs {
             compression: BtrfsCompression::Zstd,
         };
 
         format_root(filesystem, "/dev/root", &runner).unwrap();
-        mount_root(filesystem, "/dev/root", true, &runner).unwrap();
+        create_root_subvolumes(filesystem, "/dev/root", true, &runner).unwrap();
 
         let log = runner.command_log();
         assert!(log.iter().any(|line| line == "wipefs -a /dev/root"));
@@ -160,18 +129,14 @@ mod tests {
             log.iter()
                 .any(|line| line.contains("subvolume create /mnt/@home"))
         );
-        assert!(log.iter().any(|line| {
-            line.contains("-t btrfs")
-                && line.contains("subvol=@,noatime,compress=zstd")
-                && line.ends_with("/dev/root /mnt")
-        }));
+        assert_eq!(log.last().unwrap(), "umount /mnt");
     }
 
     #[test]
     fn ext4_does_not_create_subvolumes() {
         let runner = MockRunner::new();
         format_root(FilesystemPlan::Ext4, "/dev/root", &runner).unwrap();
-        mount_root(FilesystemPlan::Ext4, "/dev/root", true, &runner).unwrap();
+        create_root_subvolumes(FilesystemPlan::Ext4, "/dev/root", true, &runner).unwrap();
 
         assert_eq!(
             runner.command_log(),
@@ -179,7 +144,6 @@ mod tests {
                 "wipefs -a /dev/root",
                 "mkfs.ext4 -F /dev/root",
                 "udevadm settle",
-                "mount -t ext4 /dev/root /mnt"
             ]
         );
     }
@@ -193,7 +157,7 @@ mod tests {
             compression: BtrfsCompression::Zstd,
         };
 
-        let error = mount_root(filesystem, "/dev/root", true, &runner).unwrap_err();
+        let error = create_root_subvolumes(filesystem, "/dev/root", true, &runner).unwrap_err();
 
         assert!(error.to_string().contains("simulated subvolume failure"));
         assert_eq!(runner.inner.command_log().last().unwrap(), "umount /mnt");

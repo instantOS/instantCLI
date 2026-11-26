@@ -21,7 +21,6 @@ pub enum StepId {
     Keymap,
     ConsoleFont,
     Disk,
-    PrepareDisk,
     MirrorRegion,
     Timezone,
     Locale,
@@ -63,7 +62,6 @@ impl StepId {
             Self::Keymap => "Keyboard layout",
             Self::ConsoleFont => "Console font",
             Self::Disk => "Installation disk",
-            Self::PrepareDisk => "Prepare disk",
             Self::MirrorRegion => "Mirror region",
             Self::Timezone => "Time zone",
             Self::Locale => "Locale",
@@ -205,8 +203,7 @@ impl StepId {
             | Self::HomePartition
             | Self::DualBootPartition
             | Self::DualBootSize => AnswerPrivacy::SystemDetail,
-            Self::PrepareDisk
-            | Self::ConsoleFont
+            Self::ConsoleFont
             | Self::Kernel
             | Self::DesktopEnvironment
             | Self::RootFilesystem

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -50,31 +50,6 @@ pub trait DataKey: Send + Sync + 'static {
     const NAME: &'static str;
 }
 
-/// Key to store whether ESP needs to be formatted
-/// False when reusing existing ESP in dual boot mode
-pub struct EspNeedsFormat;
-
-impl DataKey for EspNeedsFormat {
-    type Value = bool;
-    const NAME: &'static str = "esp_needs_format";
-}
-
-/// Key to store dual boot partition paths (root, boot, swap)
-/// Used to pass partition paths from prepare_dualboot_disk to format_and_mount_partitions
-pub struct DualBootPartitions;
-
-#[derive(Clone, Debug)]
-pub struct DualBootPartitionPaths {
-    pub root: String,
-    pub boot: String,
-    pub swap: String,
-}
-
-impl DataKey for DualBootPartitions {
-    type Value = DualBootPartitionPaths;
-    const NAME: &'static str = "dualboot_partitions";
-}
-
 /// Holds the state of the installation wizard
 #[derive(Default, Clone)]
 pub struct InstallContext {
@@ -105,12 +80,11 @@ impl Serialize for InstallContext {
     {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("InstallContext", 4)?;
-        state.serialize_field("answers", &self.answers)?;
+        let answers: BTreeMap<_, _> = self.answers.iter().collect();
+        let fingerprints: BTreeMap<_, _> = self.step_dependency_fingerprints.iter().collect();
+        state.serialize_field("answers", &answers)?;
         state.serialize_field("completed_steps", &self.completed_steps)?;
-        state.serialize_field(
-            "step_dependency_fingerprints",
-            &self.step_dependency_fingerprints,
-        )?;
+        state.serialize_field("step_dependency_fingerprints", &fingerprints)?;
         state.serialize_field("system_info", &self.system_info)?;
         state.end()
     }
@@ -498,5 +472,33 @@ mod tests {
                 .map(String::as_str),
             Some("fingerprint")
         );
+    }
+
+    #[test]
+    fn serialization_is_stable_across_reloads() {
+        let mut context = InstallContext::new();
+        for (id, answer) in [
+            (StepId::Hostname, "instant"),
+            (StepId::Username, "installer"),
+            (StepId::Password, "secret"),
+            (StepId::Keymap, "us"),
+            (StepId::Timezone, "Europe/Berlin"),
+            (StepId::Locale, "en_US.UTF-8"),
+            (StepId::Kernel, "linux"),
+            (StepId::RootFilesystem, "ext4"),
+            (StepId::DesktopEnvironment, "instantwm"),
+        ] {
+            context.set_answer(id, answer.to_string());
+        }
+        context.completed_steps.insert(StepId::LowRamWarning);
+        context
+            .step_dependency_fingerprints
+            .insert(StepId::LowRamWarning, "fingerprint".to_string());
+
+        let first = context.to_toml().unwrap();
+        let restored = InstallContext::parse_config(&first, Path::new("questions.toml")).unwrap();
+        let second = restored.to_toml().unwrap();
+
+        assert_eq!(first, second);
     }
 }

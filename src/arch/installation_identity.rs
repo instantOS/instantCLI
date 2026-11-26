@@ -10,11 +10,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::arch::arch_linux_variant::ArchLinuxVariant;
-use crate::arch::engine::{InstallContext, InstallPlan, StepId, StoragePlan};
+use crate::arch::engine::{InstallContext, InstallPlan, StepId, StoragePlan, SystemInfo};
 use crate::common::blockdev::{BlockDevice, Filesystem, load_lsblk};
 use crate::common::commands::run_status;
 
 const IDENTITY_SCHEMA_VERSION: u32 = 2;
+/// Version for the resumable-state digest. Bump it when its inputs change so
+/// state written by an older installer is not reused across the change.
+const RESUME_SCHEMA_VERSION: u32 = 1;
 pub const INSTALLATION_MARKER: &str = "/etc/instant/installation.toml";
 
 #[derive(Debug, Serialize)]
@@ -22,6 +25,14 @@ struct InstallationIntent {
     schema_version: u32,
     linux_variant: &'static str,
     answers: BTreeMap<String, String>,
+}
+
+#[derive(Serialize)]
+struct ResumableConfiguration<'a> {
+    schema_version: u32,
+    linux_variant: &'static str,
+    answers: BTreeMap<StepId, &'a str>,
+    system_info: SystemInfo,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,14 +70,36 @@ pub fn fingerprint(context: &InstallContext, linux_variant: ArchLinuxVariant) ->
     Ok(hex::encode(Sha256::digest(bytes.as_bytes())))
 }
 
-/// Bind resumable execution state to the exact configuration, including
-/// secrets. This digest never belongs in the completed target marker.
-pub fn configuration_fingerprint(configuration: &str, linux_variant: ArchLinuxVariant) -> String {
-    let mut digest = Sha256::new();
-    digest.update(linux_variant.id().as_bytes());
-    digest.update([0]);
-    digest.update(configuration.as_bytes());
-    hex::encode(digest.finalize())
+/// Bind resumable execution state to the configuration execution reads.
+///
+/// Includes secrets so a changed LUKS or user password cannot reuse work
+/// performed with the old one. Hashes the parsed answers so a wizard save
+/// with reordered TOML keys preserves the execution checkpoint.
+pub fn resume_fingerprint(
+    context: &InstallContext,
+    linux_variant: ArchLinuxVariant,
+) -> Result<String> {
+    let answers = context
+        .answers()
+        .map(|(id, answer)| (*id, answer.as_str()))
+        .collect();
+
+    let mut system_info = context.system_info.clone();
+    // Live-environment fact, not part of the requested installation.
+    system_info.internet_connected = false;
+    // Detection order is not part of the installation either.
+    system_info.gpus.sort_by_key(|gpu| gpu.to_string());
+    system_info.network_vendor_ids.sort();
+
+    let configuration = ResumableConfiguration {
+        schema_version: RESUME_SCHEMA_VERSION,
+        linux_variant: linux_variant.id(),
+        answers,
+        system_info,
+    };
+    let bytes = toml::to_string(&configuration)
+        .context("Failed to serialize resumable installation configuration")?;
+    Ok(hex::encode(Sha256::digest(bytes.as_bytes())))
 }
 
 fn answer_affects_installation(id: StepId) -> bool {
@@ -74,7 +107,6 @@ fn answer_affects_installation(id: StepId) -> bool {
         id,
         StepId::Password
             | StepId::EncryptionPassword
-            | StepId::PrepareDisk
             | StepId::RunCfdisk
             | StepId::ConfirmInstall
             | StepId::LogUpload
@@ -183,6 +215,13 @@ fn probe_marker(
     }
 
     Ok(None)
+}
+
+pub(super) fn mounted_installation_matches(intent_sha256: &str) -> Result<bool> {
+    let path = crate::arch::execution::paths::chroot_path(INSTALLATION_MARKER);
+    Ok(read_marker(&path)?.is_some_and(|marker| {
+        marker.schema_version == IDENTITY_SCHEMA_VERSION && marker.intent_sha256 == intent_sha256
+    }))
 }
 
 fn read_marker(path: &Path) -> Result<Option<InstallationMarker>> {
@@ -336,9 +375,66 @@ mod tests {
 
     #[test]
     fn resumable_state_fingerprint_includes_secrets() {
+        let mut first = context_with_answers(&[(StepId::Hostname, "instant")]);
+        first.set_answer(StepId::Password, "first".to_string());
+        let mut second = context_with_answers(&[(StepId::Hostname, "instant")]);
+        second.set_answer(StepId::Password, "second".to_string());
+
         assert_ne!(
-            configuration_fingerprint("Password = 'first'", ArchLinuxVariant::Arch),
-            configuration_fingerprint("Password = 'second'", ArchLinuxVariant::Arch)
+            resume_fingerprint(&first, ArchLinuxVariant::Arch).unwrap(),
+            resume_fingerprint(&second, ArchLinuxVariant::Arch).unwrap()
+        );
+    }
+
+    #[test]
+    fn resumable_state_fingerprint_changes_with_answers() {
+        let first = context_with_answers(&[(StepId::Hostname, "first")]);
+        let second = context_with_answers(&[(StepId::Hostname, "second")]);
+
+        assert_ne!(
+            resume_fingerprint(&first, ArchLinuxVariant::Arch).unwrap(),
+            resume_fingerprint(&second, ArchLinuxVariant::Arch).unwrap()
+        );
+    }
+
+    #[test]
+    fn resumable_state_fingerprint_ignores_order_and_live_system_facts() {
+        let mut first = context_with_answers(&[
+            (StepId::Hostname, "instant"),
+            (StepId::Kernel, "linux"),
+            (StepId::Timezone, "Europe/Berlin"),
+        ]);
+        first.system_info.network_vendor_ids = vec!["8086".to_string(), "10ec".to_string()];
+        let mut second = context_with_answers(&[
+            (StepId::Timezone, "Europe/Berlin"),
+            (StepId::Kernel, "linux"),
+            (StepId::Hostname, "instant"),
+        ]);
+        second.system_info.gpus.reverse();
+        second.system_info.network_vendor_ids = vec!["10ec".to_string(), "8086".to_string()];
+        second.system_info.internet_connected = !first.system_info.internet_connected;
+
+        assert_eq!(
+            resume_fingerprint(&first, ArchLinuxVariant::Arch).unwrap(),
+            resume_fingerprint(&second, ArchLinuxVariant::Arch).unwrap()
+        );
+    }
+
+    #[test]
+    fn resumable_state_fingerprint_survives_a_config_reload() {
+        let mut context =
+            context_with_answers(&[(StepId::Hostname, "instant"), (StepId::Kernel, "linux")]);
+        context.set_answer(StepId::Password, "secret".to_string());
+        let original = resume_fingerprint(&context, ArchLinuxVariant::Arch).unwrap();
+
+        let first = context.to_toml().unwrap();
+        let restored = InstallContext::parse_config(&first, Path::new("questions.toml")).unwrap();
+        let second = restored.to_toml().unwrap();
+        let reparsed = InstallContext::parse_config(&second, Path::new("questions.toml")).unwrap();
+
+        assert_eq!(
+            resume_fingerprint(&reparsed, ArchLinuxVariant::Arch).unwrap(),
+            original
         );
     }
 
@@ -371,8 +467,8 @@ mod tests {
                     fingerprint(&context, *second).unwrap()
                 );
                 assert_ne!(
-                    configuration_fingerprint("same answers", *first),
-                    configuration_fingerprint("same answers", *second)
+                    resume_fingerprint(&context, *first).unwrap(),
+                    resume_fingerprint(&context, *second).unwrap()
                 );
             }
         }

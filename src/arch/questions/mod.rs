@@ -106,7 +106,7 @@ pub(crate) fn select_one_for_step<T: FzfSelectable + Clone>(
 // Re-exports
 pub use boolean::BooleanQuestion;
 pub use console_font::ConsoleFontQuestion;
-pub use disk::{DiskQuestion, PartitioningMethodQuestion, PrepareDiskStep, RunCfdiskStep};
+pub use disk::{DiskQuestion, PartitioningMethodQuestion, RunCfdiskStep};
 pub use display_manager::DisplayManagerQuestion;
 pub use dualboot::{DualBootPartitionQuestion, DualBootSizeQuestion};
 pub use filesystem::{BtrfsCompressionQuestion, RootFilesystemQuestion};

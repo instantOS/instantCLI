@@ -117,8 +117,8 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
         DualBootPartitionQuestion, DualBootSizeQuestion, EncryptionPasswordQuestion,
         EspPartitionValidator, KernelQuestion, KeymapQuestion, LocaleQuestion,
         MirrorRegionQuestion, PartitionSelectorQuestion, PartitioningMethodQuestion,
-        PasswordQuestion, PrepareDiskStep, ResizeWorkflowStep, RunCfdiskStep, TimezoneQuestion,
-        VirtualBoxWarning, WeakPasswordWarning, hostname_question, username_question,
+        PasswordQuestion, ResizeWorkflowStep, RunCfdiskStep, TimezoneQuestion, VirtualBoxWarning,
+        WeakPasswordWarning, hostname_question, username_question,
     };
     use crate::arch::questions::{
         BtrfsCompressionQuestion, DisplayManagerQuestion, RootFilesystemQuestion,
@@ -130,7 +130,6 @@ pub(super) fn build_steps() -> Vec<Box<dyn WizardStep>> {
         Box::new(crate::arch::questions::ConsoleFontQuestion),
         Box::new(KeymapQuestion),
         Box::new(DiskQuestion),
-        Box::new(PrepareDiskStep),
         Box::new(PartitioningMethodQuestion),
         Box::new(RunCfdiskStep),
         Box::new(DualBootPartitionQuestion),

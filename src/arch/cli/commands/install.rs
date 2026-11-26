@@ -155,6 +155,35 @@ async fn ensure_interactive_internet() -> Result<bool> {
     Ok(true)
 }
 
+/// Ask whether to discard a saved attempt that execution refused to resume.
+///
+/// Only a [`ResumeBlocked`] refusal is offered: any other failure keeps its own
+/// diagnosis (and its log menu). This is the supported way out of the
+/// fail-closed resume policy, which otherwise leaves the user to delete a
+/// root-owned state file by hand.
+fn offer_to_start_over(error: &anyhow::Error) -> Result<bool> {
+    use crate::arch::execution::state::ResumeBlocked;
+    use crate::menu_utils::{ConfirmResult, FzfWrapper};
+
+    let Some(blocked) = error.downcast_ref::<ResumeBlocked>() else {
+        return Ok(false);
+    };
+
+    Ok(matches!(
+        FzfWrapper::builder()
+            .confirm(format!(
+                "The previous installation attempt cannot be resumed:\n\n{blocked}\n\n\
+                 Starting over discards that attempt and prepares the target disk again.",
+            ))
+            .title("Previous installation attempt")
+            .yes_text("Start over")
+            .no_text("Exit")
+            .default_no()
+            .confirm_dialog()?,
+        ConfirmResult::Yes
+    ))
+}
+
 /// Handle the Install command - orchestrates the full installation process
 pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
     // The installer is interactive. Graphical launchers should normally open a
@@ -220,13 +249,31 @@ pub(super) async fn handle_install_command(debug: bool) -> Result<()> {
         AskOutcome::Cancelled => return Ok(()),
     }
 
-    let exec_result = Box::pin(super::exec::handle_exec_command(
+    let mut exec_result = Box::pin(super::exec::handle_exec_command(
         build_steps(),
         None,
         default_questions_file(),
         false,
     ))
     .await;
+
+    // Execution deliberately refuses to reuse a checkpoint from another
+    // configuration or from an interrupted disk preparation. Offer the reset
+    // here rather than after the wizard, where re-asking every question would
+    // be the only alternative.
+    if let Err(error) = &exec_result
+        && offer_to_start_over(error)?
+    {
+        crate::arch::execution::state::InstallState::discard()?;
+        println!("Discarded the previous installation attempt. Starting over.");
+        exec_result = Box::pin(super::exec::handle_exec_command(
+            build_steps(),
+            None,
+            default_questions_file(),
+            false,
+        ))
+        .await;
+    }
 
     if exec_result.is_err() {
         // Never upload implicitly after a failure. Keep the installer open so

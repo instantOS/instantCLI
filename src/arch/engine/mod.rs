@@ -10,9 +10,7 @@ mod system_info;
 mod types;
 mod wizard_engine;
 
-pub use context::{
-    DataKey, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext, KeyId,
-};
+pub use context::{DataKey, InstallContext, KeyId};
 #[cfg(test)]
 pub(crate) use install_plan::test_install_plan;
 pub use install_plan::{

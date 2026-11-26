@@ -1,13 +1,11 @@
-use super::mount;
 use super::probe::{get_current_partitions, get_partition_size_bytes};
+use super::target::{MountLocation, PreparedTarget};
 use super::util::{align_down, parse_partition_number};
+use super::{filesystem, partitions};
 use crate::arch::dualboot::parsing::{PartitionLayout, get_free_regions, get_partition_layout};
 use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE, Shrinkability};
 use crate::arch::dualboot::{DualBootDisksKey, PartitionTableType};
-use crate::arch::engine::{
-    BootMode, DualBootPartitionPaths, DualBootPartitions, DualBootTarget, EspNeedsFormat,
-    FilesystemPlan, InstallContext,
-};
+use crate::arch::engine::{BootMode, DualBootTarget, FilesystemPlan, InstallContext};
 use crate::arch::execution::CommandRunner;
 use crate::common::blockdev::{Filesystem, ShrinkTool};
 use crate::common::format::format_size;
@@ -47,7 +45,7 @@ pub fn prepare_dualboot_disk(
     executor: &dyn CommandRunner,
     disk_path: &str,
     mut swap_size_gb: u64,
-) -> Result<()> {
+) -> Result<PreparedTarget> {
     println!("Preparing dual boot installation...");
 
     // One disk is re-read, not the whole machine: describing a disk runs
@@ -184,17 +182,20 @@ pub fn prepare_dualboot_disk(
         preferred_region,
     )?;
 
-    context.set::<DualBootPartitions>(DualBootPartitionPaths {
-        root: root_path,
-        boot: esp_path.clone(),
-        swap: swap_path,
-    });
-
-    context.set::<EspNeedsFormat>(esp_needs_format);
-
-    mount::format_and_mount_partitions(context, filesystem, None, boot_mode, executor)?;
-
-    Ok(())
+    filesystem::format_root(filesystem, &root_path, executor)?;
+    let boot_type = if esp_needs_format {
+        partitions::format_boot(&esp_path, boot_mode, executor)?
+    } else {
+        println!("Reusing existing EFI partition: {esp_path}");
+        match boot_mode {
+            BootMode::UEFI64 | BootMode::UEFI32 => "vfat",
+            BootMode::BIOS => "ext4",
+        }
+    };
+    partitions::format_swap(&swap_path, executor)?;
+    let mut target = PreparedTarget::new(root_path, filesystem, true, Some(swap_path), None);
+    target.add_mount(MountLocation::Efi, esp_path, boot_type);
+    Ok(target)
 }
 
 /// What shrinking a filesystem takes, as commands rather than as a decision

@@ -1,8 +1,9 @@
 use super::filesystem;
 use super::util::get_part_path;
-use crate::arch::engine::{BootMode, EncryptionPlan, FilesystemPlan};
+use crate::arch::engine::{EncryptionPlan, FilesystemPlan};
 use crate::arch::execution::CommandRunner;
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
+use std::path::Path;
 use std::process::Command;
 
 pub fn partition_uefi_luks(disk: &str, executor: &dyn CommandRunner) -> Result<()> {
@@ -75,15 +76,7 @@ pub fn format_luks(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
-    println!("Opening LUKS container...");
-    if !executor.dry_run() {
-        crate::arch::bootstrap::record(crate::arch::bootstrap::Resource::CryptMapping(
-            "cryptlvm".into(),
-        ))?;
-    }
-    let mut cmd_open = Command::new("cryptsetup");
-    cmd_open.arg("open").arg(&p2).arg("cryptlvm").arg("-");
-    executor.run_with_secret_input(&mut cmd_open, password)?;
+    open_container(&p2, password, executor)?;
 
     println!("Setting up LVM...");
     executor.run(Command::new("pvcreate").arg("/dev/mapper/cryptlvm"))?;
@@ -116,24 +109,55 @@ pub fn format_luks(
     Ok(())
 }
 
-pub fn mount_luks(
-    filesystem: FilesystemPlan,
-    boot_mode: &BootMode,
+fn open_container(path: &str, password: &str, executor: &dyn CommandRunner) -> Result<()> {
+    println!("Opening LUKS container...");
+    if !executor.dry_run() {
+        crate::arch::bootstrap::record(crate::arch::bootstrap::Resource::CryptMapping(
+            "cryptlvm".into(),
+        ))?;
+    }
+    executor.run_with_secret_input(
+        Command::new("cryptsetup").args(["open", path, "cryptlvm", "-"]),
+        password,
+    )
+}
+
+pub(super) fn open_prepared(
+    path: &str,
+    encryption: &EncryptionPlan,
     executor: &dyn CommandRunner,
-    disk: &str,
 ) -> Result<()> {
-    println!("Mounting LVM volumes...");
+    const MAPPER: &str = "/dev/mapper/cryptlvm";
+    if Path::new(MAPPER).exists() {
+        let mapper = std::fs::canonicalize(MAPPER)?;
+        let block_name = mapper
+            .file_name()
+            .context("Missing encrypted device name")?;
+        let mut slaves = std::fs::read_dir(
+            Path::new("/sys/class/block")
+                .join(block_name)
+                .join("slaves"),
+        )
+        .context("Could not inspect the existing cryptlvm mapping")?;
+        let backing_device = slaves
+            .next()
+            .transpose()?
+            .context("Missing backing device for cryptlvm")?;
+        ensure!(
+            slaves.next().is_none()
+                && std::fs::canonicalize(Path::new("/dev").join(backing_device.file_name()))?
+                    == std::fs::canonicalize(path)?,
+            "The existing cryptlvm mapping belongs to a different disk"
+        );
+    } else {
+        open_container(path, encryption.password.expose(), executor)?;
+    }
 
-    filesystem::mount_root(filesystem, "/dev/instantOS/root", true, executor)?;
-
-    let p1 = get_part_path(disk, 1);
-    let boot_type = match boot_mode {
-        BootMode::UEFI64 | BootMode::UEFI32 => "vfat",
-        BootMode::BIOS => "ext4",
-    };
-    executor.run(Command::new("mount").args(["--mkdir", "-t", boot_type, &p1, "/mnt/boot"]))?;
-
-    super::activate_swap("/dev/instantOS/swap", executor)?;
-
+    if !Path::new("/dev/instantOS/root").exists() || !Path::new("/dev/instantOS/swap").exists() {
+        crate::arch::bootstrap::record(crate::arch::bootstrap::Resource::VolumeGroup(
+            "instantOS".into(),
+        ))?;
+        executor.run(Command::new("vgchange").args(["--devices", MAPPER, "-ay", "instantOS"]))?;
+    }
     Ok(())
 }

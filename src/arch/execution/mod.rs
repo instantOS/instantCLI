@@ -412,7 +412,11 @@ pub async fn execute_installation(
     }
 
     let installation_started = Instant::now();
-    // Captured before `step` is consumed by the single-step branch below.
+    use clap::ValueEnum;
+    let step = step
+        .as_deref()
+        .map(|name| InstallStep::from_str(name, true).map_err(anyhow::Error::msg))
+        .transpose()?;
     let full_installation = step.is_none();
 
     println!("Loading configuration from: {}", config_path.display());
@@ -429,10 +433,8 @@ pub async fn execute_installation(
     // on an invalid or irrelevant answer. Hand-authored configurations may
     // omit wizard provenance; provenance that is present must still be current.
     let plan = crate::arch::engine::InstallPlan::from_imported_config(steps, &context)?;
-    let configuration_sha256 = crate::arch::installation_identity::configuration_fingerprint(
-        &content,
-        plan.linux_variant(),
-    );
+    let resume_sha256 =
+        crate::arch::installation_identity::resume_fingerprint(&context, plan.linux_variant())?;
     let intent_sha256 =
         crate::arch::installation_identity::fingerprint(&context, plan.linux_variant())?;
 
@@ -454,10 +456,22 @@ pub async fn execute_installation(
         );
     }
 
-    let is_disk_execution = step
-        .as_deref()
-        .is_none_or(|name| name.eq_ignore_ascii_case("disk"));
-    if is_disk_execution && !dry_run && !is_chroot() {
+    let in_chroot = is_chroot();
+    // The parent holds the lock through every target chroot invocation.
+    let _installation_lock = (!dry_run && !in_chroot)
+        .then(InstallState::lock)
+        .transpose()?;
+    let mut state = if dry_run {
+        InstallState::new(&resume_sha256)
+    } else {
+        InstallState::load_for_configuration(&resume_sha256)?
+    };
+    if in_chroot && full_installation {
+        anyhow::bail!("Run the full installation from outside the target chroot");
+    }
+
+    let is_disk_execution = full_installation || step == Some(InstallStep::Disk);
+    if is_disk_execution && !dry_run && !in_chroot && state.prepared_target().is_none() {
         if plan.environment().may_probe_for_existing_install() {
             if let Some(existing) = crate::arch::installation_identity::find_matching_installation(
                 &plan,
@@ -481,35 +495,26 @@ pub async fn execute_installation(
     }
 
     if !dry_run {
-        let mut state = InstallState::load_for_configuration(&configuration_sha256);
+        if !in_chroot && let Some(target) = state.prepared_target() {
+            disk::check_target_disk(&plan)?;
+            target.ensure_mounted(plan.storage().encryption(), &executor)?;
+            if is_disk_execution
+                && state.is_complete(InstallStep::Post)
+                && crate::arch::installation_identity::mounted_installation_matches(&intent_sha256)?
+            {
+                println!(
+                    "This installation configuration is already installed on {}.",
+                    plan.storage().disk().as_str()
+                );
+                return Ok(ExecutionOutcome::AlreadyInstalled);
+            }
+        }
         state.mark_start();
-        state.save()?;
     }
 
-    if let Some(step_name) = step {
-        // In a real implementation we might use clap's value parser if we exposed the enum directly in CLI,
-        // but here we take a string to allow flexibility or partial matching if needed.
-        // For now, let's just match against our known steps.
-        let step_enum = match step_name.to_lowercase().as_str() {
-            "disk" => InstallStep::Disk,
-            "base" => InstallStep::Base,
-            "fstab" => InstallStep::Fstab,
-            "config" => InstallStep::Config,
-            "bootloader" => InstallStep::Bootloader,
-            "post" => InstallStep::Post,
-            _ => anyhow::bail!("Unknown step: {}", step_name),
-        };
-
-        println!("Executing single step: {:?}", step_enum);
-        execute_step(
-            step_enum,
-            &plan,
-            &context,
-            &executor,
-            &config_path,
-            &configuration_sha256,
-        )
-        .await?;
+    if let Some(step) = step {
+        println!("Executing single step: {step:?}");
+        execute_step(step, &plan, &context, &executor, &config_path, &mut state).await?;
     } else {
         println!("Executing all steps...");
         let steps = vec![
@@ -522,20 +527,14 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            if let Err(e) = execute_step(
-                step,
-                &plan,
-                &context,
-                &executor,
-                &config_path,
-                &configuration_sha256,
-            )
-            .await
+            if let Err(e) =
+                execute_step(step, &plan, &context, &executor, &config_path, &mut state).await
             {
                 // A failed offline install still leaves the target
                 // referencing the bundle; strip those references even on the
                 // way out so a later boot is not broken too.
                 if !dry_run
+                    && step != InstallStep::Disk
                     && let Err(ce) = crate::arch::offline::cleanup_target(
                         &executor,
                         install_mode,
@@ -621,13 +620,11 @@ async fn execute_step(
     context: &crate::arch::engine::InstallContext,
     executor: &dyn CommandRunner,
     config_path: &std::path::Path,
-    configuration_sha256: &str,
+    state: &mut InstallState,
 ) -> Result<()> {
     let in_chroot = is_chroot();
     let requires_chroot = step.requires_chroot();
     let step_started = Instant::now();
-
-    let mut state = InstallState::load_for_configuration(configuration_sha256);
 
     if state.is_complete(step) && !executor.dry_run() {
         println!("Step {:?} is already complete. Skipping.", step);
@@ -698,10 +695,7 @@ async fn execute_step(
         ));
 
         state.mark_complete(step);
-        if let Err(e) = state.save() {
-            println!("Warning: Failed to save install state on host: {}", e);
-        }
-
+        state.save()?;
         return Ok(());
     }
 
@@ -710,7 +704,22 @@ async fn execute_step(
     }
 
     match step {
-        InstallStep::Disk => disk::prepare_disk(plan, context, executor)?,
+        InstallStep::Disk => {
+            disk::check_target_for_preparation(plan, executor)?;
+            if !executor.dry_run() {
+                state.begin_disk_preparation()?;
+            }
+            let target = disk::prepare_disk(plan, context, executor)?;
+            if executor.dry_run() {
+                target.ensure_mounted(plan.storage().encryption(), executor)?;
+            } else {
+                state.record_prepared_target(target)?;
+                state
+                    .prepared_target()
+                    .context("Missing prepared target")?
+                    .ensure_mounted(plan.storage().encryption(), executor)?;
+            }
+        }
         InstallStep::Base => base::install_base(plan, executor).await?,
         InstallStep::Fstab => fstab::generate_fstab(executor, plan.linux_variant())?,
         InstallStep::Config => config::install_config(plan, executor).await?,
@@ -727,16 +736,9 @@ async fn execute_step(
             elapsed.as_secs_f64()
         ));
 
-        state.mark_complete(step);
-        if let Err(e) = state.save() {
-            println!("Warning: Failed to save install state: {}", e);
-        } else if !in_chroot {
-            let chroot_state = paths::chroot_path(paths::STATE_FILE);
-            if chroot_state.parent().map(|p| p.exists()).unwrap_or(false)
-                && let Err(e) = std::fs::copy(paths::host_state_file(), &chroot_state)
-            {
-                println!("Warning: Failed to sync state to chroot: {}", e);
-            }
+        if step != InstallStep::Disk {
+            state.mark_complete(step);
+            state.save()?;
         }
     }
 
