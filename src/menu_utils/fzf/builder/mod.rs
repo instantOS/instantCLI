@@ -243,6 +243,7 @@ pub(crate) fn base_args(margin: &str) -> Vec<String> {
         margin.to_string(),
         "--min-height".to_string(),
         "10".to_string(),
+        "--preview-window=wrap-word".to_string(),
     ];
     args.extend(super::theme::theme_args());
     args

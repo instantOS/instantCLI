@@ -58,13 +58,13 @@ fn responsive_layout_for_dimensions(dimensions: Option<(u16, u16)>) -> Responsiv
         // Use bottom if: too narrow (<60 cols) OR aspect ratio <2:1
         if cols < 60 || ratio < 2.0 {
             ResponsiveLayout {
-                preview_window: "--preview-window=down:50%:wrap",
+                preview_window: "--preview-window=down:50%:wrap-word",
                 margin: "2%,2%", // Minimal vertical margins for stacked layout
                 list_width: usize::from(cols).saturating_sub(4),
             }
         } else {
             ResponsiveLayout {
-                preview_window: "--preview-window=right:50%:wrap",
+                preview_window: "--preview-window=right:50%:wrap-word",
                 margin: "10%,2%", // More vertical margin when side-by-side layout allows it
                 list_width: usize::from(cols / 2).saturating_sub(4),
             }
@@ -72,7 +72,7 @@ fn responsive_layout_for_dimensions(dimensions: Option<(u16, u16)>) -> Responsiv
     } else {
         // Fallback to down if terminal size can't be detected - safer for narrow terminals
         ResponsiveLayout {
-            preview_window: "--preview-window=down:50%:wrap",
+            preview_window: "--preview-window=down:50%:wrap-word",
             margin: "2%,2%",
             list_width: 76,
         }
@@ -183,14 +183,22 @@ fn try_setup_fzf_with_mise() -> bool {
     false
 }
 
+fn is_old_fzf_error(stderr: &str) -> bool {
+    [
+        "unknown option",
+        "invalid option",
+        "invalid preview window option",
+        "invalid color specification",
+        "unrecognized option",
+    ]
+    .iter()
+    .any(|marker| stderr.contains(marker))
+}
+
 /// Handle errors indicating an old fzf version and try to recover/setup fzf
 pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
-    if stderr_str.contains("unknown option")
-        || stderr_str.contains("invalid option")
-        || stderr_str.contains("invalid color specification")
-        || stderr_str.contains("unrecognized option")
-    {
+    if is_old_fzf_error(&stderr_str) {
         if try_setup_fzf_with_package_manager() {
             re_execute_current_process();
         }
@@ -202,7 +210,7 @@ pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
         eprintln!("\n{}\n", "=".repeat(70));
         eprintln!("ERROR: Your fzf version is too old");
         eprintln!("{}\n", "=".repeat(70));
-        eprintln!("This program requires fzf 0.66.x or newer.");
+        eprintln!("This program requires fzf 0.68.x or newer.");
         eprintln!("Your current fzf version does not support required options.\n");
         eprintln!("To upgrade fzf, we recommend using mise:");
         eprintln!("  https://mise.jdx.dev/\n");
@@ -307,15 +315,25 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
+    fn old_fzf_error_detection_accepts_preview_window_rejections() {
+        assert!(is_old_fzf_error("invalid preview window option: wrap-word"));
+        assert!(is_old_fzf_error("unknown option: --preview-window"));
+        assert!(!is_old_fzf_error("some unrelated failure"));
+    }
+
+    #[test]
     fn responsive_layout_owns_preview_placement_and_list_width() {
         let stacked = responsive_layout_for_dimensions(Some((80, 50)));
-        assert_eq!(stacked.preview_window, "--preview-window=down:50%:wrap");
+        assert_eq!(
+            stacked.preview_window,
+            "--preview-window=down:50%:wrap-word"
+        );
         assert_eq!(stacked.list_width, 76);
 
         let side_by_side = responsive_layout_for_dimensions(Some((160, 40)));
         assert_eq!(
             side_by_side.preview_window,
-            "--preview-window=right:50%:wrap"
+            "--preview-window=right:50%:wrap-word"
         );
         assert_eq!(side_by_side.list_width, 76);
 

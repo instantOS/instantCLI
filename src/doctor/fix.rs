@@ -571,7 +571,7 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
         match FzfWrapper::builder()
             .prompt("Select issues to fix:")
             .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
-            .args(["--preview-window=right:50%:wrap"])
+            .responsive_layout()
             .items(menu_items)
             .select_many()?
         {

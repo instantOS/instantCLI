@@ -210,7 +210,7 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
         builder = builder.initial_index(index);
     }
 
-    builder = builder.args(["--preview-window=right:50%:wrap"]);
+    builder = builder.responsive_layout();
 
     match builder.items(choices).select_one()? {
         crate::menu_utils::DialogOutcome::Submitted(choice) => {

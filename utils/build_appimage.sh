@@ -13,7 +13,7 @@ done
 
 RESTIC_VERSION="${RESTIC_VERSION:-0.18.1}"
 RCLONE_VERSION="${RCLONE_VERSION:-1.71.1}"
-FZF_VERSION="${FZF_VERSION:-0.66.0}"
+FZF_VERSION="${FZF_VERSION:-0.68.0}"
 GUM_VERSION="${GUM_VERSION:-0.17.0}"
 
 INS_VERSION="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="ins") | .version' | head -n1)"
