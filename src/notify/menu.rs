@@ -49,15 +49,29 @@ pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
                 cursor = main_cursor;
                 handlers::handle_delete(&db, id)?;
             }
-            MenuAction::MarkUnread { id, main_cursor } => {
+            MenuAction::ToggleRead {
+                id,
+                read,
+                main_cursor,
+            } => {
                 cursor = main_cursor;
-                db.mark_unread(id)?;
-                emit(
-                    Level::Success,
-                    "notify.marked_unread",
-                    &format!("{} Marked as unread.", char::from(NerdFont::Check)),
-                    None,
-                );
+                if read {
+                    db.mark_unread(id)?;
+                    emit(
+                        Level::Success,
+                        "notify.marked_unread",
+                        &format!("{} Marked as unread.", char::from(NerdFont::Check)),
+                        None,
+                    );
+                } else {
+                    db.mark_read(id)?;
+                    emit(
+                        Level::Success,
+                        "notify.marked_read",
+                        &format!("{} Marked as read.", char::from(NerdFont::Check)),
+                        None,
+                    );
+                }
             }
             MenuAction::Refresh { main_cursor } => cursor = main_cursor,
             MenuAction::Exit => break,
@@ -68,19 +82,35 @@ pub fn run_notify_ui(debug: bool, mut daemon_running: bool) -> Result<()> {
 }
 
 enum MenuAction {
-    OpenNotification { id: i64, main_cursor: MenuCursor },
-    OpenOptions { main_cursor: MenuCursor },
-    EnableCapture { main_cursor: MenuCursor },
-    DeleteNotification { id: i64, main_cursor: MenuCursor },
-    MarkUnread { id: i64, main_cursor: MenuCursor },
-    Refresh { main_cursor: MenuCursor },
+    OpenNotification {
+        id: i64,
+        main_cursor: MenuCursor,
+    },
+    OpenOptions {
+        main_cursor: MenuCursor,
+    },
+    EnableCapture {
+        main_cursor: MenuCursor,
+    },
+    DeleteNotification {
+        id: i64,
+        main_cursor: MenuCursor,
+    },
+    ToggleRead {
+        id: i64,
+        read: bool,
+        main_cursor: MenuCursor,
+    },
+    Refresh {
+        main_cursor: MenuCursor,
+    },
     Exit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NotifyKeybindAction {
     Delete,
-    MarkUnread,
+    ToggleRead,
     Sort,
     Options,
     EnableCapture,
@@ -95,8 +125,8 @@ fn notification_keybinds(daemon_running: bool) -> Result<Vec<MenuKeybind<NotifyK
         ),
         MenuKeybind::new(
             MenuKey::new("ctrl-u")?,
-            "mark unread",
-            NotifyKeybindAction::MarkUnread,
+            "toggle read",
+            NotifyKeybindAction::ToggleRead,
         ),
         sort_keybind()?.map_action(NotifyKeybindAction::Sort),
         MenuKeybind::new(
@@ -213,10 +243,11 @@ fn run_main_menu(
                         }
                     }
                     (
-                        Some(NotifyKeybindAction::MarkUnread),
+                        Some(NotifyKeybindAction::ToggleRead),
                         Some(NotifyMainItem::Notification(n)),
-                    ) => MenuAction::MarkUnread {
+                    ) => MenuAction::ToggleRead {
                         id: n.id,
+                        read: n.read,
                         main_cursor,
                     },
                     (Some(NotifyKeybindAction::Options), _) => {
@@ -225,7 +256,7 @@ fn run_main_menu(
                     (Some(NotifyKeybindAction::EnableCapture), _) => {
                         MenuAction::EnableCapture { main_cursor }
                     }
-                    (Some(NotifyKeybindAction::Delete | NotifyKeybindAction::MarkUnread), _)
+                    (Some(NotifyKeybindAction::Delete | NotifyKeybindAction::ToggleRead), _)
                     | (None, None) => MenuAction::Refresh { main_cursor },
                     (None, Some(NotifyMainItem::Notification(n))) => MenuAction::OpenNotification {
                         id: n.id,
@@ -530,6 +561,42 @@ mod tests {
         assert_eq!(sort, NotifySort::Application);
         let (items, _) = build_main_items(&db, false, sort)?;
         assert_eq!(cursor.initial_index(&items), Some(5));
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn read_toggle_flips_the_focused_notification_each_time() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+        let mut cursor = MenuCursor::new();
+        let mut sort = NotifySort::default();
+        // Spotify (row 3) starts out read; each ctrl-u press should flip it.
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-u", vec![3])
+            .keybind_action("ctrl-u", vec![3])
+            .guard();
+
+        let first = run_main_menu(&db, false, &mut cursor, &mut sort)?;
+        assert!(matches!(
+            first,
+            MenuAction::ToggleRead {
+                id: 4,
+                read: true,
+                ..
+            }
+        ));
+        // Apply the returned action so the second press sees the new state.
+        db.mark_unread(4)?;
+
+        let second = run_main_menu(&db, false, &mut cursor, &mut sort)?;
+        assert!(matches!(
+            second,
+            MenuAction::ToggleRead {
+                id: 4,
+                read: false,
+                ..
+            }
+        ));
         assert_eq!(scripted_responses_remaining(), 0);
         Ok(())
     }
