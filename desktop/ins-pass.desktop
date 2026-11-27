@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=INS Pass
+Comment=Copy passwords and one-time codes from your pass store
+Exec=ins pass --instantmenu
+TryExec=ins
+Icon=dialog-password
+Terminal=false
+Categories=Utility;Security;
+Keywords=pass;password;otp;2fa;vault;instantos;

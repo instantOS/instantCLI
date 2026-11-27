@@ -69,7 +69,10 @@ pub enum PassCommands {
         path: Option<String>,
     },
 }
-use menu::{interactive_pass_menu, interactive_pass_menu_server, interactive_pass_tree_menu};
+use menu::{
+    interactive_pass_menu, interactive_pass_menu_instantmenu, interactive_pass_menu_server,
+    interactive_pass_tree_menu,
+};
 use operations::{
     copy_otp_flow, delete_entry_flow, export_entry_flow, generate_password_entry, insert_otp_entry,
     insert_password_entry,
@@ -92,6 +95,7 @@ pub fn pass_entry_names() -> Vec<String> {
 
 pub fn handle_pass_command(
     gui: bool,
+    instantmenu: bool,
     debug: bool,
     list_only: bool,
     command: Option<PassCommands>,
@@ -133,6 +137,18 @@ pub fn handle_pass_command(
             ensure_core_dependencies()?;
             export_entry_flow(name, path)?;
             Ok(0)
+        }
+        None if instantmenu => {
+            let result = interactive_pass_menu_instantmenu(debug);
+            if let Err(error) = &result
+                && let Err(dialog_error) = crate::menu::instantmenu::InstantmenuBackend::message(
+                    Some("INS Pass"),
+                    &format!("{error:#}"),
+                )
+            {
+                eprintln!("Could not display error: {dialog_error:#}");
+            }
+            result
         }
         None if list_only => {
             ensure_core_dependencies()?;

@@ -1,9 +1,11 @@
+mod instantmenu;
 mod move_entry;
 
 use anyhow::{Result, anyhow, bail};
 
 use crate::menu::client::HostedMenuClient;
-use crate::menu::protocol::ChoiceOptions;
+use crate::menu::instantmenu::InstantmenuBackend;
+use crate::menu::protocol::{ChoiceOptions, InputOptions};
 use crate::menu_utils::{
     FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuSelection, MenuSort,
     choose_sort, sort_keybind,
@@ -196,6 +198,77 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
         }
     }
 }
+
+/// Quick-access password picker rendered directly by Instant Menu.
+///
+/// This mirrors the terminal picker without requiring a TTY: entries keep the
+/// same frequency ranking, Enter copies the selected secret, and Ctrl-E (or the
+/// management row) opens the hierarchical editor in a terminal window.
+pub(super) fn interactive_pass_quick_access_instantmenu(debug: bool) -> Result<i32> {
+    ensure_core_dependencies()?;
+
+    let store_dir = ensure_password_store_dir()?;
+    let mut entries = load_entries(&store_dir)?;
+    sort_entries(&mut entries, PassSort::quick_access_default())?;
+    let items = build_quick_access_items(&entries);
+    let keybinds = instantmenu::keybinds()?;
+
+    let Some(selection) = instantmenu::select(&items, &keybinds)? else {
+        return Ok(1);
+    };
+
+    if matches!(selection.action, Some(instantmenu::PassMenuAction::Edit)) {
+        crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
+        return Ok(0);
+    }
+
+    let Some(item) = selection.items.into_iter().next() else {
+        return Ok(1);
+    };
+
+    match item.kind {
+        BrowserItemKind::Entry(key) => {
+            let entry = resolve_entry_by_name(&entries, &key, false)?;
+            if entry.should_offer_export() {
+                if !export_entry_instantmenu(&entry)? {
+                    return Ok(1);
+                }
+            } else {
+                copy_primary_entry(&entry)?;
+            }
+            record_frecency(&entry.display_name)?;
+            // Exit after copying so the user can paste immediately.
+            Ok(0)
+        }
+        BrowserItemKind::Menu => {
+            crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
+            Ok(0)
+        }
+        BrowserItemKind::Folder(_) | BrowserItemKind::Add | BrowserItemKind::Back => Ok(1),
+        BrowserItemKind::Close => Ok(0),
+    }
+}
+
+/// Export an entry that is too large or file-like for the clipboard using an
+/// Instant Menu path prompt instead of the terminal-only fzf input dialog.
+///
+/// Returns `false` when the user cancels the path prompt.
+fn export_entry_instantmenu(entry: &PassEntry) -> Result<bool> {
+    let suggested = suggested_export_filename(&entry.display_name);
+    let options = InputOptions::text_with_initial("Export path", suggested)
+        .with_placeholder("Destination for the decrypted entry");
+    let path = match InstantmenuBackend::input(&options)? {
+        crate::menu_utils::DialogOutcome::Submitted(path) => path.trim().to_string(),
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
+    };
+    if path.is_empty() {
+        bail!("Export path cannot be empty");
+    }
+    export_entry(entry, Some(path))?;
+    Ok(true)
+}
+
+pub(super) use interactive_pass_quick_access_instantmenu as interactive_pass_menu_instantmenu;
 
 pub(super) use interactive_pass_quick_access_server as interactive_pass_menu_server;
 

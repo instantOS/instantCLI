@@ -156,9 +156,12 @@ enum Commands {
         /// List available entries instead of opening the interactive picker
         #[arg(long)]
         list: bool,
-        /// Open the pass menu using the instantmenu server
+        /// Open the pass picker in a GUI terminal window
         #[arg(long = "gui")]
         gui: bool,
+        /// Open a compact picker using Instant Menu (no terminal required)
+        #[arg(long, conflicts_with_all = ["gui", "list"])]
+        instantmenu: bool,
         #[command(subcommand)]
         command: Option<PassCommands>,
     },
@@ -360,8 +363,14 @@ fn dispatch_command(cli: &Cli) -> Result<()> {
             let exit_code = run_async(launch::handle_launch_command(args.clone()))?;
             std::process::exit(exit_code);
         }
-        Some(Commands::Pass { list, gui, command }) => {
-            let exit_code = pass::handle_pass_command(*gui, cli.debug, *list, command.clone())?;
+        Some(Commands::Pass {
+            list,
+            gui,
+            instantmenu,
+            command,
+        }) => {
+            let exit_code =
+                pass::handle_pass_command(*gui, *instantmenu, cli.debug, *list, command.clone())?;
             std::process::exit(exit_code);
         }
         Some(Commands::Assist {
@@ -623,6 +632,20 @@ mod cli_tests {
     #[test]
     fn clap_definition_is_internally_valid() {
         cli_command().debug_assert();
+    }
+
+    #[test]
+    fn pass_instantmenu_is_exclusive_with_other_pickers() {
+        let cli = Cli::try_parse_from(["ins", "pass", "--instantmenu"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Pass {
+                instantmenu: true,
+                ..
+            })
+        ));
+        assert!(Cli::try_parse_from(["ins", "pass", "--instantmenu", "--gui"]).is_err());
+        assert!(Cli::try_parse_from(["ins", "pass", "--instantmenu", "--list"]).is_err());
     }
 
     #[test]

@@ -265,6 +265,7 @@ ins video --help
 | `ins settings` | Browse desktop and system settings |
 | `ins game` | Back up and sync game saves |
 | `ins pass` | Pick passwords and generate one-time codes |
+| `ins pass --instantmenu` | Pick a password in a compact graphical menu |
 | `ins notify` | Browse notification history |
 | `ins clip` | Browse clipboard history |
 | `ins launch` | Search and launch applications |
@@ -309,6 +310,15 @@ Choose INS Open as the default in your file manager, or run
 another default with Ctrl+D replaces that association. INS Open also appears as
 a normal choice in its own picker, so Ctrl+D can make it the default for a file
 type that should always ask which application to use.
+
+`ins pass --instantmenu` opens the quick-access password picker as a compact
+graphical menu without starting a terminal. Entries use the same frequency
+ranking as the terminal picker; Enter copies the selected password or current
+OTP code and closes the menu so it can be pasted immediately. Ctrl+E, or the
+`Edit Passwords` row, opens the hierarchical management menu in a terminal
+window. Requires `instantmenu` and an X11 or Wayland session; `--list` and
+`--gui` cannot be combined with it. The `desktop/ins-pass.desktop` entry
+installed by `just install` starts the compact picker from application menus.
 
 `ins game menu` lists games by how recently and often you launched them, so the
 game you play most is near the top. Each launch updates a frecency cache at
