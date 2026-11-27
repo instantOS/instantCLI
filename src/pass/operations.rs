@@ -77,9 +77,30 @@ pub(super) fn insert_otp_entry_with_prefix(
         bail!("OTP entries must start with `otpauth://`");
     }
 
+    store_otp_entry(&raw_name, &entry_name, &otp_uri)
+}
+
+pub(super) fn insert_otp_entry_from_clipboard_with_prefix(
+    prefix: Option<&str>,
+    otp_uri: &str,
+) -> Result<()> {
+    let suggestion = suggested_otp_entry_name(otp_uri);
+    let raw_name = resolve_entry_name_with_suggestion(
+        None,
+        prefix,
+        "New OTP entry from clipboard",
+        suggestion.as_deref(),
+    )?;
+    let entry_name = normalize_otp_name(&raw_name);
+    maybe_confirm_overwrite(&entry_name)?;
+
+    store_otp_entry(&raw_name, &entry_name, otp_uri)
+}
+
+fn store_otp_entry(raw_name: &str, entry_name: &str, otp_uri: &str) -> Result<()> {
     // `pass otp insert` reads the URI from stdin; it does not accept it as an
     // argument (extra positional arguments are ignored, leaving the URI empty).
-    run_pass_status_with_input(["otp", "insert", "-f", &entry_name], &otp_uri)?;
+    run_pass_status_with_input(["otp", "insert", "-f", entry_name], otp_uri)?;
 
     maybe_notify("Pass", &format!("Stored OTP entry for {raw_name}"));
     Ok(())

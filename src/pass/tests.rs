@@ -7,7 +7,7 @@ use super::types::{BrowserItemKind, BrowserMenuItem, location_color};
 use super::utils::{
     first_secret_line, load_entries, normalize_file_entry_name, normalize_otp_name,
     run_pass_status_with_input, sanitize_entry_name, suggested_export_filename,
-    suggested_file_entry_name,
+    suggested_file_entry_name, suggested_otp_entry_name,
 };
 use super::{PassCommands, auto_setup_applies};
 use crate::menu::protocol::FzfPreview;
@@ -20,6 +20,24 @@ use std::fs;
 fn normalizes_otp_names() {
     assert_eq!(normalize_otp_name("email/github"), "email/github.otp");
     assert_eq!(normalize_otp_name("email/github.otp"), "email/github.otp");
+}
+
+#[test]
+fn suggests_otp_entry_names_from_the_issuer() {
+    let secret = "JBSWY3DPEHPK3PXP";
+    assert_eq!(
+        suggested_otp_entry_name(&format!("otpauth://totp/GitHub:alice?secret={secret}"))
+            .as_deref(),
+        Some("GitHub")
+    );
+    assert_eq!(
+        suggested_otp_entry_name(&format!(
+            "otpauth://totp/alice?secret={secret}&issuer=instantos%20tester"
+        ))
+        .as_deref(),
+        Some("instantos-tester")
+    );
+    assert!(suggested_otp_entry_name("https://example.com").is_none());
 }
 
 #[cfg(unix)]

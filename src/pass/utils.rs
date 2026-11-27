@@ -10,7 +10,7 @@ use walkdir::WalkDir;
 use super::types::{EXPORT_THRESHOLD_BYTES, PASS_OTP_DEP, PassEntry};
 use crate::assist::deps::{GPG, PASS};
 use crate::assist::deps::{LIBNOTIFY, WL_CLIPBOARD, XCLIP};
-use crate::assist::utils::{copy_to_clipboard, show_notification};
+use crate::assist::utils::{copy_to_clipboard, get_clipboard_content, show_notification};
 use crate::common::display_server::DisplayServer;
 use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::frecency::FrecencyStore;
@@ -127,6 +127,43 @@ pub(super) fn normalize_otp_name(name: &str) -> String {
     } else {
         format!("{name}.otp")
     }
+}
+
+/// Look for a complete, valid TOTP URI on the clipboard.
+pub(super) fn clipboard_otp_uri() -> Option<String> {
+    let display_server = DisplayServer::detect();
+    if !display_server.is_desktop_session() {
+        return None;
+    }
+
+    let content = get_clipboard_content(&display_server).ok()?;
+    let uri = content
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("otpauth://") && super::totp::OtpAuth::parse(line).is_ok())?;
+    Some(uri.to_string())
+}
+
+/// Build an entry-name suggestion from the issuer (or account) of an OTP URI.
+pub(super) fn suggested_otp_entry_name(uri: &str) -> Option<String> {
+    let auth = super::totp::OtpAuth::parse(uri).ok()?;
+    let raw = auth.issuer().or_else(|| auth.account())?;
+
+    let mut name = String::new();
+    for ch in raw.trim().chars() {
+        if ch.is_control() {
+            continue;
+        }
+        if ch.is_whitespace() || matches!(ch, '/' | '\\' | ':') {
+            if !name.is_empty() && !name.ends_with('-') {
+                name.push('-');
+            }
+        } else {
+            name.push(ch);
+        }
+    }
+
+    sanitize_entry_name(name.trim_matches('-')).ok()
 }
 
 /// File entries use a `.file` suffix so the browser exports them instead of

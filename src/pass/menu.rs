@@ -322,7 +322,8 @@ pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
 }
 
 pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
-    let items = build_add_menu_items();
+    let clipboard_otp = clipboard_otp_uri();
+    let items = build_add_menu_items(clipboard_otp.is_some());
 
     let header = HeaderBuilder::new(NerdFont::Plus, "Add Password Store Entry")
         .subtitle("Create a new password, generated secret, OTP key, or file")
@@ -347,6 +348,13 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
             AddMenuAction::AddOtp => {
                 ensure_otp_dependency()?;
                 insert_otp_entry_with_prefix(None, current_prefix)?;
+            }
+            AddMenuAction::AddOtpFromClipboard => {
+                let Some(otp_uri) = clipboard_otp.as_deref() else {
+                    bail!("The clipboard no longer contains a valid OTP URI");
+                };
+                ensure_otp_dependency()?;
+                insert_otp_entry_from_clipboard_with_prefix(current_prefix, otp_uri)?;
             }
             AddMenuAction::AddFile => {
                 insert_file_entry_with_prefix(current_prefix)?;
@@ -547,8 +555,8 @@ fn add_menu_destination(current_prefix: Option<&str>) -> String {
         .unwrap_or_else(|| "/".to_string())
 }
 
-fn build_add_menu_items() -> Vec<AddMenuItem> {
-    vec![
+fn build_add_menu_items(clipboard_otp_available: bool) -> Vec<AddMenuItem> {
+    let mut items = vec![
         AddMenuItem {
             key: "add-password",
             display: format!(
@@ -594,6 +602,27 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
                 .build(),
             action: AddMenuAction::AddOtp,
         },
+    ];
+
+    if clipboard_otp_available {
+        items.push(AddMenuItem {
+            key: "add-otp-from-clipboard",
+            display: format!(
+                "{} Add OTP from Clipboard",
+                format_icon_colored(NerdFont::Clipboard, colors::MAUVE)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Clipboard, "Add OTP from Clipboard")
+                .text("Use the OTP URI currently stored on your clipboard.")
+                .blank()
+                .bullet("The entry name is prefilled from the issuer")
+                .bullet("The clipboard URI is not shown in this preview")
+                .build(),
+            action: AddMenuAction::AddOtpFromClipboard,
+        });
+    }
+
+    items.extend([
         AddMenuItem {
             key: "add-file",
             display: format!(
@@ -619,7 +648,9 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
                 .build(),
             action: AddMenuAction::Back,
         },
-    ]
+    ]);
+
+    items
 }
 
 fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
@@ -989,12 +1020,29 @@ mod add_menu_tests {
 
     #[test]
     fn add_menu_offers_file_entries() {
-        let items = build_add_menu_items();
+        let items = build_add_menu_items(false);
 
         assert!(
             items
                 .iter()
                 .any(|item| matches!(item.action, AddMenuAction::AddFile))
+        );
+    }
+
+    #[test]
+    fn add_menu_only_offers_clipboard_otp_when_available() {
+        let without_clipboard = build_add_menu_items(false);
+        assert!(
+            without_clipboard
+                .iter()
+                .all(|item| !matches!(item.action, AddMenuAction::AddOtpFromClipboard))
+        );
+
+        let with_clipboard = build_add_menu_items(true);
+        assert!(
+            with_clipboard
+                .iter()
+                .any(|item| matches!(item.action, AddMenuAction::AddOtpFromClipboard))
         );
     }
 }

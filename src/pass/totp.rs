@@ -19,6 +19,8 @@ pub(super) struct OtpAuth {
     digits: u32,
     period: u64,
     steam: bool,
+    issuer: Option<String>,
+    account: Option<String>,
 }
 
 impl OtpAuth {
@@ -29,7 +31,18 @@ impl OtpAuth {
             .strip_prefix("otpauth://totp/")
             .ok_or_else(|| anyhow!("Not a TOTP otpauth URI"))?;
 
-        let query = rest.split_once('?').map(|(_, q)| q).unwrap_or("");
+        let (label, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let (label_issuer, account) = match label.split_once(':') {
+            Some((issuer, account)) => {
+                (Some(percent_decode(issuer)), Some(percent_decode(account)))
+            }
+            None => (None, Some(percent_decode(label))),
+        };
+        let mut issuer = label_issuer
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
 
         let mut secret: Option<Vec<u8>> = None;
         let mut digits: u32 = 6;
@@ -55,10 +68,23 @@ impl OtpAuth {
                         .map_err(|_| anyhow!("Invalid period value in otpauth URI: {value}"))?
                 }
                 "encoder" => steam = value.eq_ignore_ascii_case("steam"),
-                "issuer" if value.eq_ignore_ascii_case("steam") => steam = true,
+                "issuer" => {
+                    if value.eq_ignore_ascii_case("steam") {
+                        steam = true;
+                    }
+                    if !value.trim().is_empty() {
+                        issuer = Some(value);
+                    }
+                }
                 _ => {}
             }
         }
+
+        let account = account
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
 
         let secret = secret.ok_or_else(|| anyhow!("otpauth URI is missing a secret"))?;
         if secret.is_empty() {
@@ -73,7 +99,19 @@ impl OtpAuth {
             digits,
             period,
             steam,
+            issuer,
+            account,
         })
+    }
+
+    /// Issuer from either the label prefix or the `issuer` query parameter.
+    pub(super) fn issuer(&self) -> Option<&str> {
+        self.issuer.as_deref()
+    }
+
+    /// Account name from the label, when present.
+    pub(super) fn account(&self) -> Option<&str> {
+        self.account.as_deref()
     }
 
     /// Whether `oathtool`/`pass otp` can handle this entry. Steam-encoded and
@@ -227,6 +265,23 @@ mod tests {
     fn standard_entry_is_oathtool_supported() {
         let auth = OtpAuth::parse(&format!("otpauth://totp/test?secret={RFC_SECRET}")).unwrap();
         assert!(auth.oathtool_supported());
+    }
+
+    #[test]
+    fn parses_issuer_and_account_metadata() {
+        let auth = OtpAuth::parse(&format!(
+            "otpauth://totp/ACME%20Co:alice%40example.com?secret={RFC_SECRET}&issuer=ACME%20Co"
+        ))
+        .unwrap();
+        assert_eq!(auth.issuer(), Some("ACME Co"));
+        assert_eq!(auth.account(), Some("alice@example.com"));
+
+        let auth = OtpAuth::parse(&format!(
+            "otpauth://totp/Other:alice?secret={RFC_SECRET}&issuer=ACME%20Co"
+        ))
+        .unwrap();
+        assert_eq!(auth.issuer(), Some("ACME Co"));
+        assert_eq!(auth.account(), Some("alice"));
     }
 
     #[test]
