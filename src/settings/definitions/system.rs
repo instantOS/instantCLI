@@ -357,7 +357,7 @@ impl Setting for PasswordManager {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        crate::pass::menu::run_edit_browser(None)
+        crate::pass::menu::run_edit_browser(None, None)
     }
 }
 

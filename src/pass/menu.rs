@@ -27,7 +27,7 @@ enum QuickAccessBind {
 
 enum QuickAccessIntent {
     Primary(BrowserMenuItem),
-    EditMode,
+    EditMode(Option<BrowserMenuItem>),
     Sort(Option<BrowserMenuItem>),
 }
 
@@ -82,11 +82,28 @@ fn add_prefix_for_selection(
     }
 }
 
+/// Initial folder and selected row for the edit browser. Focusing an entry
+/// opens its parent folder and selects that entry there.
+fn edit_browser_start(
+    initial_prefix: Option<&str>,
+    focus_entry: Option<&str>,
+) -> (Vec<String>, Option<String>) {
+    if let Some(entry) = focus_entry {
+        let mut path = path_segments(entry);
+        path.pop();
+        return (path, Some(format!("entry:{entry}")));
+    }
+
+    (initial_prefix.map(path_segments).unwrap_or_default(), None)
+}
+
 fn interpret_quick_access_selection(
     selection: MenuSelection<BrowserMenuItem, QuickAccessBind>,
 ) -> Option<QuickAccessIntent> {
     match selection.action {
-        Some(QuickAccessBind::Edit) => Some(QuickAccessIntent::EditMode),
+        Some(QuickAccessBind::Edit) => Some(QuickAccessIntent::EditMode(
+            selection.items.first().cloned(),
+        )),
         Some(QuickAccessBind::Sort) => {
             Some(QuickAccessIntent::Sort(selection.items.first().cloned()))
         }
@@ -136,8 +153,12 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
                 };
 
                 let item = match intent {
-                    QuickAccessIntent::EditMode => {
-                        run_edit_browser(None)?;
+                    QuickAccessIntent::EditMode(item) => {
+                        let focus = item.as_ref().and_then(|item| match &item.kind {
+                            BrowserItemKind::Entry(key) => Some(key.as_str()),
+                            _ => None,
+                        });
+                        run_edit_browser(None, focus)?;
                         continue;
                     }
                     QuickAccessIntent::Sort(item) => {
@@ -221,7 +242,7 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
 }
 
 pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
-    run_edit_browser(None)?;
+    run_edit_browser(None, None)?;
     Ok(0)
 }
 
@@ -262,10 +283,16 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
+pub(crate) fn run_edit_browser(
+    initial_prefix: Option<&str>,
+    focus_entry: Option<&str>,
+) -> Result<()> {
     let store_dir = ensure_password_store_dir()?;
-    let mut path = initial_prefix.map(path_segments).unwrap_or_default();
+    let (mut path, initial_key) = edit_browser_start(initial_prefix, focus_entry);
     let mut cursor = MenuCursor::new();
+    if let Some(key) = initial_key {
+        cursor.update_from_key(&key);
+    }
     let mut sort = PassSort::default();
 
     loop {
@@ -673,14 +700,17 @@ mod keybind_tests {
     }
 
     #[test]
-    fn edit_keybind_enters_edit_mode_for_the_focused_entry() {
+    fn edit_keybind_carries_the_focused_entry_into_edit_mode() {
         let item = entry_item("mail/work");
         let interpreted = interpret_quick_access_selection(MenuSelection {
-            items: vec![item],
+            items: vec![item.clone()],
             action: Some(QuickAccessBind::Edit),
         });
 
-        assert!(matches!(interpreted, Some(QuickAccessIntent::EditMode)));
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::EditMode(Some(selected))) if selected.key == item.key
+        ));
     }
 
     #[test]
@@ -690,7 +720,26 @@ mod keybind_tests {
             action: Some(QuickAccessBind::Edit),
         });
 
-        assert!(matches!(interpreted, Some(QuickAccessIntent::EditMode)));
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::EditMode(None))
+        ));
+    }
+
+    #[test]
+    fn edit_focus_starts_in_the_entries_parent_folder() {
+        let (path, key) = edit_browser_start(None, Some("mail/work/github"));
+
+        assert_eq!(path.join("/"), "mail/work");
+        assert_eq!(key.as_deref(), Some("entry:mail/work/github"));
+    }
+
+    #[test]
+    fn edit_without_focus_uses_the_initial_prefix() {
+        let (path, key) = edit_browser_start(Some("mail/work"), None);
+
+        assert_eq!(path.join("/"), "mail/work");
+        assert!(key.is_none());
     }
 
     #[test]
