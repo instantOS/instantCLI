@@ -26,10 +26,15 @@ pub(super) enum PassSort {
     Modified,
 }
 
-impl Default for PassSort {
-    /// The pass menus open with the most frequently used entries first.
-    fn default() -> Self {
+impl PassSort {
+    /// The flat quick-access list opens with the most-used entries first.
+    pub(super) const fn quick_access_default() -> Self {
         Self::Frequency
+    }
+
+    /// The tree browser opens alphabetically, like a directory listing.
+    pub(super) const fn edit_browser_default() -> Self {
+        Self::Alphabetical
     }
 }
 
@@ -163,8 +168,9 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_frequency_order() {
-        assert_eq!(PassSort::default(), PassSort::Frequency);
+    fn menus_have_context_specific_defaults() {
+        assert_eq!(PassSort::quick_access_default(), PassSort::Frequency);
+        assert_eq!(PassSort::edit_browser_default(), PassSort::Alphabetical);
     }
 
     #[test]

@@ -118,7 +118,7 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
 
     let store_dir = ensure_password_store_dir()?;
     let mut cursor = MenuCursor::new();
-    let mut sort = PassSort::default();
+    let mut sort = PassSort::quick_access_default();
 
     loop {
         let mut entries = load_entries(&store_dir)?;
@@ -206,7 +206,7 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
 
     loop {
         let mut entries = load_entries(&store_dir)?;
-        sort_entries(&mut entries, PassSort::default())?;
+        sort_entries(&mut entries, PassSort::quick_access_default())?;
         let menu_items = build_quick_access_menu_items(&entries);
 
         let selected = match client.choice(ChoiceOptions::new("Pass"), menu_items)? {
@@ -293,7 +293,7 @@ pub(crate) fn run_edit_browser(
     if let Some(key) = initial_key {
         cursor.update_from_key(&key);
     }
-    let mut sort = PassSort::default();
+    let mut sort = PassSort::edit_browser_default();
 
     loop {
         let mut entries = load_entries(&store_dir)?;
