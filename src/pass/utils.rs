@@ -313,7 +313,7 @@ pub(super) fn ensure_password_store_dir() -> Result<PathBuf> {
 }
 
 pub(super) fn password_store_dir() -> Result<PathBuf> {
-    if let Ok(dir) = env::var("PASSWORD_STORE_DIR") {
+    if let Some(dir) = env::var_os("PASSWORD_STORE_DIR").filter(|dir| !dir.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
 

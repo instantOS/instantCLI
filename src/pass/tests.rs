@@ -320,16 +320,37 @@ fn unchanged_pass_edit_exit_is_treated_as_noop() {
 }
 
 #[test]
-fn automatic_setup_runs_for_interactive_commands_only() {
-    assert!(auto_setup_applies(&None, false));
-    assert!(!auto_setup_applies(&None, true));
+fn automatic_setup_runs_for_pickers_and_interactive_writes() {
+    assert!(auto_setup_applies(None, false, false));
+    assert!(!auto_setup_applies(None, true, true));
     assert!(auto_setup_applies(
-        &Some(PassCommands::Menu { gui: false }),
-        false
+        Some(&PassCommands::Menu { gui: false }),
+        false,
+        true,
     ));
     assert!(!auto_setup_applies(
-        &Some(PassCommands::Menu { gui: true }),
-        false
+        Some(&PassCommands::Menu { gui: true }),
+        false,
+        false,
     ));
-    assert!(!auto_setup_applies(&Some(PassCommands::Setup), false));
+    assert!(!auto_setup_applies(Some(&PassCommands::Setup), false, true));
+    let generate = PassCommands::Generate {
+        name: Some("example".into()),
+        length: 20,
+    };
+    assert!(auto_setup_applies(Some(&generate), false, true));
+    assert!(!auto_setup_applies(Some(&generate), false, false));
+
+    let name = Some("example".into());
+    for command in [
+        PassCommands::Otp { name: name.clone() },
+        PassCommands::Delete { name: name.clone() },
+        PassCommands::Export {
+            name,
+            path: Some("output".into()),
+        },
+    ] {
+        assert!(!auto_setup_applies(Some(&command), false, true));
+        assert!(!auto_setup_applies(Some(&command), false, false));
+    }
 }

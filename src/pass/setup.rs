@@ -1,18 +1,21 @@
 //! First-run setup for the `pass` password store.
 //!
-//! Interactive pass commands call [`ensure_store`] before opening a menu. When
-//! the store has no recipient configuration, setup opens in a normal terminal
-//! where the user can create a GPG key or choose an existing secret key. The
-//! selected key is then written to `.gpg-id` by `pass init`.
+//! A new password store can be initialized in a terminal with a new or
+//! existing GPG key. Existing encrypted entries are left to `pass` itself.
 
 use std::env;
-use std::fs;
+use std::ffi::OsStr;
+use std::fs::{self, DirBuilder, File};
 use std::io::{IsTerminal, Write};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use walkdir::WalkDir;
 
+use crate::common::commands::command_exists;
 use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
@@ -20,42 +23,24 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::utils::{ensure_core_dependencies, password_store_dir, run_pass_status};
 
-/// Whether the password store still needs a recipient/GPG setup.
-pub(super) fn needs_setup() -> Result<bool> {
-    let store_dir = password_store_dir()?;
-    Ok(!store_is_configured(&store_dir))
+#[derive(Debug, PartialEq, Eq)]
+enum StoreState {
+    New,
+    Configured(String),
+    Existing,
 }
 
-/// Ensure the store is configured. When called without a terminal (for example
-/// from `--instantmenu`), setup is opened in the configured terminal window.
-pub(super) fn ensure_store(debug: bool) -> Result<bool> {
-    let result = ensure_store_inner(debug);
-    if let Err(error) = &result
-        && interactive_terminal()
-    {
-        let _ = message("INS Pass Setup Failed", &format!("{error:#}"));
-    }
-    result
-}
-
-fn ensure_store_inner(debug: bool) -> Result<bool> {
+/// Offer setup for a new store before continuing with the original command.
+pub(super) fn onboard_if_new(debug: bool) -> Result<bool> {
     let store_dir = password_store_dir()?;
-    if store_is_configured(&store_dir) {
-        if !store_dir.exists() {
-            fs::create_dir_all(&store_dir)
-                .with_context(|| format!("Failed to create {}", store_dir.display()))?;
-        }
+    if store_state(&store_dir)? != StoreState::New {
         return Ok(true);
     }
 
-    if !interactive_terminal() {
-        launch_in_terminal(debug)?;
-        let store_dir = password_store_dir()?;
-        return Ok(store_is_configured(&store_dir));
+    if interactive_terminal() {
+        return run_setup();
     }
-
-    ensure_core_dependencies()?;
-    run_onboarding(&store_dir)
+    launch_in_terminal(debug)
 }
 
 /// Run setup in the current terminal. Used by `ins pass setup` and by the
@@ -78,26 +63,23 @@ fn run_setup_inner() -> Result<bool> {
     }
 
     let store_dir = password_store_dir()?;
-    if store_is_configured(&store_dir) {
-        let recipient = configured_recipient(&store_dir);
-        message(
-            "INS Pass Is Already Set Up",
-            &format!(
-                "Store: {}\nRecipient: {}\n\n\
-                 To use a different store or key, set PASSWORD_STORE_DIR or run \
-                 `pass init` with another key.",
-                store_dir.display(),
-                recipient
-            ),
-        )?;
-        return Ok(true);
+    match store_state(&store_dir)? {
+        StoreState::Configured(recipient) => {
+            message(
+                "INS Pass Is Already Set Up",
+                &format!("Store: {}\nRecipient: {recipient}", store_dir.display()),
+            )?;
+            Ok(true)
+        }
+        StoreState::Existing => Err(existing_store_error(&store_dir)),
+        StoreState::New => {
+            ensure_core_dependencies()?;
+            run_onboarding(&store_dir)
+        }
     }
-
-    ensure_core_dependencies()?;
-    run_onboarding(&store_dir)
 }
 
-fn launch_in_terminal(debug: bool) -> Result<()> {
+fn launch_in_terminal(debug: bool) -> Result<bool> {
     let current_exe = env::current_exe().context("Failed to locate the ins executable")?;
     let mut args = Vec::new();
     if debug {
@@ -105,37 +87,82 @@ fn launch_in_terminal(debug: bool) -> Result<()> {
     }
     args.extend(["pass".to_string(), "setup".to_string()]);
 
-    instantos_terminal::Launcher::new(current_exe.as_os_str())
+    let status = instantos_terminal::Launcher::new(current_exe.as_os_str())
         .app_id("ins-pass")
         .title("INS Pass Setup")
         .args(&args)
         .status()
         .context("Failed to open the setup terminal")?;
-    Ok(())
+    match status.code() {
+        Some(0) => Ok(matches!(
+            store_state(&password_store_dir()?)?,
+            StoreState::Configured(_)
+        )),
+        Some(1) => Ok(false),
+        _ => bail!("The setup terminal exited with {status}"),
+    }
 }
 
-fn interactive_terminal() -> bool {
+pub(super) fn interactive_terminal() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
-fn store_is_configured(store_dir: &Path) -> bool {
-    let key_override = env::var("PASSWORD_STORE_KEY")
-        .ok()
-        .is_some_and(|value| !value.trim().is_empty());
-    key_override || store_dir.join(".gpg-id").is_file()
+fn store_state(store_dir: &Path) -> Result<StoreState> {
+    let key_override = env::var_os("PASSWORD_STORE_KEY");
+    inspect_store(
+        store_dir,
+        key_override
+            .as_deref()
+            .map(OsStr::to_string_lossy)
+            .as_deref(),
+    )
 }
 
-fn configured_recipient(store_dir: &Path) -> String {
-    if let Ok(key) = env::var("PASSWORD_STORE_KEY")
-        && !key.trim().is_empty()
-    {
-        return key;
+fn inspect_store(store_dir: &Path, key_override: Option<&str>) -> Result<StoreState> {
+    if let Some(key) = key_override.filter(|key| !key.trim().is_empty()) {
+        return Ok(StoreState::Configured(key.to_owned()));
     }
-    fs::read_to_string(store_dir.join(".gpg-id"))
-        .ok()
-        .map(|contents| contents.trim().to_string())
-        .filter(|contents| !contents.is_empty())
-        .unwrap_or_else(|| "(unknown)".to_string())
+
+    match fs::symlink_metadata(store_dir) {
+        Ok(_) if store_dir.is_dir() => {}
+        Ok(_) => bail!("Password store is not a directory: {}", store_dir.display()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(StoreState::New),
+        Err(error) => return Err(error).context("Could not inspect the password store"),
+    }
+
+    let gpg_id = store_dir.join(".gpg-id");
+    if gpg_id.is_file() {
+        let contents =
+            fs::read(&gpg_id).with_context(|| format!("Could not read {}", gpg_id.display()))?;
+        let contents = String::from_utf8_lossy(&contents);
+        if contents
+            .lines()
+            .any(|line| !line.split('#').next().unwrap_or_default().trim().is_empty())
+        {
+            return Ok(StoreState::Configured(contents.trim().to_owned()));
+        }
+    }
+
+    for entry in WalkDir::new(store_dir)
+        .into_iter()
+        .filter_entry(|entry| entry.depth() == 0 || entry.file_name() != ".git")
+    {
+        let entry = entry.context("Could not inspect existing password-store entries")?;
+        let name = entry.file_name().as_bytes();
+        let encrypted = name[name.len().saturating_sub(4)..].eq_ignore_ascii_case(b".gpg");
+        if entry.depth() > 0 && (name == b".gpg-id" || encrypted) {
+            return Ok(StoreState::Existing);
+        }
+    }
+    Ok(StoreState::New)
+}
+
+fn existing_store_error(store_dir: &Path) -> anyhow::Error {
+    anyhow::anyhow!(
+        "Existing password store at {} has no usable root recipient configuration. \
+         Use pass to manage its recipients, or choose a new store with PASSWORD_STORE_DIR.",
+        store_dir.display()
+    )
 }
 
 fn run_onboarding(store_dir: &Path) -> Result<bool> {
@@ -402,8 +429,8 @@ fn prompt_passphrase() -> Result<Option<String>> {
                 ChoiceOption::new(
                     "none",
                     "Create the key without a passphrase",
-                    "Anyone who can read your password store files can decrypt \
-                     it. Only use this for a disposable demo or test environment.",
+                    "Anyone who obtains your private key can decrypt your passwords \
+                     without a passphrase.",
                     NerdFont::Warning,
                     colors::YELLOW,
                 ),
@@ -495,13 +522,26 @@ fn select_existing_key() -> Result<Option<SecretKey>> {
 }
 
 fn initialize_store(store_dir: &Path, key: &SecretKey) -> Result<()> {
-    run_pass_status(["init", &key.fingerprint])?;
-    let gpg_id = store_dir.join(".gpg-id");
-    if !gpg_id.is_file() {
-        bail!(
-            "`pass init` succeeded but did not create {}",
-            gpg_id.display()
-        );
+    {
+        DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(store_dir)
+            .with_context(|| format!("Failed to create {}", store_dir.display()))?;
+        // Serialize the final check and initialization across INS setup processes.
+        let store = File::open(store_dir).context("Failed to open the password store")?;
+        store
+            .lock()
+            .context("Failed to lock the password store for setup")?;
+        match store_state(store_dir)? {
+            StoreState::Configured(_) => bail!("The password store was configured during setup"),
+            StoreState::Existing => return Err(existing_store_error(store_dir)),
+            StoreState::New => {}
+        }
+        run_pass_status(["init", &key.fingerprint])?;
+        if store_state(store_dir)? != StoreState::Configured(key.fingerprint.clone()) {
+            bail!("`pass init` did not configure the selected recipient");
+        }
     }
 
     message(
@@ -519,8 +559,43 @@ fn initialize_store(store_dir: &Path, key: &SecretKey) -> Result<()> {
     )
 }
 
+fn gpg_command() -> Result<Command> {
+    let mut gpg = Command::new(if command_exists("gpg2") {
+        "gpg2"
+    } else {
+        "gpg"
+    });
+    if env::var_os("PASSWORD_STORE_GPG_OPTS").is_some_and(|opts| !opts.is_empty()) {
+        // pass expands this value with Bash word splitting and pathname expansion.
+        // Read the resulting arguments without interpreting the value as shell code.
+        let output = Command::new("bash")
+            .args([
+                "-c",
+                r#"for option in $PASSWORD_STORE_GPG_OPTS; do printf '%s\0' "$option"; done"#,
+            ])
+            .output()
+            .context("Failed to read PASSWORD_STORE_GPG_OPTS")?;
+        if !output.status.success() {
+            bail!(
+                "Could not read PASSWORD_STORE_GPG_OPTS: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        gpg.args(
+            output
+                .stdout
+                .strip_suffix(&[0])
+                .unwrap_or(&[])
+                .split(|byte| *byte == 0)
+                .filter(|option| !option.is_empty())
+                .map(OsStr::from_bytes),
+        );
+    }
+    Ok(gpg)
+}
+
 fn generate_gpg_key(identity: &str, passphrase: &str) -> Result<String> {
-    let mut child = Command::new("gpg")
+    let mut child = gpg_command()?
         .args([
             "--batch",
             "--pinentry-mode",
@@ -556,8 +631,15 @@ fn generate_gpg_key(identity: &str, passphrase: &str) -> Result<String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_created_fingerprint(&stdout)
-        .context("gpg created a key but did not report its fingerprint")
+    let fingerprint = parse_created_fingerprint(&stdout)
+        .context("gpg created a key but did not report its fingerprint")?;
+    if !list_secret_keys()?
+        .iter()
+        .any(|key| key.fingerprint == fingerprint)
+    {
+        bail!("The new GPG key {fingerprint} has no usable encryption secret key");
+    }
+    Ok(fingerprint)
 }
 
 fn parse_created_fingerprint(output: &str) -> Option<String> {
@@ -569,7 +651,7 @@ fn parse_created_fingerprint(output: &str) -> Option<String> {
 }
 
 fn list_secret_keys() -> Result<Vec<SecretKey>> {
-    let output = Command::new("gpg")
+    let output = gpg_command()?
         .args(["--batch", "--with-colons", "--list-secret-keys"])
         .output()
         .context("Failed to run `gpg --list-secret-keys`")?;
@@ -594,7 +676,23 @@ struct PendingKey {
     fingerprint: Option<String>,
     user_id: Option<String>,
     has_encryption: bool,
+    missing_encryption_secret: bool,
     unusable: bool,
+}
+
+impl PendingKey {
+    fn record_encryption(&mut self, fields: &[&str]) {
+        let validity = fields.get(1).copied().unwrap_or("");
+        let capabilities = fields.get(11).copied().unwrap_or("");
+        if !unusable_validity(validity) && capabilities.contains('e') && !capabilities.contains('D')
+        {
+            let secret = fields.get(14).copied().unwrap_or("");
+            self.has_encryption = true;
+            // GnuPG marks missing secret material with #. A card serial number
+            // and + indicate that GnuPG knows where the secret key lives.
+            self.missing_encryption_secret |= secret.is_empty() || secret == "#";
+        }
+    }
 }
 
 fn parse_secret_keys(output: &str) -> Vec<SecretKey> {
@@ -610,12 +708,15 @@ fn parse_secret_keys(output: &str) -> Vec<SecretKey> {
                 }
                 let validity = fields.get(1).copied().unwrap_or("");
                 let capabilities = fields.get(11).copied().unwrap_or("");
-                current = Some(PendingKey {
+                let mut pending = PendingKey {
                     fingerprint: None,
                     user_id: None,
-                    has_encryption: capabilities.contains('e'),
-                    unusable: unusable_validity(validity),
-                });
+                    has_encryption: false,
+                    missing_encryption_secret: false,
+                    unusable: unusable_validity(validity) || capabilities.contains('D'),
+                };
+                pending.record_encryption(&fields);
+                current = Some(pending);
             }
             Some("fpr") => {
                 if let Some(pending) = current.as_mut()
@@ -636,11 +737,7 @@ fn parse_secret_keys(output: &str) -> Vec<SecretKey> {
             }
             Some("ssb") => {
                 if let Some(pending) = current.as_mut() {
-                    let validity = fields.get(1).copied().unwrap_or("");
-                    let capabilities = fields.get(11).copied().unwrap_or("");
-                    if !unusable_validity(validity) && capabilities.contains('e') {
-                        pending.has_encryption = true;
-                    }
+                    pending.record_encryption(&fields);
                 }
             }
             _ => {}
@@ -654,7 +751,9 @@ fn parse_secret_keys(output: &str) -> Vec<SecretKey> {
 }
 
 fn finish_pending_key(pending: PendingKey) -> Option<SecretKey> {
-    if pending.unusable || !pending.has_encryption {
+    // pass uses the primary fingerprint and lets GnuPG pick the encryption
+    // subkey. Any eligible stub could be selected over a usable secret subkey.
+    if pending.unusable || !pending.has_encryption || pending.missing_encryption_secret {
         return None;
     }
     let fingerprint = pending.fingerprint?;
@@ -799,10 +898,54 @@ uid:u::::1795813985::CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC::Signing Only <sig
     }
 
     #[test]
-    fn store_configuration_requires_a_gpg_id_file() {
-        let store = tempfile::tempdir().unwrap();
-        assert!(!store_is_configured(store.path()));
-        fs::write(store.path().join(".gpg-id"), "demo@example.invalid\n").unwrap();
-        assert!(store_is_configured(store.path()));
+    fn encryption_subkeys_need_secret_material() {
+        let stub = GPG_LIST_OUTPUT.replace("::::::e:::+::cv25519", "::::::e:::#::cv25519");
+        assert!(parse_secret_keys(&stub).is_empty());
+
+        let card =
+            GPG_LIST_OUTPUT.replace("::::::e:::+::cv25519", "::::::e:::D27600012401::cv25519");
+        assert_eq!(parse_secret_keys(&card).len(), 1);
+    }
+
+    #[test]
+    fn available_subkey_does_not_make_an_eligible_stub_safe() {
+        let mixed = GPG_LIST_OUTPUT.replace(
+            "sec:r:",
+            "ssb:u:255:18:1111111111111111:1795814000::::::e:::#::cv25519::\nsec:r:",
+        );
+        assert!(parse_secret_keys(&mixed).is_empty());
+    }
+
+    #[test]
+    fn only_new_stores_are_eligible_for_onboarding() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = temp.path().join("store");
+        assert_eq!(inspect_store(&store, None)?, StoreState::New);
+        fs::create_dir_all(store.join(".git"))?;
+        fs::write(store.join(".git/fixture.gpg"), [])?;
+        assert_eq!(inspect_store(&store, None)?, StoreState::New);
+
+        let subfolder = store.join("shared");
+        fs::create_dir(&subfolder)?;
+        let entry = subfolder.join(".GPG");
+        fs::write(&entry, [])?;
+        assert_eq!(inspect_store(&store, None)?, StoreState::Existing);
+        fs::remove_file(entry)?;
+        fs::write(subfolder.join(".gpg-id"), "shared@example.invalid\n")?;
+        assert_eq!(inspect_store(&store, None)?, StoreState::Existing);
+
+        let root_id = store.join(".gpg-id");
+        fs::write(&root_id, "# placeholder\n")?;
+        assert_eq!(inspect_store(&store, None)?, StoreState::Existing);
+        fs::write(root_id, "demo@example.invalid\n")?;
+        assert_eq!(
+            inspect_store(&store, None)?,
+            StoreState::Configured("demo@example.invalid".into())
+        );
+        assert_eq!(
+            inspect_store(&store, Some("override@example.invalid"))?,
+            StoreState::Configured("override@example.invalid".into())
+        );
+        Ok(())
     }
 }

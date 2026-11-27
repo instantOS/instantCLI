@@ -312,15 +312,14 @@ another default with Ctrl+D replaces that association. INS Open also appears as
 a normal choice in its own picker, so Ctrl+D can make it the default for a file
 type that should always ask which application to use.
 
-On first use, `ins pass` detects whether the password store has a recipient
-configuration. If it does not, a guided setup opens in a normal terminal: create
-a new GPG key (with an optional passphrase) or select an existing
-encryption-capable secret key. The chosen recipient is written to `.gpg-id` with
-`pass init`, and the original command continues afterwards. Run
-`ins pass setup` to start the setup flow explicitly; it reports the current store
-and recipient if setup is already complete. When onboarding is needed from
-`--gui` or `--instantmenu`, setup opens in a terminal window and the picker
-continues once it finishes.
+The pass picker and interactive `ins pass add` and `ins pass generate` offer
+guided setup for a new store. You can create a GPG key with an optional
+passphrase or select an existing encryption-capable secret key. Setup calls
+`pass init` to write the recipient to `.gpg-id`, then the original command
+continues. You can also run `ins pass setup` in a terminal. It shows the current
+recipient for a configured store and directs you to `pass` for recipient changes
+in a populated store. When launched without a terminal, the graphical pickers
+open one for setup before continuing.
 
 `ins pass --instantmenu` opens the quick-access password picker as a compact
 graphical menu without starting a terminal. Entries use the same frequency

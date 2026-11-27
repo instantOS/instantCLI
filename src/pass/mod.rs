@@ -96,14 +96,13 @@ pub fn pass_entry_names() -> Vec<String> {
         .collect()
 }
 
-fn auto_setup_applies(command: &Option<PassCommands>, list_only: bool) -> bool {
-    if list_only {
-        return false;
+fn auto_setup_applies(command: Option<&PassCommands>, list_only: bool, terminal: bool) -> bool {
+    match command {
+        None => !list_only,
+        Some(PassCommands::Menu { gui }) => !gui,
+        Some(PassCommands::Add { .. } | PassCommands::Generate { .. }) => terminal,
+        _ => false,
     }
-    !matches!(
-        command,
-        Some(PassCommands::Setup | PassCommands::Menu { gui: true })
-    )
 }
 
 pub fn handle_pass_command(
@@ -113,9 +112,8 @@ pub fn handle_pass_command(
     list_only: bool,
     command: Option<PassCommands>,
 ) -> Result<i32> {
-    if auto_setup_applies(&command, list_only)
-        && setup::needs_setup()?
-        && !setup::ensure_store(debug)?
+    if auto_setup_applies(command.as_ref(), list_only, setup::interactive_terminal())
+        && !setup::onboard_if_new(debug)?
     {
         return Ok(1);
     }
