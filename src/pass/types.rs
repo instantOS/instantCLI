@@ -217,6 +217,7 @@ pub(super) enum AddMenuAction {
     AddPassword,
     GeneratePassword,
     AddOtp,
+    AddFile,
     Back,
 }
 

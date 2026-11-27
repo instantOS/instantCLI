@@ -4,7 +4,10 @@ use super::operations::{
 };
 use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem, location_color};
-use super::utils::{first_secret_line, load_entries, normalize_otp_name, sanitize_entry_name};
+use super::utils::{
+    first_secret_line, load_entries, normalize_file_entry_name, normalize_otp_name,
+    sanitize_entry_name, suggested_export_filename, suggested_file_entry_name,
+};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::FzfSelectable;
 use crate::ui::nerd_font::NerdFont;
@@ -57,6 +60,32 @@ fn sanitizes_bad_entry_names() {
     assert!(sanitize_entry_name("../foo").is_err());
     assert!(sanitize_entry_name("foo\nbar").is_err());
     assert_eq!(sanitize_entry_name("/work/github/").unwrap(), "work/github");
+}
+
+#[test]
+fn file_entry_names_get_the_file_suffix() {
+    assert_eq!(normalize_file_entry_name("contract"), "contract.file");
+    assert_eq!(normalize_file_entry_name("contract.file"), "contract.file");
+}
+
+#[test]
+fn file_entry_suggestion_uses_the_source_name() {
+    assert_eq!(
+        suggested_file_entry_name(std::path::Path::new("/tmp/contract.pdf")),
+        "contract.pdf.file"
+    );
+}
+
+#[test]
+fn file_export_suggestion_restores_the_source_name() {
+    assert_eq!(
+        suggested_export_filename("docs/contract.pdf.file"),
+        "contract.pdf"
+    );
+    assert_eq!(
+        suggested_export_filename("docs/contract.file"),
+        "contract.file"
+    );
 }
 
 #[test]

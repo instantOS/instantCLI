@@ -75,6 +75,15 @@ pub(super) fn resolve_entry_name(
     prefix: Option<&str>,
     header: &str,
 ) -> Result<String> {
+    resolve_entry_name_with_suggestion(name, prefix, header, None)
+}
+
+pub(super) fn resolve_entry_name_with_suggestion(
+    name: Option<String>,
+    prefix: Option<&str>,
+    header: &str,
+    suggestion: Option<&str>,
+) -> Result<String> {
     match name {
         Some(name) => apply_prefix_to_entry_name(&sanitize_entry_name(&name)?, prefix),
         None => prompt_text_value(
@@ -82,7 +91,7 @@ pub(super) fn resolve_entry_name(
             Some(header),
             false,
             Some(prefix.unwrap_or("examples/github or email/work")),
-            None,
+            suggestion,
         )?
         .ok_or_else(|| anyhow!("Entry creation cancelled"))
         .and_then(|value| sanitize_entry_name(&value))
@@ -119,6 +128,38 @@ pub(super) fn normalize_otp_name(name: &str) -> String {
     } else {
         format!("{name}.otp")
     }
+}
+
+/// File entries use a `.file` suffix so the browser exports them instead of
+/// trying to copy their contents to the clipboard.
+pub(super) fn normalize_file_entry_name(name: &str) -> String {
+    if name.ends_with(".file") {
+        name.to_string()
+    } else {
+        format!("{name}.file")
+    }
+}
+
+pub(super) fn suggested_file_entry_name(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_string());
+    normalize_file_entry_name(&name)
+}
+
+/// Undo the `.file` marker for exported filenames while preserving the source
+/// extension, e.g. `contract.pdf.file` exports as `contract.pdf`.
+pub(super) fn suggested_export_filename(display_name: &str) -> String {
+    let name = display_name.rsplit('/').next().unwrap_or(display_name);
+
+    if let Some(source_name) = name.strip_suffix(".file")
+        && source_name.contains('.')
+    {
+        return source_name.to_string();
+    }
+
+    name.to_string()
 }
 
 pub(super) fn resolve_otp_key(entry: &PassEntry) -> Result<String> {
@@ -168,7 +209,7 @@ pub(super) fn prompt_export_destination(
     display_name: &str,
     path: Option<String>,
 ) -> Result<PathBuf> {
-    let suggested = display_name.rsplit('/').next().unwrap_or(display_name);
+    let suggested = suggested_export_filename(display_name);
 
     if let Some(path) = path {
         return Ok(PathBuf::from(path));
@@ -178,7 +219,7 @@ pub(super) fn prompt_export_destination(
         "Export path",
         Some("Enter the destination file path"),
         false,
-        Some(suggested),
+        Some(&suggested),
         None,
     )?
     .ok_or_else(|| anyhow!("Export cancelled"))?;

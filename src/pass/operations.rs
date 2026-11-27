@@ -1,8 +1,12 @@
+use std::fs;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
 
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{
+    ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper,
+};
 
 use super::types::{DeleteMode, PassEntry};
 use super::utils::*;
@@ -76,6 +80,30 @@ pub(super) fn insert_otp_entry_with_prefix(
     run_pass_status(["otp", "insert", "-f", &entry_name, &otp_uri])?;
 
     maybe_notify("Pass", &format!("Stored OTP entry for {raw_name}"));
+    Ok(())
+}
+
+pub(super) fn insert_file_entry_with_prefix(prefix: Option<&str>) -> Result<()> {
+    let path = match FilePickerBuilder::new()
+        .scope(FilePickerScope::Files)
+        .hint("Select a file to store in the password store")
+        .pick_one()?
+    {
+        DialogOutcome::Submitted(path) => path,
+        DialogOutcome::Cancelled => return Ok(()),
+    };
+
+    let suggestion = suggested_file_entry_name(&path);
+    let entry_name =
+        resolve_entry_name_with_suggestion(None, prefix, "New file entry", Some(&suggestion))?;
+    let entry_name = normalize_file_entry_name(&entry_name);
+
+    let data = fs::read(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+    insert_file(&entry_name, &data)?;
+    maybe_notify(
+        "Pass",
+        &format!("Stored file {} as {}", path.display(), entry_name),
+    );
     Ok(())
 }
 
@@ -392,6 +420,30 @@ pub(super) fn move_pass_entry(from: &str, to: &str) -> Result<()> {
     run_pass_status(["mv", "-f", from, to])
 }
 
+pub(super) fn open_store_lazygit(store_dir: &Path) -> Result<()> {
+    if !store_dir.join(".git").exists() {
+        FzfWrapper::message(
+            "The password store is not a Git repository.\n\nInitialize it with `pass git init` to use LazyGit.",
+        )?;
+        return Ok(());
+    }
+
+    Command::new("lazygit")
+        .current_dir(store_dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to launch LazyGit in {} (is lazygit installed?)",
+                store_dir.display()
+            )
+        })?;
+
+    Ok(())
+}
+
 pub(super) fn pass_edit_editor() -> &'static str {
     "nvim --clean"
 }
@@ -434,6 +486,14 @@ pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
 }
 
 pub(super) fn insert_password(key: &str, password: &str) -> Result<()> {
+    insert_entry_bytes(key, password.as_bytes(), true)
+}
+
+pub(super) fn insert_file(key: &str, data: &[u8]) -> Result<()> {
+    insert_entry_bytes(key, data, false)
+}
+
+fn insert_entry_bytes(key: &str, data: &[u8], append_newline: bool) -> Result<()> {
     maybe_confirm_overwrite(key)?;
 
     let mut child = Command::new("pass")
@@ -445,9 +505,11 @@ pub(super) fn insert_password(key: &str, password: &str) -> Result<()> {
     if let Some(mut stdin) = child.stdin.take() {
         use std::io::Write;
         stdin
-            .write_all(password.as_bytes())
-            .context("Failed to write password to `pass insert`")?;
-        stdin.write_all(b"\n").ok();
+            .write_all(data)
+            .context("Failed to write entry data to `pass insert`")?;
+        if append_newline {
+            stdin.write_all(b"\n").ok();
+        }
     }
 
     let status = child

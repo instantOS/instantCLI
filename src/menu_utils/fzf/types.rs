@@ -397,15 +397,30 @@ impl MenuKey {
     /// Validate an fzf key name such as `"ctrl-e"`, `"alt-s"`, or `"f3"`.
     pub fn new(key: impl Into<String>) -> Result<Self> {
         let key = key.into();
-        if !is_supported_menu_key(&key) {
-            bail!(
-                "unsupported menu keybind {key:?}; expected a key such as \"ctrl-e\", \"alt-s\", or \"f3\""
-            );
-        }
+        Self::validate_supported(&key)?;
         if Self::RESERVED.contains(&key.as_str()) {
             bail!("menu keybind {key:?} is reserved for standard menu interaction");
         }
         Ok(Self(key))
+    }
+
+    /// Create a key that deliberately overrides a reserved fzf interaction.
+    ///
+    /// Esc, Ctrl-C, and the other standard bindings remain available unless a
+    /// menu explicitly replaces one. Prefer [`Self::new`] for ordinary actions.
+    pub fn overriding(key: impl Into<String>) -> Result<Self> {
+        let key = key.into();
+        Self::validate_supported(&key)?;
+        Ok(Self(key))
+    }
+
+    fn validate_supported(key: &str) -> Result<()> {
+        if !is_supported_menu_key(key) {
+            bail!(
+                "unsupported menu keybind {key:?}; expected a key such as \"ctrl-e\", \"alt-s\", or \"f3\""
+            );
+        }
+        Ok(())
     }
 
     pub fn as_str(&self) -> &str {

@@ -1386,6 +1386,8 @@ mod mock_tests {
                 "{reserved} should be reserved"
             );
         }
+        assert!(MenuKey::overriding("ctrl-g").is_ok());
+        assert!(MenuKey::overriding("not-a-real-key").is_err());
     }
 
     #[test]

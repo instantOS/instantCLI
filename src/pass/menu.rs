@@ -31,6 +31,8 @@ enum QuickAccessIntent {
 enum EditBrowserBind {
     /// Add a new entry next to the focused row.
     Add,
+    /// Open the password store in LazyGit.
+    Lazygit,
 }
 
 fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
@@ -42,11 +44,14 @@ fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
 }
 
 fn edit_browser_keybinds() -> Result<Vec<MenuKeybind<EditBrowserBind>>> {
-    Ok(vec![MenuKeybind::new(
-        MenuKey::new("ctrl-a")?,
-        "add entry",
-        EditBrowserBind::Add,
-    )])
+    Ok(vec![
+        MenuKeybind::new(MenuKey::new("ctrl-a")?, "add entry", EditBrowserBind::Add),
+        MenuKeybind::new(
+            MenuKey::overriding("ctrl-g")?,
+            "lazygit",
+            EditBrowserBind::Lazygit,
+        ),
+    ])
 }
 
 /// The folder a new entry should be created in when the add key is pressed.
@@ -203,7 +208,8 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     let items = build_add_menu_items();
 
     let header = HeaderBuilder::new(NerdFont::Plus, "Add Password Store Entry")
-        .subtitle("Create a new password, generated secret, or OTP key")
+        .subtitle("Create a new password, generated secret, OTP key, or file")
+        .field("Destination", add_menu_destination(current_prefix))
         .build();
 
     if let crate::menu_utils::DialogOutcome::Submitted(item) = FzfWrapper::builder()
@@ -224,6 +230,9 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
             AddMenuAction::AddOtp => {
                 ensure_otp_dependency()?;
                 insert_otp_entry_with_prefix(None, current_prefix)?;
+            }
+            AddMenuAction::AddFile => {
+                insert_file_entry_with_prefix(current_prefix)?;
             }
             AddMenuAction::Back => {}
         }
@@ -272,10 +281,17 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
                     cursor.update(item, &browser_items);
                 }
 
-                if action == Some(EditBrowserBind::Add) {
-                    let prefix = add_prefix_for_selection(item.as_ref(), &path);
-                    run_add_menu(prefix.as_deref())?;
-                    continue;
+                match action {
+                    Some(EditBrowserBind::Add) => {
+                        let prefix = add_prefix_for_selection(item.as_ref(), &path);
+                        run_add_menu(prefix.as_deref())?;
+                        continue;
+                    }
+                    Some(EditBrowserBind::Lazygit) => {
+                        open_store_lazygit(&store_dir)?;
+                        continue;
+                    }
+                    None => {}
                 }
 
                 let Some(item) = item else {
@@ -379,6 +395,12 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
     }
 }
 
+fn add_menu_destination(current_prefix: Option<&str>) -> String {
+    current_prefix
+        .map(|prefix| format!("/{prefix}"))
+        .unwrap_or_else(|| "/".to_string())
+}
+
 fn build_add_menu_items() -> Vec<AddMenuItem> {
     vec![
         AddMenuItem {
@@ -425,6 +447,22 @@ fn build_add_menu_items() -> Vec<AddMenuItem> {
                 .bullet("Accepts only `otpauth://` URIs")
                 .build(),
             action: AddMenuAction::AddOtp,
+        },
+        AddMenuItem {
+            key: "add-file",
+            display: format!(
+                "{} Add File",
+                format_icon_colored(NerdFont::File, colors::LAVENDER)
+            ),
+            preview: PreviewBuilder::new()
+                .header(NerdFont::File, "Add File")
+                .text("Store a file in the pass store.")
+                .blank()
+                .bullet("Opens the Yazi file picker")
+                .bullet("Prompts for a name and suggests the source filename")
+                .bullet("Adds a `.file` suffix so the entry exports instead of copying")
+                .build(),
+            action: AddMenuAction::AddFile,
         },
         AddMenuItem {
             key: "back",
@@ -648,6 +686,18 @@ mod keybind_tests {
     }
 
     #[test]
+    fn lazygit_is_bound_to_ctrl_g() {
+        let binds = edit_browser_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-g")
+            .expect("edit browser should bind ctrl-g");
+
+        assert_eq!(bind.label, "lazygit");
+        assert_eq!(bind.action, EditBrowserBind::Lazygit);
+    }
+
+    #[test]
     fn add_on_a_folder_uses_that_folder() {
         let item = folder_item("mail/work");
         let prefix = add_prefix_for_selection(Some(&item), &[]);
@@ -691,5 +741,31 @@ mod keybind_tests {
         let prefix = add_prefix_for_selection(Some(&item), &current);
 
         assert_eq!(prefix.as_deref(), Some("mail"));
+    }
+}
+
+#[cfg(test)]
+mod add_menu_tests {
+    use super::*;
+
+    #[test]
+    fn destination_defaults_to_the_store_root() {
+        assert_eq!(add_menu_destination(None), "/");
+    }
+
+    #[test]
+    fn destination_shows_the_current_folder() {
+        assert_eq!(add_menu_destination(Some("mail/work")), "/mail/work");
+    }
+
+    #[test]
+    fn add_menu_offers_file_entries() {
+        let items = build_add_menu_items();
+
+        assert!(
+            items
+                .iter()
+                .any(|item| matches!(item.action, AddMenuAction::AddFile))
+        );
     }
 }
