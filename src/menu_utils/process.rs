@@ -91,7 +91,7 @@ impl Drop for TrackedChild {
 }
 
 /// Spawn `cmd` as configured by the caller and track it for cancellation.
-pub(crate) fn tracked_spawn(mut cmd: Command) -> Result<TrackedChild> {
+pub(crate) fn tracked_spawn(cmd: &mut Command) -> Result<TrackedChild> {
     let child = cmd.spawn()?;
     let pid = child.id();
     register_menu_process(pid)?;
@@ -99,20 +99,4 @@ pub(crate) fn tracked_spawn(mut cmd: Command) -> Result<TrackedChild> {
         child: Some(child),
         pid,
     })
-}
-
-/// Spawn with piped stdio, feed `input`, wait and return output.
-/// Used by the simple (non-streaming) fzf paths.
-pub(crate) fn run_tracked_with_input(mut cmd: Command, input: &[u8]) -> Result<Output> {
-    use std::io::Write as _;
-    use std::process::Stdio;
-
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut tracked = tracked_spawn(cmd)?;
-    if let Some(stdin) = tracked.inner_mut().stdin.as_mut() {
-        stdin.write_all(input)?;
-    }
-    tracked.finish_with_output()
 }

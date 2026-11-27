@@ -1,10 +1,8 @@
-use anyhow::{Result, anyhow};
-use std::io::Write;
+use anyhow::Result;
 use std::process::{Command, Output};
 
 use super::SharedConfig;
 use crate::menu_utils::fzf::utils::{extract_icon_padding, handle_fzf_spawn_error};
-use crate::menu_utils::process::tracked_spawn;
 
 pub(super) use super::super::utils::base_fzf_command;
 
@@ -48,30 +46,11 @@ pub(super) fn apply_fzf_command_options(
     }
 }
 
-pub(super) fn run_fzf_with_input(mut cmd: Command, input: &[u8]) -> Result<Output> {
-    use std::process::Stdio;
-
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut tracked = tracked_spawn(cmd).map_err(|error| {
-        // A spawn failure is either "fzf missing" (recover/setup hints) or
-        // an ordinary io error; keep the historical handling.
+pub(super) fn run_fzf_with_input(cmd: Command, input: &[u8]) -> Result<Output> {
+    super::super::wrapper::run_fzf_with_input(cmd, input).inspect_err(|error| {
         if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
             handle_fzf_spawn_error(io_error);
         }
-        anyhow!("fzf execution failed: {error}")
-    })?;
-
-    if let Some(stdin) = tracked.inner_mut().stdin.as_mut() {
-        stdin.write_all(input)?;
-    }
-
-    tracked.finish_with_output().map_err(|error| {
-        if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
-            handle_fzf_spawn_error(io_error);
-        }
-        anyhow!("fzf execution failed: {error}")
     })
 }
 

@@ -60,7 +60,7 @@ pub(super) fn select(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = tracked_spawn(command).context("Failed to start Instant Menu")?;
+    let mut child = tracked_spawn(&mut command).context("Failed to start Instant Menu")?;
     let stdin = child
         .inner_mut()
         .stdin

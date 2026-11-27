@@ -16,8 +16,10 @@ use super::preview::PreviewStrategy;
 use super::preview::PreviewUtils;
 use super::types::ItemDisplayData;
 use super::types::*;
-use super::utils::{base_fzf_command, handle_old_fzf_error, log_fzf_failure};
-use crate::menu_utils::process::{TrackedChild, run_tracked_with_input, tracked_spawn};
+use super::utils::{
+    base_fzf_command, handle_old_fzf_error, log_fzf_failure, run_with_preview_wrap,
+};
+use crate::menu_utils::process::{TrackedChild, tracked_spawn};
 use crate::ui::nerd_font::NerdFont;
 
 /// Classify fzf's process status without conflating cancellation and failure.
@@ -363,16 +365,53 @@ fn force_mixed_preview_strategy<T: FzfSelectable>(items: &[T]) -> PreviewStrateg
     PreviewUtils::force_mixed_preview_strategy(items)
 }
 
+fn format_stream_row(item: &impl FzfSelectable, key: &str, separator_mode: bool) -> String {
+    let (marker, content) = match item.fzf_preview() {
+        FzfPreview::Text(text) => ("T", text),
+        FzfPreview::Command(command) => ("C", command),
+        FzfPreview::None => ("T", String::new()),
+    };
+    let encoded = general_purpose::STANDARD.encode(content.as_bytes());
+    format_fzf_line(
+        &item.fzf_display_text(),
+        key,
+        &item.fzf_search_keywords().join(" "),
+        &[marker, &encoded],
+        &FzfLineContext { separator_mode },
+        item.fzf_is_selectable(),
+    )
+}
+
 /// Spawn fzf with piped stdio, registered with the menu server for
 /// cancellation when the scratchpad becomes invisible. The returned
 /// [`TrackedChild`] unregisters (and kills, if still running) on drop, so
 /// error paths cannot leak a stale PID registration.
-pub(super) fn spawn_menu_child(mut cmd: Command) -> Result<TrackedChild> {
+pub(super) fn spawn_menu_child(cmd: &mut Command) -> Result<TrackedChild> {
     use std::process::Stdio;
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     tracked_spawn(cmd).context("Failed to start fzf; ensure fzf is installed and available in PATH")
+}
+
+/// A renderer may exit before it reads stdin. Collect its status and stderr
+/// in that case so an option rejection can trigger a retry.
+pub(super) fn write_menu_input(write: impl FnOnce() -> std::io::Result<()>) -> Result<bool> {
+    match write() {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub(super) fn run_fzf_with_input(cmd: Command, input: &[u8]) -> Result<std::process::Output> {
+    run_with_preview_wrap(cmd, |cmd| {
+        let mut child = spawn_menu_child(cmd)?;
+        if let Some(stdin) = child.inner_mut().stdin.as_mut() {
+            write_menu_input(|| stdin.write_all(input))?;
+        }
+        finish_menu_child(child)
+    })
 }
 
 /// Wait for fzf to exit, release its registration, and map wait failures
@@ -570,7 +609,7 @@ impl FzfWrapper {
         configure_wrapper_tail(&mut cmd, &shared, cursor_position);
 
         // Execute fzf
-        let output = run_tracked_with_input(cmd, input_text.as_bytes())?;
+        let output = run_fzf_with_input(cmd, input_text.as_bytes())?;
 
         // Parse output and map back to items
         parse_fzf_output(output, &item_map, keybinds)
@@ -626,14 +665,23 @@ impl FzfWrapper {
             .map(|InitialCursor::Index(index)| *index);
         configure_wrapper_tail(&mut fzf, &shared, cursor_position);
 
-        let mut fzf_child = spawn_menu_child(fzf)?;
-
         let mut producer = producer.into().into_command();
         producer
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
 
+        run_with_preview_wrap(fzf, |cmd| {
+            Self::run_command_attempt(cmd, &mut producer, initial_input)
+        })
+    }
+
+    fn run_command_attempt(
+        cmd: &mut Command,
+        producer: &mut Command,
+        initial_input: &str,
+    ) -> Result<std::process::Output> {
+        let mut fzf_child = spawn_menu_child(cmd)?;
         let mut producer_child = producer
             .spawn()
             // Dropping `fzf_child` kills fzf and releases its registration.
@@ -696,7 +744,7 @@ impl FzfWrapper {
         late_items: Receiver<T>,
         keybinds: &[MenuKeybind<A>],
         allow_multiple: bool,
-        on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
+        mut on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
     ) -> Result<DialogOutcome<MenuSelection<T, A>>> {
         super::keybind::validate(keybinds)?;
         #[cfg(test)]
@@ -733,100 +781,116 @@ impl FzfWrapper {
         }
         configure_wrapper_tail(&mut cmd, &shared, cursor_position);
 
-        let mut child = spawn_menu_child(cmd)?;
+        let item_map = Arc::new(Mutex::new(item_map));
+        // Retain late rows in arrival order so the retry can use the same
+        // channel and replay rows already taken from it.
+        let mut late_keys = Vec::<String>::new();
+        let output = run_with_preview_wrap(cmd, |cmd| {
+            let mut child = spawn_menu_child(cmd)?;
 
-        let mut stdin = child
-            .inner_mut()
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
-        // `input_text` is newline-joined without a trailing newline, but the
-        // pump below appends complete lines. Terminate the initial block so
-        // the first streamed item cannot glue onto the last initial row.
-        if !input_text.is_empty() {
-            stdin.write_all(input_text.as_bytes())?;
-            if !input_text.ends_with('\n') {
-                stdin.write_all(b"\n")?;
-            }
-            stdin.flush()?;
-        }
-        // An error here drops `child`, which kills fzf and releases its
-        // registration.
-        if let Some(on_ready) = on_ready {
-            on_ready()?;
-        }
-
-        // Late items are appended to fzf's stdin as they arrive; the shared
-        // map lets the final selection be resolved back to an item.
-        let shared_map = Arc::new(Mutex::new(item_map));
-        let pump_map = Arc::clone(&shared_map);
-        let (cancel_tx, cancel_rx) = bounded::<()>(1);
-        let pump = thread::spawn(move || {
-            let mut stdin = stdin;
-            loop {
-                let first = select! {
-                    recv(cancel_rx) -> _ => break,
-                    recv(late_items) -> item => match item {
-                        Ok(item) => item,
-                        Err(_) => break,
-                    },
-                };
-
-                let Ok(mut map) = pump_map.lock() else {
-                    break;
-                };
-                let mut batch = Vec::with_capacity(64);
-                batch.push(first);
-                while batch.len() < 64 {
-                    match late_items.try_recv() {
-                        Ok(item) => batch.push(item),
-                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            let mut stdin = child
+                .inner_mut()
+                .stdin
+                .take()
+                .ok_or_else(|| anyhow!("Failed to capture fzf stdin"))?;
+            // `input_text` is newline-joined without a trailing newline, but the
+            // pump below appends complete lines. Terminate the initial block so
+            // the first streamed item cannot glue onto the last initial row.
+            let map = item_map
+                .lock()
+                .map_err(|_| anyhow!("fzf streaming item map poisoned"))?;
+            let input_open = write_menu_input(|| {
+                if !input_text.is_empty() {
+                    stdin.write_all(input_text.as_bytes())?;
+                    if !input_text.ends_with('\n') {
+                        stdin.write_all(b"\n")?;
                     }
                 }
+                for key in &late_keys {
+                    writeln!(
+                        stdin,
+                        "{}",
+                        format_stream_row(&map[key], key, separator_mode)
+                    )?;
+                }
+                stdin.flush()
+            })?;
+            drop(map);
+            if !input_open {
+                drop(stdin);
+                return finish_menu_child(child);
+            }
+            // An error here drops `child`, which kills fzf and releases its
+            // registration.
+            if let Some(on_ready) = on_ready.take() {
+                on_ready()?;
+            }
 
-                let mut encoded_batch = String::new();
-                for item in batch {
-                    let key = item.fzf_key();
-                    if map.contains_key(&key) {
-                        continue;
-                    }
-                    let (marker, content) = match item.fzf_preview() {
-                        FzfPreview::Text(text) => ("T", text),
-                        FzfPreview::Command(command) => ("C", command),
-                        FzfPreview::None => ("T", String::new()),
+            // Late items are appended to fzf's stdin as they arrive; the shared
+            // map lets the final selection be resolved back to an item.
+            let pump_map = Arc::clone(&item_map);
+            let late_items = late_items.clone();
+            let (cancel_tx, cancel_rx) = bounded::<()>(1);
+            let pump = thread::spawn(move || {
+                let mut stdin = stdin;
+                let mut received_keys = Vec::new();
+                loop {
+                    let first = select! {
+                        recv(cancel_rx) -> _ => break,
+                        recv(late_items) -> item => match item {
+                            Ok(item) => item,
+                            Err(_) => break,
+                        },
                     };
-                    let encoded = general_purpose::STANDARD.encode(content.as_bytes());
-                    let line = format_fzf_line(
-                        &item.fzf_display_text(),
-                        &key,
-                        &item.fzf_search_keywords().join(" "),
-                        &[marker, &encoded],
-                        &FzfLineContext { separator_mode },
-                        item.fzf_is_selectable(),
-                    );
-                    encoded_batch.push_str(&line);
-                    encoded_batch.push('\n');
-                    map.insert(key, item);
+
+                    let Ok(mut map) = pump_map.lock() else {
+                        break;
+                    };
+                    let mut batch = Vec::with_capacity(64);
+                    batch.push(first);
+                    while batch.len() < 64 {
+                        match late_items.try_recv() {
+                            Ok(item) => batch.push(item),
+                            Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+                        }
+                    }
+
+                    let mut encoded_batch = String::new();
+                    for item in batch {
+                        let key = item.fzf_key();
+                        if map.contains_key(&key) {
+                            continue;
+                        }
+                        encoded_batch.push_str(&format_stream_row(&item, &key, separator_mode));
+                        encoded_batch.push('\n');
+                        received_keys.push(key.clone());
+                        map.insert(key, item);
+                    }
+
+                    drop(map);
+                    if (!encoded_batch.is_empty()
+                        && stdin
+                            .write_all(encoded_batch.as_bytes())
+                            .and_then(|_| stdin.flush())
+                            .is_err())
+                        || cancel_rx.try_recv().is_ok()
+                    {
+                        break;
+                    }
                 }
+                received_keys
+            });
 
-                if (!encoded_batch.is_empty()
-                    && stdin
-                        .write_all(encoded_batch.as_bytes())
-                        .and_then(|_| stdin.flush())
-                        .is_err())
-                    || cancel_rx.try_recv().is_ok()
-                {
-                    break;
-                }
-            }
-        });
+            let output = finish_menu_child(child);
+            let _ = cancel_tx.try_send(());
+            late_keys.extend(
+                pump.join()
+                    .map_err(|_| anyhow!("fzf streaming input pump panicked"))?,
+            );
+            output
+        })?;
 
-        let output = finish_menu_child(child);
-        let _ = cancel_tx.try_send(());
-        let _ = pump.join();
-        let output = output?;
-
-        let item_map = shared_map
+        let item_map = item_map
             .lock()
             .map_err(|_| anyhow!("fzf streaming item map poisoned"))?;
         parse_fzf_output(output, &item_map, keybinds)

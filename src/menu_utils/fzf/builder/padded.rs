@@ -17,7 +17,10 @@ use super::shared::{
 use crate::menu_utils::fzf::types::{
     DialogOutcome, FzfPreview, FzfSelectable, InitialCursor, MenuKeybind, MenuSelection,
 };
-use crate::menu_utils::fzf::wrapper::{finish_menu_child, fzf_was_cancelled, spawn_menu_child};
+use crate::menu_utils::fzf::utils::run_with_preview_wrap;
+use crate::menu_utils::fzf::wrapper::{
+    finish_menu_child, fzf_was_cancelled, spawn_menu_child, write_menu_input,
+};
 
 /// Horizontal offset that keeps the hidden `\x1f`-delimited keyword field
 /// off-screen on typical terminals.
@@ -109,7 +112,7 @@ impl FzfBuilder {
         late_items: crossbeam_channel::Receiver<T>,
         keybinds: &[MenuKeybind<A>],
         allow_multiple: bool,
-        on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
+        mut on_ready: Option<Box<dyn FnOnce() -> Result<()> + 'a>>,
     ) -> Result<DialogOutcome<MenuSelection<T, A>>>
     where
         T: FzfSelectable + Clone + Send + 'static,
@@ -170,91 +173,100 @@ impl FzfBuilder {
             allow_multiple,
         );
 
-        let mut child = spawn_menu_child(cmd)?;
-
-        let mut stdin = child
-            .inner_mut()
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to capture fzf stdin"))?;
-        // Every record is NUL-terminated so the first streamed item cannot
-        // glue onto the last initial row.
-        for record in store
-            .items
-            .iter()
-            .map(|item| build_padded_record(item, false))
-        {
-            stdin.write_all(record.as_bytes())?;
-            stdin.write_all(b"\0")?;
-        }
-        stdin.flush()?;
-        if let Some(on_ready) = on_ready {
-            on_ready()?;
-        }
-
         let pump_store = Arc::new(Mutex::new(store));
-        let pump_items = Arc::clone(&pump_store);
-        let (cancel_tx, cancel_rx) = crossbeam_channel::bounded::<()>(1);
-        // Keep the NamedTempFile owned by the menu session. The producer can
-        // finish long before the user stops requesting previews; moving it
-        // into the pump would unlink the manifest as soon as the stream ends.
-        let manifest_writer = manifest.as_file().try_clone()?;
-        let pump = thread::spawn(move || {
-            let mut stdin = stdin;
-            let mut manifest = manifest_writer;
-            loop {
-                let first = select! {
-                    recv(cancel_rx) -> _ => break,
-                    recv(late_items) -> item => match item {
-                        Ok(item) => item,
-                        Err(_) => break,
-                    },
-                };
+        let output = run_with_preview_wrap(cmd, |cmd| {
+            let mut child = spawn_menu_child(cmd)?;
 
-                let mut batch = vec![first];
-                while batch.len() < 64 {
-                    match late_items.try_recv() {
-                        Ok(item) => batch.push(item),
-                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
-                    }
+            let mut stdin = child
+                .inner_mut()
+                .stdin
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Failed to capture fzf stdin"))?;
+            // Keep records and the manifest aligned when replaying earlier rows.
+            let available = pump_store
+                .lock()
+                .map_err(|_| anyhow::anyhow!("padded streaming item store poisoned"))?;
+            let input_open = write_menu_input(|| {
+                for item in &available.items {
+                    stdin.write_all(build_padded_record(item, false).as_bytes())?;
+                    stdin.write_all(b"\0")?;
                 }
-
-                let mut manifest_batch = String::new();
-                let mut record_batch = String::new();
-                let Ok(mut guard) = pump_items.lock() else {
-                    break;
-                };
-                for item in batch {
-                    let key = item.fzf_key();
-                    if guard.seen_keys.contains(&key) {
-                        continue;
-                    }
-                    guard.seen_keys.insert(key);
-                    manifest_batch.push_str(&manifest_entry(&item));
-                    record_batch.push_str(&build_padded_record(&item, false));
-                    record_batch.push('\0');
-                    guard.items.push(item);
-                }
-                drop(guard);
-
-                // The manifest entry must be readable before the row becomes
-                // visible, so flush it before feeding the records.
-                let manifest_ok = manifest
-                    .write_all(manifest_batch.as_bytes())
-                    .and_then(|_| manifest.flush());
-                let records_ok = stdin
-                    .write_all(record_batch.as_bytes())
-                    .and_then(|_| stdin.flush());
-                if manifest_ok.is_err() || records_ok.is_err() || cancel_rx.try_recv().is_ok() {
-                    break;
-                }
+                stdin.flush()
+            })?;
+            drop(available);
+            if !input_open {
+                drop(stdin);
+                return finish_menu_child(child);
             }
-        });
+            if let Some(on_ready) = on_ready.take() {
+                on_ready()?;
+            }
 
-        let output = finish_menu_child(child);
-        let _ = cancel_tx.try_send(());
-        let _ = pump.join();
-        let output = output?;
+            let pump_items = Arc::clone(&pump_store);
+            let late_items = late_items.clone();
+            let (cancel_tx, cancel_rx) = crossbeam_channel::bounded::<()>(1);
+            // Keep the NamedTempFile owned by the menu session. The producer can
+            // finish long before the user stops requesting previews; moving it
+            // into the pump would unlink the manifest as soon as the stream ends.
+            let manifest_writer = manifest.as_file().try_clone()?;
+            let pump = thread::spawn(move || {
+                let mut stdin = stdin;
+                let mut manifest = manifest_writer;
+                loop {
+                    let first = select! {
+                        recv(cancel_rx) -> _ => break,
+                        recv(late_items) -> item => match item {
+                            Ok(item) => item,
+                            Err(_) => break,
+                        },
+                    };
+
+                    let mut batch = vec![first];
+                    while batch.len() < 64 {
+                        match late_items.try_recv() {
+                            Ok(item) => batch.push(item),
+                            Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+                        }
+                    }
+
+                    let mut manifest_batch = String::new();
+                    let mut record_batch = String::new();
+                    let Ok(mut guard) = pump_items.lock() else {
+                        break;
+                    };
+                    for item in batch {
+                        let key = item.fzf_key();
+                        if guard.seen_keys.contains(&key) {
+                            continue;
+                        }
+                        guard.seen_keys.insert(key);
+                        manifest_batch.push_str(&manifest_entry(&item));
+                        record_batch.push_str(&build_padded_record(&item, false));
+                        record_batch.push('\0');
+                        guard.items.push(item);
+                    }
+                    drop(guard);
+
+                    // The manifest entry must be readable before the row becomes
+                    // visible, so flush it before feeding the records.
+                    let manifest_ok = manifest
+                        .write_all(manifest_batch.as_bytes())
+                        .and_then(|_| manifest.flush());
+                    let records_ok = stdin
+                        .write_all(record_batch.as_bytes())
+                        .and_then(|_| stdin.flush());
+                    if manifest_ok.is_err() || records_ok.is_err() || cancel_rx.try_recv().is_ok() {
+                        break;
+                    }
+                }
+            });
+
+            let output = finish_menu_child(child);
+            let _ = cancel_tx.try_send(());
+            pump.join()
+                .map_err(|_| anyhow::anyhow!("padded streaming input pump panicked"))?;
+            output
+        })?;
 
         if fzf_was_cancelled(&output)? || !output.status.success() {
             return Ok(DialogOutcome::Cancelled);

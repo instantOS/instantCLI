@@ -40,6 +40,17 @@ root = os.environ['TEST_ROOT']
 
 def respond():
     args = sys.argv[1:]
+    wrap_log = os.path.join(root, 'wrap-log')
+    wraps = [arg.split('=', 1)[1].split(':')[-1]
+             for arg in args if arg.startswith('--preview-window=')]
+    assert wraps and all(option == wraps[0] for option in wraps), wraps
+    wrap = {'wrap-word': 'word', 'wrap': 'plain'}[wraps[0]]
+    with open(wrap_log, 'a') as log:
+        log.write(wrap + '\n')
+    if os.environ['TEST_FZF_LEGACY_WRAP'] == '1' and wrap == 'word':
+        print('invalid preview window option: wrap-word', file=sys.stderr)
+        sys.exit(2)
+
     text = sys.stdin.read()
     header = args[args.index('--header') + 1] if '--header' in args else ''
     plain = lambda value: re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', value)
@@ -117,11 +128,20 @@ PY
 	export PATH="${tools}:${PATH}"
 
 	# The scripted fzf asserts the row order and cursor of every notification list.
-	if ! ins notify >"${TEST_ROOT}/menu" 2>&1; then
-		cat "${TEST_ROOT}/menu" >&2
-		return 1
-	fi
-	assert_file_equals "${TEST_ROOT}/menu-count" 4
+	local legacy
+	for legacy in 0 1; do
+		rm -f "${TEST_ROOT}/menu-count" "${TEST_ROOT}/wrap-log"
+		if ! TEST_FZF_LEGACY_WRAP="${legacy}" ins notify >"${TEST_ROOT}/menu" 2>&1; then
+			cat "${TEST_ROOT}/menu" >&2
+			return 1
+		fi
+		assert_file_equals "${TEST_ROOT}/menu-count" 4
+		if [[ "${legacy}" == 0 ]]; then
+			assert_file_equals "${TEST_ROOT}/wrap-log" $'word\nword\nword\nword\nword\nword\nword'
+		else
+			assert_file_equals "${TEST_ROOT}/wrap-log" $'word\nplain\nplain\nplain\nplain\nplain\nplain\nplain'
+		fi
+	done
 	echo "Notification center sorting and cursor checks succeeded"
 }
 

@@ -1,6 +1,6 @@
 //! FZF wrapper for modern fzf versions
 //!
-//! This module provides a wrapper around fzf targeting version 0.68.x or newer.
+//! This module targets fzf 0.66 or newer. Preview word wrapping is enabled when supported.
 //!
 //! ## Version Requirements
 //!

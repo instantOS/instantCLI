@@ -1,8 +1,12 @@
 //! Utility functions for FZF wrapper
 
+use anyhow::Result;
 use crossterm::terminal;
 use std::io::ErrorKind;
-use std::process::Command;
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static LEGACY_PREVIEW_WRAP: AtomicBool = AtomicBool::new(false);
 
 /// Base fzf invocation used by every wrapper path: a plain `fzf` command with
 /// `FZF_DEFAULT_OPTS` cleared so user/system-wide options cannot inject
@@ -11,6 +15,56 @@ pub(crate) fn base_fzf_command() -> Command {
     let mut cmd = Command::new("fzf");
     cmd.env_remove("FZF_DEFAULT_OPTS");
     cmd
+}
+
+/// Try native word wrapping first. A rejected preview option is reported
+/// before fzf reads any input or shows the menu.
+pub(super) fn run_with_preview_wrap(
+    mut cmd: Command,
+    mut run: impl FnMut(&mut Command) -> Result<Output>,
+) -> Result<Output> {
+    if !cmd.get_args().any(|arg| legacy_preview_arg(arg).is_some()) {
+        return run(&mut cmd);
+    }
+    if !LEGACY_PREVIEW_WRAP.load(Ordering::Relaxed) {
+        let output = run(&mut cmd)?;
+        if !rejects_word_wrap(&output) {
+            return Ok(output);
+        }
+        LEGACY_PREVIEW_WRAP.store(true, Ordering::Relaxed);
+    }
+
+    let mut fallback = Command::new(cmd.get_program());
+    for arg in cmd.get_args() {
+        fallback.arg(legacy_preview_arg(arg).map_or(arg, std::ffi::OsStr::new));
+    }
+    for (name, value) in cmd.get_envs() {
+        if let Some(value) = value {
+            fallback.env(name, value);
+        } else {
+            fallback.env_remove(name);
+        }
+    }
+    if let Some(dir) = cmd.get_current_dir() {
+        fallback.current_dir(dir);
+    }
+    run(&mut fallback)
+}
+
+fn legacy_preview_arg(arg: &std::ffi::OsStr) -> Option<&'static str> {
+    match arg.to_str()? {
+        "--preview-window=wrap-word" => Some("--preview-window=wrap"),
+        "--preview-window=down:50%:wrap-word" => Some("--preview-window=down:50%:wrap"),
+        "--preview-window=right:50%:wrap-word" => Some("--preview-window=right:50%:wrap"),
+        _ => None,
+    }
+}
+
+fn rejects_word_wrap(output: &Output) -> bool {
+    output.status.code() == Some(2)
+        && String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .any(|line| line.trim() == "invalid preview window option: wrap-word")
 }
 
 /// Get terminal dimensions (columns, rows) using crossterm.
@@ -210,7 +264,7 @@ pub(crate) fn handle_old_fzf_error(stderr: &[u8]) {
         eprintln!("\n{}\n", "=".repeat(70));
         eprintln!("ERROR: Your fzf version is too old");
         eprintln!("{}\n", "=".repeat(70));
-        eprintln!("This program requires fzf 0.68.x or newer.");
+        eprintln!("This program requires fzf 0.66.x or newer.");
         eprintln!("Your current fzf version does not support required options.\n");
         eprintln!("To upgrade fzf, we recommend using mise:");
         eprintln!("  https://mise.jdx.dev/\n");

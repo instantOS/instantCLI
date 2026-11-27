@@ -421,7 +421,7 @@ impl FilePickerBuilder {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
 
-        let tracked = tracked_spawn(cmd).with_context(|| {
+        let tracked = tracked_spawn(&mut cmd).with_context(|| {
             format!(
                 "Failed to launch Yazi file picker (binary: {}, cwd: {})",
                 yazi_path.display(),

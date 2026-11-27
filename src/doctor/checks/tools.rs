@@ -14,11 +14,11 @@ pub struct FzfVersionCheck;
 pub struct GitConfigCheck;
 
 /// Minimum required fzf version (major, minor, patch)
-const MIN_FZF_VERSION: (u32, u32, u32) = (0, 68, 0);
+const MIN_FZF_VERSION: (u32, u32, u32) = (0, 66, 0);
 
-/// Parse fzf version string like "0.68.0 (debian)" into (major, minor, patch)
+/// Parse fzf version string like "0.66.0 (debian)" into (major, minor, patch)
 fn parse_fzf_version(version_output: &str) -> Option<(u32, u32, u32)> {
-    // Version output format: "0.68.0 (debian)" or just "0.68.0"
+    // Version output format: "0.66.0 (debian)" or just "0.66.0"
     let version_part = version_output.split_whitespace().next()?;
     let parts: Vec<&str> = version_part.split('.').collect();
     if parts.len() >= 2 {
