@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
 use walkdir::WalkDir;
@@ -397,12 +397,49 @@ fn frecency_store_path() -> Result<PathBuf> {
     Ok(cache_dir.join("pass_frecency_store.json"))
 }
 
-fn run_pass_output<const N: usize>(args: [&str; N]) -> Result<std::process::Output> {
+fn run_pass_output<const N: usize>(args: [&str; N]) -> Result<Output> {
+    run_pass_output_with_input(args, None)
+}
+
+fn run_pass_output_with_input<const N: usize>(
+    args: [&str; N],
+    input: Option<&[u8]>,
+) -> Result<Output> {
     let display_cmd = args.join(" ");
-    let output = Command::new("pass")
-        .args(args)
-        .output()
-        .with_context(|| format!("Failed to run `pass {display_cmd}`"))?;
+    let mut command = Command::new("pass");
+    command.args(args);
+    if input.is_some() {
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    }
+
+    let output = if let Some(input) = input {
+        let mut child = command
+            .spawn()
+            .with_context(|| format!("Failed to run `pass {display_cmd}`"))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            stdin
+                .write_all(input)
+                .with_context(|| format!("Failed to write to `pass {display_cmd}`"))?;
+            if !input.ends_with(b"\n") {
+                stdin
+                    .write_all(b"\n")
+                    .with_context(|| format!("Failed to write to `pass {display_cmd}`"))?;
+            }
+        }
+
+        child
+            .wait_with_output()
+            .with_context(|| format!("Failed to run `pass {display_cmd}`"))?
+    } else {
+        command
+            .output()
+            .with_context(|| format!("Failed to run `pass {display_cmd}`"))?
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -422,6 +459,14 @@ pub(super) fn run_pass_stdout<const N: usize>(args: [&str; N]) -> Result<Vec<u8>
 
 pub(super) fn run_pass_status<const N: usize>(args: [&str; N]) -> Result<()> {
     run_pass_output(args)?;
+    Ok(())
+}
+
+pub(super) fn run_pass_status_with_input<const N: usize>(
+    args: [&str; N],
+    input: &str,
+) -> Result<()> {
+    run_pass_output_with_input(args, Some(input.as_bytes()))?;
     Ok(())
 }
 

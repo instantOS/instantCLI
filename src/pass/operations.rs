@@ -77,7 +77,9 @@ pub(super) fn insert_otp_entry_with_prefix(
         bail!("OTP entries must start with `otpauth://`");
     }
 
-    run_pass_status(["otp", "insert", "-f", &entry_name, &otp_uri])?;
+    // `pass otp insert` reads the URI from stdin; it does not accept it as an
+    // argument (extra positional arguments are ignored, leaving the URI empty).
+    run_pass_status_with_input(["otp", "insert", "-f", &entry_name], &otp_uri)?;
 
     maybe_notify("Pass", &format!("Stored OTP entry for {raw_name}"));
     Ok(())
@@ -410,7 +412,7 @@ pub(super) fn upsert_otp_entry_interactive(entry: &PassEntry) -> Result<()> {
         .clone()
         .unwrap_or_else(|| normalize_otp_name(&entry.display_name));
 
-    run_pass_status(["otp", "insert", "-f", &key, &otp_uri])?;
+    run_pass_status_with_input(["otp", "insert", "-f", &key], &otp_uri)?;
 
     maybe_notify("Pass", &format!("Updated OTP for {}", entry.display_name));
     Ok(())

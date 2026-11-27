@@ -6,7 +6,8 @@ use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem, location_color};
 use super::utils::{
     first_secret_line, load_entries, normalize_file_entry_name, normalize_otp_name,
-    sanitize_entry_name, suggested_export_filename, suggested_file_entry_name,
+    run_pass_status_with_input, sanitize_entry_name, suggested_export_filename,
+    suggested_file_entry_name,
 };
 use super::{PassCommands, auto_setup_applies};
 use crate::menu::protocol::FzfPreview;
@@ -19,6 +20,58 @@ use std::fs;
 fn normalizes_otp_names() {
     assert_eq!(normalize_otp_name("email/github"), "email/github.otp");
     assert_eq!(normalize_otp_name("email/github.otp"), "email/github.otp");
+}
+
+#[cfg(unix)]
+#[test]
+fn pass_input_goes_to_stdin_instead_of_arguments() {
+    use std::env;
+    use std::ffi::OsString;
+    use std::os::unix::fs::PermissionsExt;
+
+    struct PathGuard(Option<OsString>);
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.0 {
+                    Some(path) => env::set_var("PATH", path),
+                    None => env::remove_var("PATH"),
+                }
+            }
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let pass = temp.path().join("pass");
+    let args_path = temp.path().join("args");
+    let stdin_path = temp.path().join("stdin");
+    let script = format!(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ncat > '{}'\n",
+        args_path.display(),
+        stdin_path.display()
+    );
+    fs::write(&pass, script).unwrap();
+    let mut permissions = fs::metadata(&pass).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&pass, permissions).unwrap();
+
+    let old_path = env::var_os("PATH");
+    let mut paths = vec![temp.path().to_path_buf()];
+    let current_path = old_path.clone().unwrap_or_default();
+    paths.extend(env::split_paths(&current_path));
+    let new_path = env::join_paths(paths).unwrap();
+    unsafe { env::set_var("PATH", &new_path) };
+    let _guard = PathGuard(old_path);
+
+    let uri = "otpauth://totp/demo?secret=JBSWY3DPEHPK3PXP";
+    run_pass_status_with_input(["otp", "insert", "-f", "demo.otp"], uri).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&args_path).unwrap(),
+        "otp\ninsert\n-f\ndemo.otp\n"
+    );
+    assert_eq!(fs::read_to_string(&stdin_path).unwrap(), format!("{uri}\n"));
 }
 
 #[test]
