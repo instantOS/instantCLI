@@ -235,6 +235,7 @@ pub(super) enum EditAction {
     CopyOtp,
     Export,
     Rename,
+    Move,
     EditPassword,
     GeneratePassword,
     EditOtp,

@@ -1,3 +1,5 @@
+mod move_entry;
+
 use anyhow::{Result, anyhow, bail};
 
 use crate::menu::client::HostedMenuClient;
@@ -361,7 +363,13 @@ pub(crate) fn run_edit_browser(
                     BrowserItemKind::Folder(folder) => path = path_segments(&folder),
                     BrowserItemKind::Entry(key) => {
                         let entry = resolve_entry_by_name(&entries, &key, false)?;
-                        run_edit_action_menu(&entry)?;
+                        if let Some(moved_key) = run_edit_action_menu(&entry)? {
+                            let (destination, focus) = edit_browser_start(None, Some(&moved_key));
+                            path = destination;
+                            if let Some(focus) = focus {
+                                cursor.update_from_key(&focus);
+                            }
+                        }
                     }
                     BrowserItemKind::Back => {
                         if path.is_empty() {
@@ -384,16 +392,17 @@ pub(crate) fn run_edit_browser(
     }
 }
 
-pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
+fn run_edit_action_menu(entry: &PassEntry) -> Result<Option<String>> {
     let mut cursor = MenuCursor::new();
+    let store_dir = ensure_password_store_dir()?;
 
     loop {
-        let refreshed_entries = load_entries(&ensure_password_store_dir()?)?;
+        let refreshed_entries = load_entries(&store_dir)?;
         let current_entry = resolve_entry_by_name(&refreshed_entries, &entry.display_name, false);
 
         let current_entry = match current_entry {
             Ok(entry) => entry,
-            Err(_) => return Ok(()),
+            Err(_) => return Ok(None),
         };
 
         let items = build_edit_action_items(&current_entry);
@@ -428,6 +437,11 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
                     EditAction::Rename => {
                         rename_entry_interactive(&current_entry)?;
                     }
+                    EditAction::Move => {
+                        if let Some(key) = move_entry::run(&store_dir, &current_entry)? {
+                            return Ok(Some(key));
+                        }
+                    }
                     EditAction::EditPassword => {
                         edit_password_entry(&current_entry)?;
                     }
@@ -444,12 +458,12 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
                     }
                     EditAction::Delete => {
                         delete_entry_flow(Some(current_entry.display_name.clone()))?;
-                        return Ok(());
+                        return Ok(None);
                     }
-                    EditAction::Back => return Ok(()),
+                    EditAction::Back => return Ok(None),
                 }
             }
-            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(None),
         }
     }
 }
@@ -592,6 +606,19 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
             .text("Rename the selected pass entry.")
             .build(),
         action: EditAction::Rename,
+    });
+
+    items.push(EditActionItem {
+        key: "move",
+        display: format!(
+            "{} Move to Folder",
+            format_icon_colored(NerdFont::Folder, colors::BLUE)
+        ),
+        preview: PreviewBuilder::new()
+            .header(NerdFont::Folder, "Move to Folder")
+            .text("Move this entry to an existing or new folder in the password store.")
+            .build(),
+        action: EditAction::Move,
     });
 
     if entry.has_secret() {
