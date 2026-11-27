@@ -7,7 +7,7 @@ use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-use super::types::{BrowserItemKind, BrowserMenuItem, EntryTreeNode, PassEntry};
+use super::types::{BrowserItemKind, BrowserMenuItem, EntryTreeNode, PassEntry, location_color};
 
 fn make_add_item(preview_text: &str) -> BrowserMenuItem {
     BrowserMenuItem {
@@ -42,7 +42,7 @@ pub(super) fn build_quick_access_items(entries: &[PassEntry]) -> Vec<BrowserMenu
         .cloned()
         .map(|entry| BrowserMenuItem {
             key: format!("entry:{}", entry.display_name),
-            display: entry.display_name.clone(),
+            display: entry.display_row(),
             preview: entry.preview(),
             kind: BrowserItemKind::Entry(entry.display_name),
         })
@@ -188,10 +188,18 @@ fn append_tree_browser_items(
         } else {
             format!("{base_path}/{name}")
         };
+        let folder_color = location_color(&folder_path);
 
         items.push(BrowserMenuItem {
             key: format!("folder:{folder_path}"),
-            display: format_tree_line(prefix, connector, &folder_path, name, true),
+            display: format_tree_line(
+                prefix,
+                connector,
+                name,
+                NerdFont::Folder,
+                folder_color,
+                Some(folder_color),
+            ),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Folder, name)
                 .text("Open this folder in the pass tree.")
@@ -220,7 +228,14 @@ fn append_tree_browser_items(
             .unwrap_or_else(|| entry.display_name.clone());
         items.push(BrowserMenuItem {
             key: format!("entry:{}", entry.display_name),
-            display: format_tree_line(prefix, connector, &entry.display_name, &leaf, false),
+            display: format_tree_line(
+                prefix,
+                connector,
+                &leaf,
+                entry.icon(),
+                entry.icon_color(),
+                None,
+            ),
             preview: entry.preview(),
             kind: BrowserItemKind::Entry(entry.display_name.clone()),
         });
@@ -234,32 +249,22 @@ fn count_entries(node: &EntryTreeNode) -> usize {
 fn format_tree_line(
     prefix: &str,
     connector: &str,
-    full_path: &str,
     label: &str,
-    folder: bool,
+    icon: NerdFont,
+    icon_color: &str,
+    label_color: Option<&str>,
 ) -> String {
     let tree_color = crate::ui::catppuccin::hex_to_ansi_fg(colors::SURFACE1);
-    let key_color = crate::ui::catppuccin::hex_to_ansi_fg(if folder {
-        colors::SAPPHIRE
-    } else {
-        colors::GREEN
-    });
     let bold = "\x1b[1m";
     let reset = "\x1b[0m";
     let tree = format!("{tree_color}{prefix}{connector}{reset}");
-    let icon = if folder {
-        format_icon_colored(NerdFont::Folder, colors::MAUVE)
-    } else if full_path.ends_with(".file") {
-        format_icon_colored(NerdFont::File, colors::LAVENDER)
-    } else if full_path.ends_with(".otp") {
-        format_icon_colored(NerdFont::Clock, colors::TEAL)
-    } else {
-        format_icon_colored(NerdFont::Key, colors::GREEN)
-    };
-    let label = if folder {
-        format!("{bold}{key_color}{label}{reset}")
-    } else {
-        label.to_string()
+    let icon = format_icon_colored(icon, icon_color);
+    let label = match label_color {
+        Some(color) => {
+            let label_color = crate::ui::catppuccin::hex_to_ansi_fg(color);
+            format!("{bold}{label_color}{label}{reset}")
+        }
+        None => label.to_string(),
     };
     format!("{tree} {icon}{label}")
 }

@@ -17,13 +17,13 @@ use super::utils::*;
 /// Actions bound to global keys on the quick access menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuickAccessBind {
-    /// Edit the focused entry (or open the edit browser on the menu row).
+    /// Open the hierarchical edit browser.
     Edit,
 }
 
 enum QuickAccessIntent {
     Primary(BrowserMenuItem),
-    Edit(BrowserMenuItem),
+    EditMode,
 }
 
 /// Actions bound to global keys in the edit browser.
@@ -36,7 +36,7 @@ enum EditBrowserBind {
 fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
     Ok(vec![MenuKeybind::new(
         MenuKey::new("ctrl-e")?,
-        "edit entry",
+        "edit mode",
         QuickAccessBind::Edit,
     )])
 }
@@ -74,11 +74,12 @@ fn interpret_quick_access_selection(
     selection: MenuSelection<BrowserMenuItem, QuickAccessBind>,
 ) -> Option<QuickAccessIntent> {
     let action = selection.action;
+    if action == Some(QuickAccessBind::Edit) {
+        return Some(QuickAccessIntent::EditMode);
+    }
+
     let item = selection.into_single().ok()?;
-    Some(match action {
-        Some(QuickAccessBind::Edit) => QuickAccessIntent::Edit(item),
-        None => QuickAccessIntent::Primary(item),
-    })
+    Some(QuickAccessIntent::Primary(item))
 }
 
 pub(super) use interactive_pass_quick_access as interactive_pass_menu;
@@ -111,35 +112,32 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
             .select()?
         {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
-                // Keybind pressed on an empty filtered list has no target.
+                // Ctrl-E switches modes even when the filter matches nothing;
+                // a plain submit still needs a focused row.
                 let Some(intent) = interpret_quick_access_selection(sel) else {
                     continue;
                 };
-                let (item, edit_requested) = match intent {
-                    QuickAccessIntent::Primary(item) => (item, false),
-                    QuickAccessIntent::Edit(item) => (item, true),
+
+                let item = match intent {
+                    QuickAccessIntent::EditMode => {
+                        run_edit_browser(None)?;
+                        continue;
+                    }
+                    QuickAccessIntent::Primary(item) => item,
                 };
 
                 cursor.update(&item, &quick_access_items);
                 match item.kind {
                     BrowserItemKind::Entry(key) => {
                         let entry = resolve_entry_by_name(&entries, &key, false)?;
-                        if edit_requested {
-                            run_edit_action_menu(&entry)?;
-                        } else {
-                            copy_primary_entry(&entry)?;
-                            record_frecency(&entry.display_name)?;
-                            // Exit after copying so the user can paste immediately
-                            // (OTP codes expire; reopening is one keybinding press).
-                            return Ok(0);
-                        }
+                        copy_primary_entry(&entry)?;
+                        record_frecency(&entry.display_name)?;
+                        // Exit after copying so the user can paste immediately
+                        // (OTP codes expire; reopening is one keybinding press).
+                        return Ok(0);
                     }
                     BrowserItemKind::Menu => {
-                        if edit_requested {
-                            run_edit_browser(None)?;
-                        } else {
-                            interactive_pass_tree_menu()?;
-                        }
+                        interactive_pass_tree_menu()?;
                     }
                     BrowserItemKind::Close => return Ok(0),
                     BrowserItemKind::Folder(_) | BrowserItemKind::Add | BrowserItemKind::Back => {}
@@ -337,7 +335,7 @@ pub(super) fn run_edit_action_menu(entry: &PassEntry) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.items(items.clone()).select_one()? {
+        match builder.items(items.clone()).padded().select_one()? {
             crate::menu_utils::DialogOutcome::Submitted(item) => {
                 cursor.update(&item, &items);
                 match item.action {
@@ -605,27 +603,36 @@ mod keybind_tests {
     }
 
     #[test]
-    fn edit_keybind_targets_the_focused_entry() {
+    fn edit_keybind_enters_edit_mode_for_the_focused_entry() {
         let item = entry_item("mail/work");
         let interpreted = interpret_quick_access_selection(MenuSelection {
-            items: vec![item.clone()],
+            items: vec![item],
             action: Some(QuickAccessBind::Edit),
         });
 
-        assert!(matches!(
-            interpreted,
-            Some(QuickAccessIntent::Edit(selected)) if selected.key == item.key
-        ));
+        assert!(matches!(interpreted, Some(QuickAccessIntent::EditMode)));
     }
 
     #[test]
-    fn edit_keybind_without_a_match_has_no_target() {
+    fn edit_keybind_enters_edit_mode_without_a_match() {
         let interpreted = interpret_quick_access_selection(MenuSelection::<BrowserMenuItem, _> {
             items: Vec::new(),
             action: Some(QuickAccessBind::Edit),
         });
 
-        assert!(interpreted.is_none());
+        assert!(matches!(interpreted, Some(QuickAccessIntent::EditMode)));
+    }
+
+    #[test]
+    fn edit_is_bound_to_ctrl_e() {
+        let binds = quick_access_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-e")
+            .expect("quick access should bind ctrl-e");
+
+        assert_eq!(bind.label, "edit mode");
+        assert_eq!(bind.action, QuickAccessBind::Edit);
     }
 
     #[test]

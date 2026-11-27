@@ -3,10 +3,12 @@ use super::operations::{
     otp_command_args, pass_edit_editor, pass_edit_was_unchanged, resolve_entry_by_name,
 };
 use super::types::PassEntry;
-use super::types::{BrowserItemKind, BrowserMenuItem};
+use super::types::{BrowserItemKind, BrowserMenuItem, location_color};
 use super::utils::{first_secret_line, load_entries, normalize_otp_name, sanitize_entry_name};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::FzfSelectable;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::text::strip_ansi;
 use std::fs;
 
 #[test]
@@ -91,9 +93,60 @@ fn quick_access_items_are_flat_and_include_tree_menu_entry() {
     let items = build_quick_access_items(&entries);
 
     assert_eq!(items.len(), 3);
-    assert_eq!(items[0].fzf_display_text(), "mail/work");
-    assert_eq!(items[1].fzf_display_text(), "servers/prod/root");
+    assert!(strip_ansi(&items[0].display).ends_with("mail/work"));
+    assert!(strip_ansi(&items[1].display).ends_with("servers/prod/root"));
     assert!(matches!(items[2].kind, BrowserItemKind::Menu));
+}
+
+#[test]
+fn quick_access_entries_show_kind_icons() {
+    let entries = vec![
+        PassEntry {
+            display_name: "mail/work".to_string(),
+            secret_key: Some("mail/work".to_string()),
+            otp_key: None,
+            secret_path: None,
+            otp_path: None,
+        },
+        PassEntry {
+            display_name: "docs/contract.file".to_string(),
+            secret_key: Some("docs/contract.file".to_string()),
+            otp_key: None,
+            secret_path: None,
+            otp_path: None,
+        },
+        PassEntry {
+            display_name: "paypal.otp".to_string(),
+            secret_key: None,
+            otp_key: Some("paypal.otp".to_string()),
+            secret_path: None,
+            otp_path: None,
+        },
+    ];
+
+    let items = build_quick_access_items(&entries);
+
+    assert!(items[0].display.contains(char::from(NerdFont::Key)));
+    assert!(items[1].display.contains(char::from(NerdFont::File)));
+    assert!(items[2].display.contains(char::from(NerdFont::Clock)));
+}
+
+#[test]
+fn quick_access_colors_entry_locations() {
+    let entries = vec![PassEntry {
+        display_name: "mail/work/github".to_string(),
+        secret_key: Some("mail/work/github".to_string()),
+        otp_key: None,
+        secret_path: None,
+        otp_path: None,
+    }];
+
+    let items = build_quick_access_items(&entries);
+    let mail = crate::ui::catppuccin::format_with_color("mail/", location_color("mail"));
+    let work = crate::ui::catppuccin::format_with_color("work/", location_color("mail/work"));
+
+    assert!(items[0].display.contains(&mail));
+    assert!(items[0].display.contains(&work));
 }
 
 #[test]
@@ -113,6 +166,26 @@ fn tree_browser_root_shows_folder_nodes() {
             .iter()
             .any(|item| matches!(item.kind, BrowserItemKind::Folder(ref path) if path == "mail"))
     );
+}
+
+#[test]
+fn tree_browser_colors_folder_locations() {
+    let entries = vec![PassEntry {
+        display_name: "mail/work".to_string(),
+        secret_key: Some("mail/work".to_string()),
+        otp_key: None,
+        secret_path: None,
+        otp_path: None,
+    }];
+
+    let items = build_browser_menu_items(&entries, &[]).unwrap();
+    let folder_item = items
+        .iter()
+        .find(|item| matches!(item.kind, BrowserItemKind::Folder(ref path) if path == "mail"))
+        .unwrap();
+    let color = crate::ui::catppuccin::hex_to_ansi_fg(location_color("mail"));
+
+    assert!(folder_item.display.contains(&color));
 }
 
 #[test]

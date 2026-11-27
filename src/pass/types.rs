@@ -14,7 +14,7 @@ use crate::common::package::{Dependency, PackageDefinition, PackageManager};
 use crate::common::requirements::InstallTest;
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::FzfSelectable;
-use crate::ui::catppuccin::colors;
+use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -45,6 +45,58 @@ pub(super) struct PassEntry {
 impl PassEntry {
     pub fn is_file_entry(&self) -> bool {
         self.display_name.ends_with(".file")
+    }
+
+    pub fn is_otp_entry(&self) -> bool {
+        self.has_otp() && !self.has_secret()
+    }
+
+    /// Icon representing the entry's primary kind in menu rows.
+    pub fn icon(&self) -> NerdFont {
+        if self.is_file_entry() {
+            NerdFont::File
+        } else if self.is_otp_entry() {
+            NerdFont::Clock
+        } else {
+            NerdFont::Key
+        }
+    }
+
+    /// Badge color matching [`Self::icon`].
+    pub fn icon_color(&self) -> &'static str {
+        if self.is_file_entry() {
+            colors::LAVENDER
+        } else if self.is_otp_entry() {
+            colors::TEAL
+        } else {
+            colors::GREEN
+        }
+    }
+
+    /// Rendered row for flat, fuzzy-selectable entry lists: kind icon, then
+    /// every folder segment in its own location color, then the entry name.
+    pub fn display_row(&self) -> String {
+        let icon = format_icon_colored(self.icon(), self.icon_color());
+        let segments: Vec<&str> = self.display_name.split('/').collect();
+        if segments.len() <= 1 {
+            return format!("{icon}{}", self.display_name);
+        }
+
+        let mut location = String::new();
+        let mut path = String::new();
+        for segment in &segments[..segments.len() - 1] {
+            if !location.is_empty() {
+                location.push('/');
+            }
+            location.push_str(segment);
+            path.push_str(&format_with_color(
+                &format!("{segment}/"),
+                location_color(&location),
+            ));
+        }
+
+        let name = segments.last().copied().unwrap_or_default();
+        format!("{icon}{path}{name}")
     }
 
     pub fn kind_label(&self) -> &'static str {
@@ -86,14 +138,8 @@ impl PassEntry {
     }
 
     pub fn preview(&self) -> FzfPreview {
-        let header_icon = if self.is_file_entry() {
-            NerdFont::File
-        } else {
-            NerdFont::Key
-        };
-
         let mut builder = PreviewBuilder::new()
-            .header(header_icon, &self.display_name)
+            .header(self.icon(), &self.display_name)
             .field("Type", self.kind_label())
             .field("Primary action", self.primary_action_label());
 
@@ -128,6 +174,30 @@ impl PassEntry {
                 .map(|metadata| metadata.len() as usize > EXPORT_THRESHOLD_BYTES)
                 .unwrap_or(false)
     }
+}
+
+/// Give every folder location a stable accent color. The same path keeps its
+/// color across the quick-access, tree, and entry-selection menus.
+pub(super) fn location_color(path: &str) -> &'static str {
+    const PALETTE: [&str; 10] = [
+        colors::BLUE,
+        colors::MAUVE,
+        colors::TEAL,
+        colors::PEACH,
+        colors::GREEN,
+        colors::PINK,
+        colors::SAPPHIRE,
+        colors::YELLOW,
+        colors::LAVENDER,
+        colors::MAROON,
+    ];
+
+    // FNV-1a keeps the mapping stable across runs and platforms.
+    let hash = path.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+
+    PALETTE[(hash % PALETTE.len() as u64) as usize]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,7 +269,7 @@ pub(super) struct BrowserMenuItem {
 
 impl FzfSelectable for PassEntry {
     fn fzf_display_text(&self) -> String {
-        self.display_name.clone()
+        self.display_row()
     }
 
     fn fzf_preview(&self) -> FzfPreview {
