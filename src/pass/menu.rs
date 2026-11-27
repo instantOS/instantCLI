@@ -26,12 +26,48 @@ enum QuickAccessIntent {
     Edit(BrowserMenuItem),
 }
 
+/// Actions bound to global keys in the edit browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditBrowserBind {
+    /// Add a new entry next to the focused row.
+    Add,
+}
+
 fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
     Ok(vec![MenuKeybind::new(
         MenuKey::new("ctrl-e")?,
         "edit entry",
         QuickAccessBind::Edit,
     )])
+}
+
+fn edit_browser_keybinds() -> Result<Vec<MenuKeybind<EditBrowserBind>>> {
+    Ok(vec![MenuKeybind::new(
+        MenuKey::new("ctrl-a")?,
+        "add entry",
+        EditBrowserBind::Add,
+    )])
+}
+
+/// The folder a new entry should be created in when the add key is pressed.
+///
+/// A focused folder receives the new entry directly. A focused entry adds it
+/// to the entry's parent folder. Anything else (the Add/Back/Close rows, or no
+/// focused row because the filter matched nothing) falls back to the folder
+/// currently being browsed.
+fn add_prefix_for_selection(
+    item: Option<&BrowserMenuItem>,
+    current_path: &[String],
+) -> Option<String> {
+    match item.map(|item| &item.kind) {
+        Some(BrowserItemKind::Folder(folder)) => Some(folder.clone()),
+        Some(BrowserItemKind::Entry(key)) => {
+            let mut segments = path_segments(key);
+            segments.pop();
+            (!segments.is_empty()).then(|| segments.join("/"))
+        }
+        _ => path_prefix(current_path),
+    }
 }
 
 fn interpret_quick_access_selection(
@@ -223,9 +259,31 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        match builder.items(browser_items.clone()).select_one()? {
-            crate::menu_utils::DialogOutcome::Submitted(item) => {
-                cursor.update(&item, &browser_items);
+        let keybinds = edit_browser_keybinds()?;
+
+        match builder
+            .items(browser_items.clone())
+            .keybinds(&keybinds)
+            .select()?
+        {
+            crate::menu_utils::DialogOutcome::Submitted(selection) => {
+                let action = selection.action;
+                let item = selection.items.into_iter().next();
+
+                if let Some(item) = &item {
+                    cursor.update(item, &browser_items);
+                }
+
+                if action == Some(EditBrowserBind::Add) {
+                    let prefix = add_prefix_for_selection(item.as_ref(), &path);
+                    run_add_menu(prefix.as_deref())?;
+                    continue;
+                }
+
+                let Some(item) = item else {
+                    continue;
+                };
+
                 match item.kind {
                     BrowserItemKind::Folder(folder) => path = path_segments(&folder),
                     BrowserItemKind::Entry(key) => {
@@ -523,6 +581,15 @@ mod keybind_tests {
         }
     }
 
+    fn folder_item(path: &str) -> BrowserMenuItem {
+        BrowserMenuItem {
+            key: format!("folder:{path}"),
+            display: path.to_string(),
+            preview: crate::ui::preview::FzfPreview::None,
+            kind: BrowserItemKind::Folder(path.to_string()),
+        }
+    }
+
     #[test]
     fn enter_keeps_the_primary_copy_action() {
         let item = entry_item("mail/work");
@@ -559,5 +626,63 @@ mod keybind_tests {
         });
 
         assert!(interpreted.is_none());
+    }
+
+    #[test]
+    fn add_is_bound_to_ctrl_a() {
+        let binds = edit_browser_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-a")
+            .expect("edit browser should bind ctrl-a");
+
+        assert_eq!(bind.label, "add entry");
+        assert_eq!(bind.action, EditBrowserBind::Add);
+    }
+
+    #[test]
+    fn add_on_a_folder_uses_that_folder() {
+        let item = folder_item("mail/work");
+        let prefix = add_prefix_for_selection(Some(&item), &[]);
+
+        assert_eq!(prefix.as_deref(), Some("mail/work"));
+    }
+
+    #[test]
+    fn add_on_an_entry_uses_the_entrys_parent_folder() {
+        let item = entry_item("mail/work/github");
+        let prefix = add_prefix_for_selection(Some(&item), &[]);
+
+        assert_eq!(prefix.as_deref(), Some("mail/work"));
+    }
+
+    #[test]
+    fn add_on_a_root_entry_uses_the_store_root() {
+        let item = entry_item("github");
+        let prefix = add_prefix_for_selection(Some(&item), &[]);
+
+        assert_eq!(prefix, None);
+    }
+
+    #[test]
+    fn add_without_a_focused_row_uses_the_current_folder() {
+        let current = ["mail".to_string(), "work".to_string()];
+        let prefix = add_prefix_for_selection(None, &current);
+
+        assert_eq!(prefix.as_deref(), Some("mail/work"));
+    }
+
+    #[test]
+    fn add_on_a_non_entry_row_uses_the_current_folder() {
+        let item = BrowserMenuItem {
+            key: "back".to_string(),
+            display: "Back".to_string(),
+            preview: crate::ui::preview::FzfPreview::None,
+            kind: BrowserItemKind::Back,
+        };
+        let current = ["mail".to_string()];
+        let prefix = add_prefix_for_selection(Some(&item), &current);
+
+        assert_eq!(prefix.as_deref(), Some("mail"));
     }
 }
