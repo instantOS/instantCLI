@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0](https://github.com/instantOS/instantCLI/compare/v0.16.0...v0.17.0) - 2026-11-27
+
+### Added
+
+- reuse an existing home partition
+- sort notification center with Ctrl+S
+- add default_no option
+- use native fzf preview word wrapping
+- offer a back row in the sort chooser
+- add ctrl-a shortcut in edit browser
+- improve menu icons, colors, and navigation
+- add file import and lazygit shortcut
+- add Ctrl-S sort menu
+- keep entry focus when entering edit mode
+- move entries between password store folders
+- add instant menu mode
+- add guided first-run setup
+
+### Changed
+
+- extract reusable sort chooser
+- remove dead empty-state branch
+- prepare and resume disk storage in the Disk step
+
+### Fixed
+
+- default destructive prompts to No
+- require explicit update confirmation
+- make repository removal confirmations safe
+- preserve Wayland output modes in layout presets
+- select NVIDIA drivers by GPU family
+- fall back to ordinary preview wrapping on older fzf
+- default edit browser sorting to alphabetical
+- protect existing stores during guided setup
+
+### Other
+
+- bump stuff
+- update bundled restic and rclone
+- make unread toggleable in ins notify
+
 ## [0.16.0](https://github.com/instantOS/instantCLI/compare/v0.15.1...v0.16.0) - 2026-11-24
 
 ### Added
