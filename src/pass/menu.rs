@@ -3,7 +3,8 @@ use anyhow::{Result, anyhow, bail};
 use crate::menu::client::HostedMenuClient;
 use crate::menu::protocol::ChoiceOptions;
 use crate::menu_utils::{
-    FzfWrapper, Header, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuSelection,
+    FzfWrapper, HeaderBuilder, MenuCursor, MenuKey, MenuKeybind, MenuSelection, MenuSort,
+    choose_sort, sort_keybind,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
@@ -11,6 +12,7 @@ use crate::ui::preview::PreviewBuilder;
 
 use super::browser::*;
 use super::operations::*;
+use super::sort::{PassSort, sort_entries};
 use super::types::*;
 use super::utils::*;
 
@@ -19,11 +21,14 @@ use super::utils::*;
 enum QuickAccessBind {
     /// Open the hierarchical edit browser.
     Edit,
+    /// Change the order of the entry list.
+    Sort,
 }
 
 enum QuickAccessIntent {
     Primary(BrowserMenuItem),
     EditMode,
+    Sort(Option<BrowserMenuItem>),
 }
 
 /// Actions bound to global keys in the edit browser.
@@ -33,14 +38,15 @@ enum EditBrowserBind {
     Add,
     /// Open the password store in LazyGit.
     Lazygit,
+    /// Change the order of the entry list.
+    Sort,
 }
 
 fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
-    Ok(vec![MenuKeybind::new(
-        MenuKey::new("ctrl-e")?,
-        "edit mode",
-        QuickAccessBind::Edit,
-    )])
+    Ok(vec![
+        MenuKeybind::new(MenuKey::new("ctrl-e")?, "edit mode", QuickAccessBind::Edit),
+        sort_keybind()?.map_action(QuickAccessBind::Sort),
+    ])
 }
 
 fn edit_browser_keybinds() -> Result<Vec<MenuKeybind<EditBrowserBind>>> {
@@ -51,6 +57,7 @@ fn edit_browser_keybinds() -> Result<Vec<MenuKeybind<EditBrowserBind>>> {
             "lazygit",
             EditBrowserBind::Lazygit,
         ),
+        sort_keybind()?.map_action(EditBrowserBind::Sort),
     ])
 }
 
@@ -78,13 +85,13 @@ fn add_prefix_for_selection(
 fn interpret_quick_access_selection(
     selection: MenuSelection<BrowserMenuItem, QuickAccessBind>,
 ) -> Option<QuickAccessIntent> {
-    let action = selection.action;
-    if action == Some(QuickAccessBind::Edit) {
-        return Some(QuickAccessIntent::EditMode);
+    match selection.action {
+        Some(QuickAccessBind::Edit) => Some(QuickAccessIntent::EditMode),
+        Some(QuickAccessBind::Sort) => {
+            Some(QuickAccessIntent::Sort(selection.items.first().cloned()))
+        }
+        None => selection.into_single().ok().map(QuickAccessIntent::Primary),
     }
-
-    let item = selection.into_single().ok()?;
-    Some(QuickAccessIntent::Primary(item))
 }
 
 pub(super) use interactive_pass_quick_access as interactive_pass_menu;
@@ -94,14 +101,19 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
 
     let store_dir = ensure_password_store_dir()?;
     let mut cursor = MenuCursor::new();
+    let mut sort = PassSort::default();
 
     loop {
         let mut entries = load_entries(&store_dir)?;
-        sort_entries_by_frecency(&mut entries)?;
+        sort_entries(&mut entries, sort)?;
         let quick_access_items = build_quick_access_items(&entries);
 
         let mut builder = FzfWrapper::builder()
-            .header(Header::fancy("Pass"))
+            .header(
+                HeaderBuilder::new(NerdFont::Key, "Pass")
+                    .field("Sort", sort.label())
+                    .build(),
+            )
             .prompt("Copy")
             .responsive_layout();
 
@@ -117,8 +129,8 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
             .select()?
         {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
-                // Ctrl-E switches modes even when the filter matches nothing;
-                // a plain submit still needs a focused row.
+                // Ctrl-E and Ctrl-S are mode switches even when the filter
+                // matches nothing; a plain submit still needs a focused row.
                 let Some(intent) = interpret_quick_access_selection(sel) else {
                     continue;
                 };
@@ -126,6 +138,15 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
                 let item = match intent {
                     QuickAccessIntent::EditMode => {
                         run_edit_browser(None)?;
+                        continue;
+                    }
+                    QuickAccessIntent::Sort(item) => {
+                        if let Some(item) = item {
+                            cursor.update(&item, &quick_access_items);
+                        }
+                        if let Some(chosen) = choose_sort(sort)? {
+                            sort = chosen;
+                        }
                         continue;
                     }
                     QuickAccessIntent::Primary(item) => item,
@@ -164,7 +185,7 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
 
     loop {
         let mut entries = load_entries(&store_dir)?;
-        sort_entries_by_frecency(&mut entries)?;
+        sort_entries(&mut entries, PassSort::default())?;
         let menu_items = build_quick_access_menu_items(&entries);
 
         let selected = match client.choice(ChoiceOptions::new("Pass"), menu_items)? {
@@ -245,10 +266,11 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
     let store_dir = ensure_password_store_dir()?;
     let mut path = initial_prefix.map(path_segments).unwrap_or_default();
     let mut cursor = MenuCursor::new();
+    let mut sort = PassSort::default();
 
     loop {
         let mut entries = load_entries(&store_dir)?;
-        sort_entries_by_frecency(&mut entries)?;
+        sort_entries(&mut entries, sort)?;
         let browser_items = build_browser_menu_items(&entries, &path)?;
 
         let title = if path.is_empty() {
@@ -258,7 +280,11 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
         };
 
         let mut builder = FzfWrapper::builder()
-            .header(Header::fancy(&title))
+            .header(
+                HeaderBuilder::new(NerdFont::Edit, &title)
+                    .field("Sort", sort.label())
+                    .build(),
+            )
             .prompt("Select")
             .responsive_layout();
 
@@ -289,6 +315,12 @@ pub(crate) fn run_edit_browser(initial_prefix: Option<&str>) -> Result<()> {
                     }
                     Some(EditBrowserBind::Lazygit) => {
                         open_store_lazygit(&store_dir)?;
+                        continue;
+                    }
+                    Some(EditBrowserBind::Sort) => {
+                        if let Some(chosen) = choose_sort(sort)? {
+                            sort = chosen;
+                        }
                         continue;
                     }
                     None => {}
@@ -662,6 +694,30 @@ mod keybind_tests {
     }
 
     #[test]
+    fn sort_keybind_carries_the_focused_entry() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: Some(QuickAccessBind::Sort),
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::Sort(Some(selected))) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn sort_keybind_without_a_match_still_opens_the_chooser() {
+        let interpreted = interpret_quick_access_selection(MenuSelection::<BrowserMenuItem, _> {
+            items: Vec::new(),
+            action: Some(QuickAccessBind::Sort),
+        });
+
+        assert!(matches!(interpreted, Some(QuickAccessIntent::Sort(None))));
+    }
+
+    #[test]
     fn edit_is_bound_to_ctrl_e() {
         let binds = quick_access_keybinds().unwrap();
         let bind = binds
@@ -671,6 +727,18 @@ mod keybind_tests {
 
         assert_eq!(bind.label, "edit mode");
         assert_eq!(bind.action, QuickAccessBind::Edit);
+    }
+
+    #[test]
+    fn sort_is_bound_to_ctrl_s_in_quick_access() {
+        let binds = quick_access_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-s")
+            .expect("quick access should bind ctrl-s");
+
+        assert_eq!(bind.label, "sort");
+        assert_eq!(bind.action, QuickAccessBind::Sort);
     }
 
     #[test]
@@ -695,6 +763,18 @@ mod keybind_tests {
 
         assert_eq!(bind.label, "lazygit");
         assert_eq!(bind.action, EditBrowserBind::Lazygit);
+    }
+
+    #[test]
+    fn sort_is_bound_to_ctrl_s_in_the_edit_browser() {
+        let binds = edit_browser_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-s")
+            .expect("edit browser should bind ctrl-s");
+
+        assert_eq!(bind.label, "sort");
+        assert_eq!(bind.action, EditBrowserBind::Sort);
     }
 
     #[test]

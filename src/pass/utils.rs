@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -369,34 +368,14 @@ pub(super) fn load_entries(store_dir: &Path) -> Result<Vec<PassEntry>> {
     Ok(entries)
 }
 
-pub(super) fn sort_entries_by_frecency(entries: &mut [PassEntry]) -> Result<()> {
+pub(super) fn frecency_scores(entries: &[PassEntry]) -> Result<HashMap<String, f64>> {
     let path = frecency_store_path()?;
     let store = FrecencyStore::load(&path);
-    // Precompute scores so the comparator stays cheap; keys are owned to
-    // keep the map alive while `entries` is sorted in place.
-    let scores: HashMap<String, f64> = entries
+
+    Ok(entries
         .iter()
-        .map(|entry| {
-            let name = &entry.display_name;
-            (name.clone(), store.score(name))
-        })
-        .collect();
-
-    entries.sort_by(|left, right| {
-        let left_score = scores.get(&left.display_name).copied().unwrap_or_default();
-        let right_score = scores.get(&right.display_name).copied().unwrap_or_default();
-
-        right_score
-            .partial_cmp(&left_score)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| {
-                left.display_name
-                    .to_lowercase()
-                    .cmp(&right.display_name.to_lowercase())
-            })
-    });
-
-    Ok(())
+        .map(|entry| (entry.display_name.clone(), store.score(&entry.display_name)))
+        .collect())
 }
 
 pub(super) fn record_frecency(item: &str) -> Result<()> {

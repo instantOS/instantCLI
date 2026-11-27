@@ -4,6 +4,7 @@ use clap::Subcommand;
 pub mod browser;
 pub mod menu;
 pub mod operations;
+mod sort;
 pub mod totp;
 pub mod types;
 pub mod utils;
