@@ -12,9 +12,9 @@ use crate::ui::nerd_font::NerdFont;
 /// games; only the games move.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameSort {
-    /// Games launched recently or often first. Games that were never
-    /// launched follow alphabetically.
-    Recent,
+    /// Games launched recently or often first, ranked by frecency. Games
+    /// that were never launched follow alphabetically.
+    Smart,
     /// Games with save backups configured on this device first.
     Installed,
     /// Games from A to Z.
@@ -22,14 +22,14 @@ pub enum GameSort {
 }
 
 impl Default for GameSort {
-    /// The game menu opens sorted by recent play.
+    /// The game menu opens with smart ranking.
     fn default() -> Self {
-        Self::Recent
+        Self::Smart
     }
 }
 
 impl MenuSort for GameSort {
-    const ALL: &'static [Self] = &[Self::Recent, Self::Installed, Self::Alphabetical];
+    const ALL: &'static [Self] = &[Self::Smart, Self::Installed, Self::Alphabetical];
 
     const CHOOSER_TITLE: &'static str = "Sort Games";
 
@@ -37,7 +37,7 @@ impl MenuSort for GameSort {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Recent => "Recently played",
+            Self::Smart => "Smart",
             Self::Installed => "Installed first",
             Self::Alphabetical => "Alphabetical",
         }
@@ -45,7 +45,7 @@ impl MenuSort for GameSort {
 
     fn icon(self) -> NerdFont {
         match self {
-            Self::Recent => NerdFont::Clock,
+            Self::Smart => NerdFont::Clock,
             Self::Installed => NerdFont::CheckCircle,
             Self::Alphabetical => NerdFont::List,
         }
@@ -53,7 +53,7 @@ impl MenuSort for GameSort {
 
     fn detail(self) -> &'static str {
         match self {
-            Self::Recent => "Games you launched recently or often are listed first.",
+            Self::Smart => "Games you launched recently or often are listed first.",
             Self::Installed => {
                 "Games with save backups configured on this device are listed first."
             }
@@ -63,9 +63,9 @@ impl MenuSort for GameSort {
 
     fn note(self) -> &'static str {
         match self {
-            Self::Recent => "Games that were never launched follow alphabetically.",
+            Self::Smart => "Games that were never launched follow alphabetically.",
             Self::Installed => "Each group is alphabetical.",
-            Self::Alphabetical => "Recent launches are ignored.",
+            Self::Alphabetical => "Usage history is ignored.",
         }
     }
 }
@@ -73,7 +73,7 @@ impl MenuSort for GameSort {
 /// Order the menu's game rows.
 ///
 /// `score` reports how recently and often a game was launched; it is only
-/// consulted for [`GameSort::Recent`]. The sort is stable, so equal games keep
+/// consulted for [`GameSort::Smart`]. The sort is stable, so equal games keep
 /// their incoming order.
 pub fn sort_games(
     games: Vec<GameMenuEntry>,
@@ -91,7 +91,7 @@ pub fn sort_games(
         };
         let by_name = || compare_names(left_name, right_name);
         match sort {
-            GameSort::Recent => score(right_name)
+            GameSort::Smart => score(right_name)
                 .total_cmp(&score(left_name))
                 .then_with(by_name),
             GameSort::Installed => right_installed.cmp(left_installed).then_with(by_name),
@@ -123,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn recent_ranks_launched_games_first_and_the_rest_alphabetically() {
+    fn smart_ranks_launched_games_first_and_the_rest_alphabetically() {
         let scores = |name: &str| match name {
             "Often" => 3.0,
             "Once" => 1.0,
@@ -136,7 +136,7 @@ mod tests {
                 ("Alpha", false),
                 ("Often", false),
             ]),
-            GameSort::Recent,
+            GameSort::Smart,
             scores,
         );
 
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn recent_is_the_default_order() {
-        assert_eq!(GameSort::default(), GameSort::Recent);
+    fn smart_is_the_default_order() {
+        assert_eq!(GameSort::default(), GameSort::Smart);
     }
 }

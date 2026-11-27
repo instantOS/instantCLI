@@ -153,8 +153,8 @@ Escape closes the menu without changing the layout.
 
 `ins assist run e` opens a searchable instantMENU emoji picker and copies the
 selection to the clipboard. Enter selects; Ctrl-Enter adds more emoji before
-Enter finishes; Escape cancels without changing the clipboard. Recent/frequent
-selections rise to the top.
+Enter finishes; Escape cancels without changing the clipboard. Smart ranking
+puts recently and frequently used selections at the top.
 
 This replaces Emote outright. It requires the current Rust instantMENU (including
 `value=` metadata and `--frecency-cache`), clipboard utilities (`wl-copy` on
@@ -292,7 +292,7 @@ menu omits previews; `--gui` opens the full terminal picker instead.
 
 Custom executables chosen with Ctrl+E are remembered per MIME type after a successful
 launch and appear alongside desktop applications in the recommended list. Reusing
-one updates its frecency score. Entries expire after 30 days without use; the cache
+one updates its smart ranking. Entries expire after 30 days without use; the cache
 keeps at most 20 per MIME type and 100 overall, evicting the least recently used.
 Missing or non-executable programs are pruned when the picker opens. Ctrl+D requires
 a desktop entry.
@@ -322,7 +322,7 @@ in a populated store. When launched without a terminal, the graphical pickers
 open one for setup before continuing.
 
 `ins pass --instantmenu` opens the quick-access password picker as a compact
-graphical menu without starting a terminal. Entries use the same frequency
+graphical menu without starting a terminal. Entries use the same smart
 ranking as the terminal picker; Enter copies the selected password or current
 OTP code and closes the menu so it can be pasted immediately. Ctrl+E, or the
 `Edit Passwords` row, opens the hierarchical management menu in a terminal
@@ -331,7 +331,7 @@ window. Requires `instantmenu` and an X11 or Wayland session; `--list` and
 installed by `just install` starts the compact picker from application menus.
 
 `ins game menu` lists games by how recently and often you launched them, so the
-game you play most is near the top. Each launch updates a frecency cache at
+game you play most is near the top. Each launch updates the smart ranking cache at
 `$XDG_CACHE_HOME/instant/game-frecency.json`; scores halve every three days, and
 games that were not launched for 30 days drop out of it. Games you never launched
 follow alphabetically. Press Ctrl+S to switch the list to installed games first or

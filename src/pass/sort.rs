@@ -16,8 +16,8 @@ use super::utils::frecency_scores;
 /// How pass entries are ordered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PassSort {
-    /// Entries used recently or often first.
-    Frequency,
+    /// Entries used recently or often first, ranked by frecency.
+    Smart,
     /// Entries from A to Z.
     Alphabetical,
     /// Entries from Z to A.
@@ -29,7 +29,7 @@ pub(super) enum PassSort {
 impl PassSort {
     /// The flat quick-access list opens with the most-used entries first.
     pub(super) const fn quick_access_default() -> Self {
-        Self::Frequency
+        Self::Smart
     }
 
     /// The tree browser opens alphabetically, like a directory listing.
@@ -40,7 +40,7 @@ impl PassSort {
 
 impl MenuSort for PassSort {
     const ALL: &'static [Self] = &[
-        Self::Frequency,
+        Self::Smart,
         Self::Alphabetical,
         Self::ReverseAlphabetical,
         Self::Modified,
@@ -52,7 +52,7 @@ impl MenuSort for PassSort {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Frequency => "Frequency",
+            Self::Smart => "Smart",
             Self::Alphabetical => "Alphabetical",
             Self::ReverseAlphabetical => "Reverse alphabetical",
             Self::Modified => "Modification date",
@@ -61,7 +61,7 @@ impl MenuSort for PassSort {
 
     fn icon(self) -> NerdFont {
         match self {
-            Self::Frequency => NerdFont::Chart,
+            Self::Smart => NerdFont::Chart,
             Self::Alphabetical => NerdFont::List,
             Self::ReverseAlphabetical => NerdFont::ArrowDown,
             Self::Modified => NerdFont::Clock,
@@ -70,7 +70,7 @@ impl MenuSort for PassSort {
 
     fn detail(self) -> &'static str {
         match self {
-            Self::Frequency => "Passwords you copy or export recently and often are listed first.",
+            Self::Smart => "Passwords you copy or export recently and often are listed first.",
             Self::Alphabetical => "Passwords are listed from A to Z.",
             Self::ReverseAlphabetical => "Passwords are listed from Z to A.",
             Self::Modified => "Passwords with the newest file modification time are listed first.",
@@ -79,7 +79,7 @@ impl MenuSort for PassSort {
 
     fn note(self) -> &'static str {
         match self {
-            Self::Frequency => "Entries that were never used follow alphabetically.",
+            Self::Smart => "Entries that were never used follow alphabetically.",
             Self::Alphabetical | Self::ReverseAlphabetical => "The order ignores usage history.",
             Self::Modified => "Entries without a readable timestamp follow alphabetically.",
         }
@@ -89,7 +89,7 @@ impl MenuSort for PassSort {
 /// Order a pass entry list in place.
 pub(super) fn sort_entries(entries: &mut [PassEntry], sort: PassSort) -> Result<()> {
     match sort {
-        PassSort::Frequency => sort_by_frequency(entries)?,
+        PassSort::Smart => sort_by_score(entries)?,
         PassSort::Alphabetical => {
             entries.sort_by(|left, right| compare_names(&left.display_name, &right.display_name));
         }
@@ -101,7 +101,7 @@ pub(super) fn sort_entries(entries: &mut [PassEntry], sort: PassSort) -> Result<
     Ok(())
 }
 
-fn sort_by_frequency(entries: &mut [PassEntry]) -> Result<()> {
+fn sort_by_score(entries: &mut [PassEntry]) -> Result<()> {
     let scores = frecency_scores(entries)?;
 
     entries.sort_by(|left, right| {
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn menus_have_context_specific_defaults() {
-        assert_eq!(PassSort::quick_access_default(), PassSort::Frequency);
+        assert_eq!(PassSort::quick_access_default(), PassSort::Smart);
         assert_eq!(PassSort::edit_browser_default(), PassSort::Alphabetical);
     }
 

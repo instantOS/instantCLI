@@ -202,7 +202,7 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
 /// Quick-access password picker rendered directly by Instant Menu.
 ///
 /// This mirrors the terminal picker without requiring a TTY: entries keep the
-/// same frequency ranking, Enter copies the selected secret, and Ctrl-E (or the
+/// same smart ranking, Enter copies the selected secret, and Ctrl-E (or the
 /// management row) opens the hierarchical editor in a terminal window.
 pub(super) fn interactive_pass_quick_access_instantmenu(debug: bool) -> Result<i32> {
     ensure_core_dependencies()?;

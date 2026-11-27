@@ -393,7 +393,7 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
 /// Rows of the game menu: the fixed actions, then the games in `sort` order.
 ///
 /// `score` reports how recently and often a game was launched; it is only
-/// consulted for [`GameSort::Recent`].
+/// consulted for [`GameSort::Smart`].
 pub(crate) fn menu_entries(
     config: &InstantGameConfig,
     installations: &InstallationsConfig,
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn games_default_to_the_most_recently_played() -> Result<()> {
+    fn games_default_to_smart_ranking() -> Result<()> {
         let _fixture = fixture()?;
         record_launch("Zeta");
 
@@ -641,7 +641,7 @@ mod tests {
         let entry = select_game_menu_entry(&mut cursor, &mut sort)?;
 
         assert_eq!(entry, Some(GameMenuEntry::Game("Zeta".into(), false)));
-        assert_eq!(sort, GameSort::Recent);
+        assert_eq!(sort, GameSort::Smart);
         assert_eq!(scripted_responses_remaining(), 0);
         Ok(())
     }

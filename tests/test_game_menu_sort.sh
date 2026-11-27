@@ -48,8 +48,8 @@ def respond():
         assert len(rows) == 8, rows  # six actions, two games
         assert 'Ctrl S' in plain(header) and 'sort' in plain(header), header
         if count == 0:
-            # Games default to the most recently played; Zeta was launched.
-            assert 'Sort: Recently played' in plain(header), header
+            # Games default to smart ranking; Zeta was launched.
+            assert 'Sort: Smart' in plain(header), header
             assert 'Zeta Game' in rows[6] and 'Alpha Game' in rows[7], rows
             print('ctrl-s')
             print(rows[6])  # Zeta is focused while Ctrl+S is pressed
@@ -66,8 +66,11 @@ def respond():
             sys.exit(130)
     elif '--read0' in args:
         if 'Sort Games' in plain(header):
-            assert 'Recently played' in text and 'current' in text.split('\0')[0], text
-            print('submit\n2')  # Alphabetical
+            # The current order is marked on its own NUL-delimited row.
+            assert any(
+                'Smart' in row and 'current' in row for row in text.split('\0')
+            ), text
+            print('submit\n3')  # Alphabetical
         elif 'Backups not configured for' in plain(header):
             print('submit\n0')  # Launch without backups
         elif 'Set up save backups for' in plain(header):
@@ -110,7 +113,7 @@ PY
 	fi
 	assert_file_equals "${TEST_ROOT}/menu-count" 3
 	[[ ! -e "${TEST_ROOT}/repo" ]]
-	echo "Game menu sorting, frecency default, and launch history checks succeeded"
+	echo "Game menu sorting, smart default, and launch history checks succeeded"
 }
 
 main "$@"
