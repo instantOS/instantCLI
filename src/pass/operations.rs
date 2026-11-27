@@ -143,7 +143,7 @@ pub(super) fn insert_file_entry_with_prefix(prefix: Option<&str>) -> Result<()> 
     Ok(())
 }
 
-pub(super) fn copy_primary_entry(entry: &PassEntry) -> Result<()> {
+pub(super) fn run_primary_action(entry: &PassEntry) -> Result<()> {
     match entry.kind {
         EntryKind::File => export_entry(entry, None),
         EntryKind::Password => copy_password_entry(entry),

@@ -8,7 +8,7 @@ mod tree_view;
 
 use anyhow::Result;
 
-use super::operations::{copy_primary_entry, resolve_entry_by_name};
+use super::operations::{resolve_entry_by_name, run_primary_action};
 use super::store::record_frecency;
 use super::types::PassEntry;
 
@@ -21,7 +21,7 @@ pub(crate) use tree_view::run_tree_view;
 
 fn copy_entry(entries: &[PassEntry], key: &str) -> Result<()> {
     let entry = resolve_entry_by_name(entries, key, false)?;
-    copy_primary_entry(&entry)?;
+    run_primary_action(&entry)?;
     record_frecency(&entry.display_name)?;
     Ok(())
 }
