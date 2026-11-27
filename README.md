@@ -265,6 +265,7 @@ ins video --help
 | `ins settings` | Browse desktop and system settings |
 | `ins game` | Back up and sync game saves |
 | `ins pass` | Pick passwords and generate one-time codes |
+| `ins pass setup` | Create or choose a GPG key and initialize the password store |
 | `ins pass --instantmenu` | Pick a password in a compact graphical menu |
 | `ins notify` | Browse notification history |
 | `ins clip` | Browse clipboard history |
@@ -310,6 +311,16 @@ Choose INS Open as the default in your file manager, or run
 another default with Ctrl+D replaces that association. INS Open also appears as
 a normal choice in its own picker, so Ctrl+D can make it the default for a file
 type that should always ask which application to use.
+
+On first use, `ins pass` detects whether the password store has a recipient
+configuration. If it does not, a guided setup opens in a normal terminal: create
+a new GPG key (with an optional passphrase) or select an existing
+encryption-capable secret key. The chosen recipient is written to `.gpg-id` with
+`pass init`, and the original command continues afterwards. Run
+`ins pass setup` to start the setup flow explicitly; it reports the current store
+and recipient if setup is already complete. When onboarding is needed from
+`--gui` or `--instantmenu`, setup opens in a terminal window and the picker
+continues once it finishes.
 
 `ins pass --instantmenu` opens the quick-access password picker as a compact
 graphical menu without starting a terminal. Entries use the same frequency

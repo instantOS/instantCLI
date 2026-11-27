@@ -8,6 +8,7 @@ use super::utils::{
     first_secret_line, load_entries, normalize_file_entry_name, normalize_otp_name,
     sanitize_entry_name, suggested_export_filename, suggested_file_entry_name,
 };
+use super::{PassCommands, auto_setup_applies};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::FzfSelectable;
 use crate::ui::nerd_font::NerdFont;
@@ -316,4 +317,19 @@ fn unchanged_pass_edit_exit_is_treated_as_noop() {
             std::process::ExitStatus::from_raw(0)
         ));
     }
+}
+
+#[test]
+fn automatic_setup_runs_for_interactive_commands_only() {
+    assert!(auto_setup_applies(&None, false));
+    assert!(!auto_setup_applies(&None, true));
+    assert!(auto_setup_applies(
+        &Some(PassCommands::Menu { gui: false }),
+        false
+    ));
+    assert!(!auto_setup_applies(
+        &Some(PassCommands::Menu { gui: true }),
+        false
+    ));
+    assert!(!auto_setup_applies(&Some(PassCommands::Setup), false));
 }

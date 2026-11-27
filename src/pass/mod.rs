@@ -4,6 +4,7 @@ use clap::Subcommand;
 pub mod browser;
 pub mod menu;
 pub mod operations;
+mod setup;
 mod sort;
 pub mod totp;
 pub mod types;
@@ -14,6 +15,8 @@ mod tests;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PassCommands {
+    /// Create or choose a GPG key and initialize the password store
+    Setup,
     /// Interactive pass menu (browse, copy, edit passwords)
     Menu {
         /// Open the menu in a GUI terminal window
@@ -93,6 +96,16 @@ pub fn pass_entry_names() -> Vec<String> {
         .collect()
 }
 
+fn auto_setup_applies(command: &Option<PassCommands>, list_only: bool) -> bool {
+    if list_only {
+        return false;
+    }
+    !matches!(
+        command,
+        Some(PassCommands::Setup | PassCommands::Menu { gui: true })
+    )
+}
+
 pub fn handle_pass_command(
     gui: bool,
     instantmenu: bool,
@@ -100,7 +113,15 @@ pub fn handle_pass_command(
     list_only: bool,
     command: Option<PassCommands>,
 ) -> Result<i32> {
+    if auto_setup_applies(&command, list_only)
+        && setup::needs_setup()?
+        && !setup::ensure_store(debug)?
+    {
+        return Ok(1);
+    }
+
     match command {
+        Some(PassCommands::Setup) => Ok(if setup::run_setup()? { 0 } else { 1 }),
         Some(PassCommands::Menu { gui: menu_gui }) => {
             if menu_gui {
                 crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
