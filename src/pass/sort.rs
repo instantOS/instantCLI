@@ -33,7 +33,7 @@ impl PassSort {
     }
 
     /// The tree browser opens alphabetically, like a directory listing.
-    pub(super) const fn edit_browser_default() -> Self {
+    pub(super) const fn tree_view_default() -> Self {
         Self::Alphabetical
     }
 }
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn menus_have_context_specific_defaults() {
         assert_eq!(PassSort::quick_access_default(), PassSort::Smart);
-        assert_eq!(PassSort::edit_browser_default(), PassSort::Alphabetical);
+        assert_eq!(PassSort::tree_view_default(), PassSort::Alphabetical);
     }
 
     #[test]

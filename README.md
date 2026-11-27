@@ -321,13 +321,17 @@ recipient for a configured store and directs you to `pass` for recipient changes
 in a populated store. When launched without a terminal, the graphical pickers
 open one for setup before continuing.
 
+The terminal pass picker keeps entries in a flat list. Ctrl+O opens the action
+menu for the focused entry, Ctrl+A adds a new entry in that entry's folder, and
+Ctrl+T opens the tree view.
+
 `ins pass --instantmenu` opens the quick-access password picker as a compact
 graphical menu without starting a terminal. Entries use the same smart
 ranking as the terminal picker; Enter copies the selected password or current
-OTP code and closes the menu so it can be pasted immediately. Ctrl+E, or the
-`Edit Passwords` row, opens the hierarchical management menu in a terminal
-window. Requires `instantmenu` and an X11 or Wayland session; `--list` and
-`--gui` cannot be combined with it. The `desktop/ins-pass.desktop` entry
+OTP code and closes the menu so it can be pasted immediately. Ctrl+T, or the
+`Tree View` row, opens the hierarchical management menu in a terminal window.
+Requires `instantmenu` and an X11 or Wayland session; `--list` and `--gui`
+cannot be combined with it. The `desktop/ins-pass.desktop` entry
 installed by `just install` starts the compact picker from application menus.
 
 `ins game menu` lists games by how recently and often you launched them, so the

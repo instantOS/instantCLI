@@ -23,21 +23,27 @@ use super::utils::*;
 /// Actions bound to global keys on the quick access menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuickAccessBind {
-    /// Open the hierarchical edit browser.
-    Edit,
+    /// Open the hierarchical tree view.
+    TreeView,
+    /// Open the action menu for the focused entry.
+    EntryActions,
+    /// Add a new entry next to the focused row.
+    Add,
     /// Change the order of the entry list.
     Sort,
 }
 
 enum QuickAccessIntent {
     Primary(BrowserMenuItem),
-    EditMode(Option<BrowserMenuItem>),
+    TreeView(Option<BrowserMenuItem>),
+    EntryActions(Option<BrowserMenuItem>),
+    Add(Option<BrowserMenuItem>),
     Sort(Option<BrowserMenuItem>),
 }
 
-/// Actions bound to global keys in the edit browser.
+/// Actions bound to global keys in the tree view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditBrowserBind {
+enum TreeViewBind {
     /// Add a new entry next to the focused row.
     Add,
     /// Open the password store in LazyGit.
@@ -48,20 +54,30 @@ enum EditBrowserBind {
 
 fn quick_access_keybinds() -> Result<Vec<MenuKeybind<QuickAccessBind>>> {
     Ok(vec![
-        MenuKeybind::new(MenuKey::new("ctrl-e")?, "edit mode", QuickAccessBind::Edit),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-t")?,
+            "tree view",
+            QuickAccessBind::TreeView,
+        ),
+        MenuKeybind::new(
+            MenuKey::new("ctrl-o")?,
+            "entry actions",
+            QuickAccessBind::EntryActions,
+        ),
+        MenuKeybind::new(MenuKey::new("ctrl-a")?, "add entry", QuickAccessBind::Add),
         sort_keybind()?.map_action(QuickAccessBind::Sort),
     ])
 }
 
-fn edit_browser_keybinds() -> Result<Vec<MenuKeybind<EditBrowserBind>>> {
+fn tree_view_keybinds() -> Result<Vec<MenuKeybind<TreeViewBind>>> {
     Ok(vec![
-        MenuKeybind::new(MenuKey::new("ctrl-a")?, "add entry", EditBrowserBind::Add),
+        MenuKeybind::new(MenuKey::new("ctrl-a")?, "add entry", TreeViewBind::Add),
         MenuKeybind::new(
             MenuKey::overriding("ctrl-g")?,
             "lazygit",
-            EditBrowserBind::Lazygit,
+            TreeViewBind::Lazygit,
         ),
-        sort_keybind()?.map_action(EditBrowserBind::Sort),
+        sort_keybind()?.map_action(TreeViewBind::Sort),
     ])
 }
 
@@ -86,9 +102,9 @@ fn add_prefix_for_selection(
     }
 }
 
-/// Initial folder and selected row for the edit browser. Focusing an entry
+/// Initial folder and selected row for the tree view. Focusing an entry
 /// opens its parent folder and selects that entry there.
-fn edit_browser_start(
+fn tree_view_start(
     initial_prefix: Option<&str>,
     focus_entry: Option<&str>,
 ) -> (Vec<String>, Option<String>) {
@@ -105,9 +121,15 @@ fn interpret_quick_access_selection(
     selection: MenuSelection<BrowserMenuItem, QuickAccessBind>,
 ) -> Option<QuickAccessIntent> {
     match selection.action {
-        Some(QuickAccessBind::Edit) => Some(QuickAccessIntent::EditMode(
+        Some(QuickAccessBind::TreeView) => Some(QuickAccessIntent::TreeView(
             selection.items.first().cloned(),
         )),
+        Some(QuickAccessBind::EntryActions) => Some(QuickAccessIntent::EntryActions(
+            selection.items.first().cloned(),
+        )),
+        Some(QuickAccessBind::Add) => {
+            Some(QuickAccessIntent::Add(selection.items.first().cloned()))
+        }
         Some(QuickAccessBind::Sort) => {
             Some(QuickAccessIntent::Sort(selection.items.first().cloned()))
         }
@@ -150,19 +172,42 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
             .select()?
         {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
-                // Ctrl-E and Ctrl-S are mode switches even when the filter
-                // matches nothing; a plain submit still needs a focused row.
+                // Ctrl-T, Ctrl-O, Ctrl-A, and Ctrl-S are mode switches even
+                // when the filter matches nothing; a plain submit still needs
+                // a focused row.
                 let Some(intent) = interpret_quick_access_selection(sel) else {
                     continue;
                 };
 
                 let item = match intent {
-                    QuickAccessIntent::EditMode(item) => {
+                    QuickAccessIntent::TreeView(item) => {
                         let focus = item.as_ref().and_then(|item| match &item.kind {
                             BrowserItemKind::Entry(key) => Some(key.as_str()),
                             _ => None,
                         });
-                        run_edit_browser(None, focus)?;
+                        run_tree_view(None, focus)?;
+                        continue;
+                    }
+                    QuickAccessIntent::EntryActions(item) => {
+                        let Some(item) = item else {
+                            continue;
+                        };
+                        let BrowserItemKind::Entry(key) = &item.kind else {
+                            continue;
+                        };
+                        let entry = resolve_entry_by_name(&entries, key, false)?;
+                        cursor.update(&item, &quick_access_items);
+                        if let Some(moved_key) = run_edit_action_menu(&entry)? {
+                            cursor.update_from_key(&format!("entry:{moved_key}"));
+                        }
+                        continue;
+                    }
+                    QuickAccessIntent::Add(item) => {
+                        if let Some(item) = &item {
+                            cursor.update(item, &quick_access_items);
+                        }
+                        let prefix = add_prefix_for_selection(item.as_ref(), &[]);
+                        run_add_menu(prefix.as_deref())?;
                         continue;
                     }
                     QuickAccessIntent::Sort(item) => {
@@ -202,8 +247,8 @@ pub(super) fn interactive_pass_quick_access() -> Result<i32> {
 /// Quick-access password picker rendered directly by Instant Menu.
 ///
 /// This mirrors the terminal picker without requiring a TTY: entries keep the
-/// same smart ranking, Enter copies the selected secret, and Ctrl-E (or the
-/// management row) opens the hierarchical editor in a terminal window.
+/// same smart ranking, Enter copies the selected secret, and Ctrl-T (or the
+/// tree view row) opens the hierarchical editor in a terminal window.
 pub(super) fn interactive_pass_quick_access_instantmenu(debug: bool) -> Result<i32> {
     ensure_core_dependencies()?;
 
@@ -217,7 +262,10 @@ pub(super) fn interactive_pass_quick_access_instantmenu(debug: bool) -> Result<i
         return Ok(1);
     };
 
-    if matches!(selection.action, Some(instantmenu::PassMenuAction::Edit)) {
+    if matches!(
+        selection.action,
+        Some(instantmenu::PassMenuAction::TreeView)
+    ) {
         crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
         return Ok(0);
     }
@@ -317,7 +365,7 @@ pub(super) fn interactive_pass_quick_access_server() -> Result<i32> {
 }
 
 pub(super) fn interactive_pass_tree_menu() -> Result<i32> {
-    run_edit_browser(None, None)?;
+    run_tree_view(None, None)?;
     Ok(0)
 }
 
@@ -366,17 +414,14 @@ pub(super) fn run_add_menu(current_prefix: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_edit_browser(
-    initial_prefix: Option<&str>,
-    focus_entry: Option<&str>,
-) -> Result<()> {
+pub(crate) fn run_tree_view(initial_prefix: Option<&str>, focus_entry: Option<&str>) -> Result<()> {
     let store_dir = ensure_password_store_dir()?;
-    let (mut path, initial_key) = edit_browser_start(initial_prefix, focus_entry);
+    let (mut path, initial_key) = tree_view_start(initial_prefix, focus_entry);
     let mut cursor = MenuCursor::new();
     if let Some(key) = initial_key {
         cursor.update_from_key(&key);
     }
-    let mut sort = PassSort::edit_browser_default();
+    let mut sort = PassSort::tree_view_default();
 
     loop {
         let mut entries = load_entries(&store_dir)?;
@@ -384,14 +429,14 @@ pub(crate) fn run_edit_browser(
         let browser_items = build_browser_menu_items(&entries, &path)?;
 
         let title = if path.is_empty() {
-            "Edit Passwords".to_string()
+            "Tree View".to_string()
         } else {
-            format!("Edit Passwords / {}", path.join("/"))
+            format!("Tree View / {}", path.join("/"))
         };
 
         let mut builder = FzfWrapper::builder()
             .header(
-                HeaderBuilder::new(NerdFont::Edit, &title)
+                HeaderBuilder::new(NerdFont::Folder, &title)
                     .field("Sort", sort.label())
                     .build(),
             )
@@ -402,7 +447,7 @@ pub(crate) fn run_edit_browser(
             builder = builder.initial_index(index);
         }
 
-        let keybinds = edit_browser_keybinds()?;
+        let keybinds = tree_view_keybinds()?;
 
         match builder
             .items(browser_items.clone())
@@ -418,16 +463,16 @@ pub(crate) fn run_edit_browser(
                 }
 
                 match action {
-                    Some(EditBrowserBind::Add) => {
+                    Some(TreeViewBind::Add) => {
                         let prefix = add_prefix_for_selection(item.as_ref(), &path);
                         run_add_menu(prefix.as_deref())?;
                         continue;
                     }
-                    Some(EditBrowserBind::Lazygit) => {
+                    Some(TreeViewBind::Lazygit) => {
                         open_store_lazygit(&store_dir)?;
                         continue;
                     }
-                    Some(EditBrowserBind::Sort) => {
+                    Some(TreeViewBind::Sort) => {
                         if let Some(chosen) = choose_sort(sort)? {
                             sort = chosen;
                         }
@@ -445,7 +490,7 @@ pub(crate) fn run_edit_browser(
                     BrowserItemKind::Entry(key) => {
                         let entry = resolve_entry_by_name(&entries, &key, false)?;
                         if let Some(moved_key) = run_edit_action_menu(&entry)? {
-                            let (destination, focus) = edit_browser_start(None, Some(&moved_key));
+                            let (destination, focus) = tree_view_start(None, Some(&moved_key));
                             path = destination;
                             if let Some(focus) = focus {
                                 cursor.update_from_key(&focus);
@@ -786,7 +831,7 @@ fn build_edit_action_items(entry: &PassEntry) -> Vec<EditActionItem> {
         display: format!("{} Back", format_back_icon()),
         preview: PreviewBuilder::new()
             .header(NerdFont::ArrowLeft, "Back")
-            .text("Return to the edit browser.")
+            .text("Return to the tree view.")
             .build(),
         action: EditAction::Back,
     });
@@ -831,43 +876,71 @@ mod keybind_tests {
     }
 
     #[test]
-    fn edit_keybind_carries_the_focused_entry_into_edit_mode() {
+    fn tree_view_keybind_carries_the_focused_entry() {
         let item = entry_item("mail/work");
         let interpreted = interpret_quick_access_selection(MenuSelection {
             items: vec![item.clone()],
-            action: Some(QuickAccessBind::Edit),
+            action: Some(QuickAccessBind::TreeView),
         });
 
         assert!(matches!(
             interpreted,
-            Some(QuickAccessIntent::EditMode(Some(selected))) if selected.key == item.key
+            Some(QuickAccessIntent::TreeView(Some(selected))) if selected.key == item.key
         ));
     }
 
     #[test]
-    fn edit_keybind_enters_edit_mode_without_a_match() {
+    fn tree_view_keybind_opens_without_a_match() {
         let interpreted = interpret_quick_access_selection(MenuSelection::<BrowserMenuItem, _> {
             items: Vec::new(),
-            action: Some(QuickAccessBind::Edit),
+            action: Some(QuickAccessBind::TreeView),
         });
 
         assert!(matches!(
             interpreted,
-            Some(QuickAccessIntent::EditMode(None))
+            Some(QuickAccessIntent::TreeView(None))
         ));
     }
 
     #[test]
-    fn edit_focus_starts_in_the_entries_parent_folder() {
-        let (path, key) = edit_browser_start(None, Some("mail/work/github"));
+    fn entry_actions_keybind_carries_the_focused_entry() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: Some(QuickAccessBind::EntryActions),
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::EntryActions(Some(selected))) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn add_keybind_carries_the_focused_entry() {
+        let item = entry_item("mail/work");
+        let interpreted = interpret_quick_access_selection(MenuSelection {
+            items: vec![item.clone()],
+            action: Some(QuickAccessBind::Add),
+        });
+
+        assert!(matches!(
+            interpreted,
+            Some(QuickAccessIntent::Add(Some(selected))) if selected.key == item.key
+        ));
+    }
+
+    #[test]
+    fn tree_view_focus_starts_in_the_entries_parent_folder() {
+        let (path, key) = tree_view_start(None, Some("mail/work/github"));
 
         assert_eq!(path.join("/"), "mail/work");
         assert_eq!(key.as_deref(), Some("entry:mail/work/github"));
     }
 
     #[test]
-    fn edit_without_focus_uses_the_initial_prefix() {
-        let (path, key) = edit_browser_start(Some("mail/work"), None);
+    fn tree_view_without_focus_uses_the_initial_prefix() {
+        let (path, key) = tree_view_start(Some("mail/work"), None);
 
         assert_eq!(path.join("/"), "mail/work");
         assert!(key.is_none());
@@ -898,15 +971,39 @@ mod keybind_tests {
     }
 
     #[test]
-    fn edit_is_bound_to_ctrl_e() {
+    fn tree_view_is_bound_to_ctrl_t() {
         let binds = quick_access_keybinds().unwrap();
         let bind = binds
             .iter()
-            .find(|bind| bind.key.as_str() == "ctrl-e")
-            .expect("quick access should bind ctrl-e");
+            .find(|bind| bind.key.as_str() == "ctrl-t")
+            .expect("quick access should bind ctrl-t");
 
-        assert_eq!(bind.label, "edit mode");
-        assert_eq!(bind.action, QuickAccessBind::Edit);
+        assert_eq!(bind.label, "tree view");
+        assert_eq!(bind.action, QuickAccessBind::TreeView);
+    }
+
+    #[test]
+    fn entry_actions_are_bound_to_ctrl_o() {
+        let binds = quick_access_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-o")
+            .expect("quick access should bind ctrl-o");
+
+        assert_eq!(bind.label, "entry actions");
+        assert_eq!(bind.action, QuickAccessBind::EntryActions);
+    }
+
+    #[test]
+    fn add_is_bound_to_ctrl_a_in_quick_access() {
+        let binds = quick_access_keybinds().unwrap();
+        let bind = binds
+            .iter()
+            .find(|bind| bind.key.as_str() == "ctrl-a")
+            .expect("quick access should bind ctrl-a");
+
+        assert_eq!(bind.label, "add entry");
+        assert_eq!(bind.action, QuickAccessBind::Add);
     }
 
     #[test]
@@ -922,39 +1019,39 @@ mod keybind_tests {
     }
 
     #[test]
-    fn add_is_bound_to_ctrl_a() {
-        let binds = edit_browser_keybinds().unwrap();
+    fn add_is_bound_to_ctrl_a_in_the_tree_view() {
+        let binds = tree_view_keybinds().unwrap();
         let bind = binds
             .iter()
             .find(|bind| bind.key.as_str() == "ctrl-a")
-            .expect("edit browser should bind ctrl-a");
+            .expect("tree view should bind ctrl-a");
 
         assert_eq!(bind.label, "add entry");
-        assert_eq!(bind.action, EditBrowserBind::Add);
+        assert_eq!(bind.action, TreeViewBind::Add);
     }
 
     #[test]
     fn lazygit_is_bound_to_ctrl_g() {
-        let binds = edit_browser_keybinds().unwrap();
+        let binds = tree_view_keybinds().unwrap();
         let bind = binds
             .iter()
             .find(|bind| bind.key.as_str() == "ctrl-g")
-            .expect("edit browser should bind ctrl-g");
+            .expect("tree view should bind ctrl-g");
 
         assert_eq!(bind.label, "lazygit");
-        assert_eq!(bind.action, EditBrowserBind::Lazygit);
+        assert_eq!(bind.action, TreeViewBind::Lazygit);
     }
 
     #[test]
-    fn sort_is_bound_to_ctrl_s_in_the_edit_browser() {
-        let binds = edit_browser_keybinds().unwrap();
+    fn sort_is_bound_to_ctrl_s_in_the_tree_view() {
+        let binds = tree_view_keybinds().unwrap();
         let bind = binds
             .iter()
             .find(|bind| bind.key.as_str() == "ctrl-s")
-            .expect("edit browser should bind ctrl-s");
+            .expect("tree view should bind ctrl-s");
 
         assert_eq!(bind.label, "sort");
-        assert_eq!(bind.action, EditBrowserBind::Sort);
+        assert_eq!(bind.action, TreeViewBind::Sort);
     }
 
     #[test]

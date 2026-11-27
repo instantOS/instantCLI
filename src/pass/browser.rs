@@ -25,12 +25,12 @@ fn make_menu_item() -> BrowserMenuItem {
     BrowserMenuItem {
         key: "menu".to_string(),
         display: format!(
-            "{} Edit Passwords",
-            format_icon_colored(NerdFont::Edit, colors::BLUE)
+            "{} Tree View",
+            format_icon_colored(NerdFont::Folder, colors::BLUE)
         ),
         preview: PreviewBuilder::new()
-            .header(NerdFont::Edit, "Edit Passwords")
-            .text("Open `ins pass menu` for hierarchical password and OTP editing.")
+            .header(NerdFont::Folder, "Tree View")
+            .text("Open the hierarchical password tree for browsing and entry actions.")
             .build(),
         kind: BrowserItemKind::Menu,
     }

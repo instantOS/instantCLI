@@ -337,7 +337,7 @@ impl Setting for WebUiManager {
     }
 }
 
-// Password Manager (launches the pass edit browser)
+// Password Manager (launches the pass tree view)
 
 pub struct PasswordManager;
 
@@ -357,7 +357,7 @@ impl Setting for PasswordManager {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        crate::pass::menu::run_edit_browser(None, None)
+        crate::pass::menu::run_tree_view(None, None)
     }
 }
 

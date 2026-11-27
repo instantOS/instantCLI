@@ -5,8 +5,8 @@ use super::operations::{
 use super::types::PassEntry;
 use super::types::{BrowserItemKind, BrowserMenuItem, location_color};
 use super::utils::{
-    first_secret_line, load_entries, normalize_file_entry_name, normalize_otp_name,
-    run_pass_status_with_input, sanitize_entry_name, suggested_export_filename,
+    entry_name_prefill, first_secret_line, load_entries, normalize_file_entry_name,
+    normalize_otp_name, run_pass_status_with_input, sanitize_entry_name, suggested_export_filename,
     suggested_file_entry_name, suggested_otp_entry_name,
 };
 use super::{PassCommands, auto_setup_applies};
@@ -20,6 +20,23 @@ use std::fs;
 fn normalizes_otp_names() {
     assert_eq!(normalize_otp_name("email/github"), "email/github.otp");
     assert_eq!(normalize_otp_name("email/github.otp"), "email/github.otp");
+}
+
+#[test]
+fn new_entry_names_start_inside_the_current_folder() {
+    assert_eq!(
+        entry_name_prefill(Some("example"), None).as_deref(),
+        Some("example/")
+    );
+    assert_eq!(
+        entry_name_prefill(Some("example"), Some("github")).as_deref(),
+        Some("example/github")
+    );
+    assert_eq!(
+        entry_name_prefill(None, Some("github")).as_deref(),
+        Some("github")
+    );
+    assert!(entry_name_prefill(Some(""), None).is_none());
 }
 
 #[test]

@@ -83,24 +83,40 @@ pub(super) fn resolve_entry_name_with_suggestion(
     header: &str,
     suggestion: Option<&str>,
 ) -> Result<String> {
+    let prefix = prefix.filter(|value| !value.is_empty());
+
     match name {
         Some(name) => apply_prefix_to_entry_name(&sanitize_entry_name(&name)?, prefix),
-        None => prompt_text_value(
-            "Entry name",
-            Some(header),
-            false,
-            Some(prefix.unwrap_or("examples/github or email/work")),
-            suggestion,
-        )?
-        .ok_or_else(|| anyhow!("Entry creation cancelled"))
-        .and_then(|value| sanitize_entry_name(&value))
-        .and_then(|value| apply_prefix_to_entry_name(&value, prefix)),
+        None => {
+            let initial = entry_name_prefill(prefix, suggestion);
+            let ghost = prefix.unwrap_or("examples/github or email/work");
+            prompt_text_value(
+                "Entry name",
+                Some(header),
+                false,
+                Some(ghost),
+                initial.as_deref(),
+            )?
+            .ok_or_else(|| anyhow!("Entry creation cancelled"))
+            .and_then(|value| sanitize_entry_name(&value))
+            .and_then(|value| apply_prefix_to_entry_name(&value, prefix))
+        }
+    }
+}
+
+/// Initial name shown in the add prompt, starting inside the current folder.
+pub(super) fn entry_name_prefill(prefix: Option<&str>, suggestion: Option<&str>) -> Option<String> {
+    match (prefix.filter(|value| !value.is_empty()), suggestion) {
+        (Some(prefix), Some(suggestion)) => Some(format!("{prefix}/{suggestion}")),
+        (Some(prefix), None) => Some(format!("{prefix}/")),
+        (None, Some(suggestion)) => Some(suggestion.to_string()),
+        (None, None) => None,
     }
 }
 
 pub(super) fn apply_prefix_to_entry_name(name: &str, prefix: Option<&str>) -> Result<String> {
     match prefix {
-        Some(prefix) if !prefix.is_empty() && !name.contains('/') => {
+        Some(prefix) if !prefix.is_empty() && !name.contains('/') && name != prefix => {
             sanitize_entry_name(&format!("{prefix}/{name}"))
         }
         _ => Ok(name.to_string()),

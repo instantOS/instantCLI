@@ -16,15 +16,15 @@ use crate::menu_utils::{MenuKey, MenuKeybind, MenuSelection};
 /// Actions bound to global keys in the compact picker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PassMenuAction {
-    /// Open the hierarchical management menu in a terminal.
-    Edit,
+    /// Open the hierarchical tree view in a terminal.
+    TreeView,
 }
 
 pub(super) fn keybinds() -> Result<Vec<MenuKeybind<PassMenuAction>>> {
     Ok(vec![MenuKeybind::new(
-        MenuKey::new("ctrl-e")?,
-        "edit passwords",
-        PassMenuAction::Edit,
+        MenuKey::new("ctrl-t")?,
+        "tree view",
+        PassMenuAction::TreeView,
     )])
 }
 
@@ -57,7 +57,7 @@ fn render(item: &BrowserMenuItem, index: usize) -> String {
             format!("{{{color} icon={icon} value={index}}} {}", plain(name))
         }
         BrowserItemKind::Menu => {
-            format!("{{blue icon=faedit value={index}}} Edit Passwords")
+            format!("{{blue icon=fafolder value={index}}} Tree View")
         }
         BrowserItemKind::Folder(path) => {
             format!("{{blue icon=fafolder value={index}}} {}", plain(path))
@@ -238,7 +238,7 @@ mod tests {
     fn management_row_is_selectable() {
         assert_eq!(
             render(&item("menu", BrowserItemKind::Menu), 4),
-            "{blue icon=faedit value=4} Edit Passwords"
+            "{blue icon=fafolder value=4} Tree View"
         );
     }
 
@@ -248,11 +248,11 @@ mod tests {
             render(
                 &item(
                     "entry:evil",
-                    BrowserItemKind::Entry("{heading}\nctrl-e".into())
+                    BrowserItemKind::Entry("{heading}\nctrl-t".into())
                 ),
                 3
             ),
-            "{green icon=fakey value=3} {heading} ctrl-e"
+            "{green icon=fakey value=3} {heading} ctrl-t"
         );
     }
 
@@ -269,12 +269,12 @@ mod tests {
         assert_eq!(selection.items.len(), 1);
         assert_eq!(selection.items[0].key, "entry:second");
 
-        let selection = decode("ctrl-e\n", &items, &keybinds)?.context("No action")?;
-        assert_eq!(selection.action, Some(PassMenuAction::Edit));
+        let selection = decode("ctrl-t\n", &items, &keybinds)?.context("No action")?;
+        assert_eq!(selection.action, Some(PassMenuAction::TreeView));
         assert!(selection.items.is_empty());
 
-        let selection = decode("ctrl-e\n0\n", &items, &keybinds)?.context("No action")?;
-        assert_eq!(selection.action, Some(PassMenuAction::Edit));
+        let selection = decode("ctrl-t\n0\n", &items, &keybinds)?.context("No action")?;
+        assert_eq!(selection.action, Some(PassMenuAction::TreeView));
         assert_eq!(selection.items[0].key, "entry:first");
         Ok(())
     }
@@ -296,14 +296,14 @@ mod tests {
     }
 
     #[test]
-    fn edit_is_bound_to_ctrl_e() {
+    fn tree_view_is_bound_to_ctrl_t() {
         let binds = keybinds().unwrap();
         let bind = binds
             .iter()
-            .find(|bind| bind.key.as_str() == "ctrl-e")
-            .expect("compact picker should bind ctrl-e");
+            .find(|bind| bind.key.as_str() == "ctrl-t")
+            .expect("compact picker should bind ctrl-t");
 
-        assert_eq!(bind.label, "edit passwords");
-        assert_eq!(bind.action, PassMenuAction::Edit);
+        assert_eq!(bind.label, "tree view");
+        assert_eq!(bind.action, PassMenuAction::TreeView);
     }
 }
