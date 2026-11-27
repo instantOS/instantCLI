@@ -1,15 +1,18 @@
-//! Compact native Instant Menu rendering for `ins pass --instantmenu`.
-//!
-//! Entry loading, sorting, and the copy actions stay in the shared quick-access
-//! menu. This module only renders rows and decodes the Instant Menu response.
+//! Compact native Instant Menu frontend for `ins pass --instantmenu`.
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-use super::super::types::{BrowserItemKind, BrowserMenuItem};
-use crate::menu::instantmenu::choice_flags_with_width;
-use crate::menu::protocol::{Binding, ChoiceOptions};
+use super::super::browser::build_quick_access_items;
+use super::super::dependencies::ensure_core_dependencies;
+use super::super::names::suggested_export_filename;
+use super::super::operations::{export_entry, resolve_entry_by_name};
+use super::super::sort::{PassSort, sort_entries};
+use super::super::store::{ensure_password_store_dir, load_entries, record_frecency};
+use super::super::types::{BrowserItemKind, BrowserMenuItem, EntryKind, PassEntry};
+use crate::menu::instantmenu::{InstantmenuBackend, choice_flags_with_width};
+use crate::menu::protocol::{Binding, ChoiceOptions, InputOptions};
 use crate::menu_utils::process::tracked_spawn;
 use crate::menu_utils::{MenuKey, MenuKeybind, MenuSelection};
 
@@ -28,6 +31,70 @@ pub(super) fn keybinds() -> Result<Vec<MenuKeybind<PassMenuAction>>> {
     )])
 }
 
+pub(crate) fn run(debug: bool) -> Result<i32> {
+    ensure_core_dependencies()?;
+
+    let store_dir = ensure_password_store_dir()?;
+    let mut entries = load_entries(&store_dir)?;
+    sort_entries(&mut entries, PassSort::quick_access_default())?;
+    let items = build_quick_access_items(&entries);
+    let keybinds = keybinds()?;
+
+    let Some(selection) = select(&items, &keybinds)? else {
+        return Ok(1);
+    };
+
+    if matches!(selection.action, Some(PassMenuAction::TreeView)) {
+        crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
+        return Ok(0);
+    }
+
+    let Some(item) = selection.items.into_iter().next() else {
+        return Ok(1);
+    };
+
+    match item.kind {
+        BrowserItemKind::Entry { key, .. } => {
+            let entry = resolve_entry_by_name(&entries, &key, false)?;
+            if entry.should_offer_export() {
+                if !export_entry_prompt(&entry)? {
+                    return Ok(1);
+                }
+                record_frecency(&entry.display_name)?;
+            } else {
+                super::copy_entry(&entries, &key)?;
+            }
+            // Exit after copying so the user can paste immediately.
+            Ok(0)
+        }
+        BrowserItemKind::Menu => {
+            crate::common::terminal::launch_menu_in_terminal("pass", "Pass", &[], debug)?;
+            Ok(0)
+        }
+        BrowserItemKind::Folder(_) | BrowserItemKind::Add | BrowserItemKind::Back => Ok(1),
+        BrowserItemKind::Close => Ok(0),
+    }
+}
+
+/// Export an entry that is too large or file-like for the clipboard using an
+/// Instant Menu path prompt instead of the terminal-only fzf input dialog.
+///
+/// Returns `false` when the user cancels the path prompt.
+fn export_entry_prompt(entry: &PassEntry) -> Result<bool> {
+    let suggested = suggested_export_filename(&entry.display_name);
+    let options = InputOptions::text_with_initial("Export path", suggested)
+        .with_placeholder("Destination for the decrypted entry");
+    let path = match InstantmenuBackend::input(&options)? {
+        crate::menu_utils::DialogOutcome::Submitted(path) => path.trim().to_string(),
+        crate::menu_utils::DialogOutcome::Cancelled => return Ok(false),
+    };
+    if path.is_empty() {
+        bail!("Export path cannot be empty");
+    }
+    export_entry(entry, Some(path))?;
+    Ok(true)
+}
+
 fn plain(text: &str) -> String {
     text.chars()
         .map(|character| {
@@ -40,21 +107,19 @@ fn plain(text: &str) -> String {
         .collect()
 }
 
-fn entry_style(name: &str) -> (&'static str, &'static str) {
-    if name.ends_with(".file") {
-        ("yellow", "fafile")
-    } else if name.ends_with(".otp") {
-        ("blue", "faclock")
-    } else {
-        ("green", "fakey")
+fn entry_style(kind: EntryKind) -> (&'static str, &'static str) {
+    match kind {
+        EntryKind::File => ("yellow", "fafile"),
+        EntryKind::Otp => ("blue", "faclock"),
+        EntryKind::Password => ("green", "fakey"),
     }
 }
 
 fn render(item: &BrowserMenuItem, index: usize) -> String {
     match &item.kind {
-        BrowserItemKind::Entry(name) => {
-            let (color, icon) = entry_style(name);
-            format!("{{{color} icon={icon} value={index}}} {}", plain(name))
+        BrowserItemKind::Entry { key, kind } => {
+            let (color, icon) = entry_style(*kind);
+            format!("{{{color} icon={icon} value={index}}} {}", plain(key))
         }
         BrowserItemKind::Menu => {
             format!("{{blue icon=fafolder value={index}}} Tree View")
@@ -200,24 +265,25 @@ mod tests {
         }
     }
 
+    fn entry(key: &str, kind: EntryKind) -> BrowserItemKind {
+        BrowserItemKind::Entry {
+            key: key.to_string(),
+            kind,
+        }
+    }
+
     #[test]
     fn rows_use_kind_icons_and_stable_indexes() {
         assert_eq!(
             render(
-                &item(
-                    "entry:mail/work",
-                    BrowserItemKind::Entry("mail/work".into())
-                ),
+                &item("entry:mail/work", entry("mail/work", EntryKind::Password)),
                 0
             ),
             "{green icon=fakey value=0} mail/work"
         );
         assert_eq!(
             render(
-                &item(
-                    "entry:paypal.otp",
-                    BrowserItemKind::Entry("paypal.otp".into())
-                ),
+                &item("entry:paypal.otp", entry("paypal.otp", EntryKind::Otp)),
                 1
             ),
             "{blue icon=faclock value=1} paypal.otp"
@@ -226,7 +292,7 @@ mod tests {
             render(
                 &item(
                     "entry:docs/contract.file",
-                    BrowserItemKind::Entry("docs/contract.file".into())
+                    entry("docs/contract.file", EntryKind::File)
                 ),
                 2
             ),
@@ -248,7 +314,7 @@ mod tests {
             render(
                 &item(
                     "entry:evil",
-                    BrowserItemKind::Entry("{heading}\nctrl-t".into())
+                    entry("{heading}\nctrl-t", EntryKind::Password)
                 ),
                 3
             ),
@@ -259,8 +325,8 @@ mod tests {
     #[test]
     fn enter_and_action_responses_are_decoded() -> Result<()> {
         let items = vec![
-            item("entry:first", BrowserItemKind::Entry("first".into())),
-            item("entry:second", BrowserItemKind::Entry("second".into())),
+            item("entry:first", entry("first", EntryKind::Password)),
+            item("entry:second", entry("second", EntryKind::Password)),
         ];
         let keybinds = keybinds()?;
 
@@ -281,7 +347,7 @@ mod tests {
 
     #[test]
     fn invalid_responses_are_rejected() {
-        let items = vec![item("entry:first", BrowserItemKind::Entry("first".into()))];
+        let items = vec![item("entry:first", entry("first", EntryKind::Password))];
         let keybinds = keybinds().unwrap();
         for invalid in [
             "\n1\n" as &str,

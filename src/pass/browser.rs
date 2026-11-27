@@ -44,7 +44,10 @@ pub(super) fn build_quick_access_items(entries: &[PassEntry]) -> Vec<BrowserMenu
             key: format!("entry:{}", entry.display_name),
             display: entry.display_row(),
             preview: entry.preview(),
-            kind: BrowserItemKind::Entry(entry.display_name),
+            kind: BrowserItemKind::Entry {
+                key: entry.display_name,
+                kind: entry.kind,
+            },
         })
         .collect();
 
@@ -58,7 +61,7 @@ pub(super) fn build_quick_access_menu_items(entries: &[PassEntry]) -> Vec<Serial
         .map(|item| {
             let mut metadata = HashMap::new();
             match &item.kind {
-                BrowserItemKind::Entry(key) => {
+                BrowserItemKind::Entry { key, .. } => {
                     metadata.insert("kind".to_string(), "entry".to_string());
                     metadata.insert("key".to_string(), key.clone());
                 }
@@ -237,7 +240,10 @@ fn append_tree_browser_items(
                 None,
             ),
             preview: entry.preview(),
-            kind: BrowserItemKind::Entry(entry.display_name.clone()),
+            kind: BrowserItemKind::Entry {
+                key: entry.display_name.clone(),
+                kind: entry.kind,
+            },
         });
     }
 }

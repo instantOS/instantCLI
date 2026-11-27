@@ -1,20 +1,26 @@
 use super::browser::{build_browser_menu_items, build_quick_access_items};
+use super::content::first_secret_line;
+use super::names::{
+    entry_name_prefill, normalize_file_entry_name, normalize_otp_name, sanitize_entry_name,
+    suggested_export_filename, suggested_file_entry_name, suggested_otp_entry_name,
+};
 use super::operations::{
-    otp_command_args, pass_edit_editor, pass_edit_was_unchanged, resolve_entry_by_name,
+    otp_command_args, pass_edit_editor, pass_edit_was_unchanged, rename_entry, rename_target,
+    resolve_entry_by_name,
 };
-use super::types::PassEntry;
-use super::types::{BrowserItemKind, BrowserMenuItem, location_color};
-use super::utils::{
-    entry_name_prefill, first_secret_line, load_entries, normalize_file_entry_name,
-    normalize_otp_name, run_pass_status_with_input, sanitize_entry_name, suggested_export_filename,
-    suggested_file_entry_name, suggested_otp_entry_name,
-};
+use super::pass_cli::run_status_with_input;
+use super::store::load_entries;
+use super::types::{BrowserItemKind, BrowserMenuItem, EntryKind, PassEntry, location_color};
 use super::{PassCommands, auto_setup_applies};
 use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::FzfSelectable;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::text::strip_ansi;
 use std::fs;
+
+fn pass_entry(name: &str, kind: EntryKind) -> PassEntry {
+    PassEntry::test_entry(name, kind)
+}
 
 #[test]
 fn normalizes_otp_names() {
@@ -100,7 +106,7 @@ fn pass_input_goes_to_stdin_instead_of_arguments() {
     let _guard = PathGuard(old_path);
 
     let uri = "otpauth://totp/demo?secret=JBSWY3DPEHPK3PXP";
-    run_pass_status_with_input(["otp", "insert", "-f", "demo.otp"], uri).unwrap();
+    run_status_with_input(["otp", "insert", "-f", "demo.otp"], uri).unwrap();
 
     assert_eq!(
         fs::read_to_string(&args_path).unwrap(),
@@ -117,13 +123,7 @@ fn first_secret_line_uses_first_nonempty_line_only() {
 
 #[test]
 fn otp_entry_reports_otp_primary_action() {
-    let entry = PassEntry {
-        display_name: "mail/work.otp".to_string(),
-        secret_key: None,
-        otp_key: Some("mail/work.otp".to_string()),
-        secret_path: None,
-        otp_path: None,
-    };
+    let entry = pass_entry("mail/work.otp", EntryKind::Otp);
 
     assert_eq!(entry.kind_label(), "otp");
     assert_eq!(entry.primary_action_label(), "Copy OTP code");
@@ -131,13 +131,7 @@ fn otp_entry_reports_otp_primary_action() {
 
 #[test]
 fn file_entry_reports_export_primary_action() {
-    let entry = PassEntry {
-        display_name: "docs/contract.file".to_string(),
-        secret_key: Some("docs/contract.file".to_string()),
-        otp_key: None,
-        secret_path: None,
-        otp_path: None,
-    };
+    let entry = pass_entry("docs/contract.file", EntryKind::File);
 
     assert!(entry.is_file_entry());
     assert_eq!(entry.primary_action_label(), "Export file");
@@ -155,6 +149,69 @@ fn sanitizes_bad_entry_names() {
 fn file_entry_names_get_the_file_suffix() {
     assert_eq!(normalize_file_entry_name("contract"), "contract.file");
     assert_eq!(normalize_file_entry_name("contract.file"), "contract.file");
+}
+
+#[test]
+fn rename_preserves_the_entry_kind_suffix() {
+    let file = pass_entry("docs/contract.file", EntryKind::File);
+    assert_eq!(
+        rename_target(&file, "archive/contract").unwrap(),
+        "archive/contract.file"
+    );
+    assert_eq!(
+        rename_target(&file, "archive/contract.file").unwrap(),
+        "archive/contract.file"
+    );
+
+    let otp = pass_entry("mail/work.otp", EntryKind::Otp);
+    assert_eq!(
+        rename_target(&otp, "mail/personal").unwrap(),
+        "mail/personal.otp"
+    );
+
+    let password = pass_entry("mail/work", EntryKind::Password);
+    assert_eq!(
+        rename_target(&password, "mail/personal").unwrap(),
+        "mail/personal"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_refuses_to_overwrite_an_existing_entry() {
+    use std::env;
+    use std::ffi::OsString;
+
+    use crate::menu_utils::MockQueue;
+
+    struct EnvGuard(Option<OsString>);
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.0 {
+                    Some(value) => env::set_var("PASSWORD_STORE_DIR", value),
+                    None => env::remove_var("PASSWORD_STORE_DIR"),
+                }
+            }
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source.gpg");
+    let destination = temp.path().join("destination.gpg");
+    fs::write(&source, b"source").unwrap();
+    fs::write(&destination, b"existing").unwrap();
+
+    let old_store = env::var_os("PASSWORD_STORE_DIR");
+    unsafe { env::set_var("PASSWORD_STORE_DIR", temp.path()) };
+    let _guard = EnvGuard(old_store);
+    let _mock = MockQueue::new().confirm_no().guard();
+
+    let entry = PassEntry::new("source", &source, EntryKind::Password);
+    assert!(rename_entry(&entry, "destination").is_err());
+    assert_eq!(fs::read(&source).unwrap(), b"source");
+    assert_eq!(fs::read(&destination).unwrap(), b"existing");
 }
 
 #[test]
@@ -192,20 +249,8 @@ fn browser_items_use_plain_selection_keys() {
 #[test]
 fn quick_access_items_are_flat_and_include_tree_menu_entry() {
     let entries = vec![
-        PassEntry {
-            display_name: "mail/work".to_string(),
-            secret_key: Some("mail/work".to_string()),
-            otp_key: None,
-            secret_path: None,
-            otp_path: None,
-        },
-        PassEntry {
-            display_name: "servers/prod/root".to_string(),
-            secret_key: Some("servers/prod/root".to_string()),
-            otp_key: None,
-            secret_path: None,
-            otp_path: None,
-        },
+        pass_entry("mail/work", EntryKind::Password),
+        pass_entry("servers/prod/root", EntryKind::Password),
     ];
 
     let items = build_quick_access_items(&entries);
@@ -219,27 +264,9 @@ fn quick_access_items_are_flat_and_include_tree_menu_entry() {
 #[test]
 fn quick_access_entries_show_kind_icons() {
     let entries = vec![
-        PassEntry {
-            display_name: "mail/work".to_string(),
-            secret_key: Some("mail/work".to_string()),
-            otp_key: None,
-            secret_path: None,
-            otp_path: None,
-        },
-        PassEntry {
-            display_name: "docs/contract.file".to_string(),
-            secret_key: Some("docs/contract.file".to_string()),
-            otp_key: None,
-            secret_path: None,
-            otp_path: None,
-        },
-        PassEntry {
-            display_name: "paypal.otp".to_string(),
-            secret_key: None,
-            otp_key: Some("paypal.otp".to_string()),
-            secret_path: None,
-            otp_path: None,
-        },
+        pass_entry("mail/work", EntryKind::Password),
+        pass_entry("docs/contract.file", EntryKind::File),
+        pass_entry("paypal.otp", EntryKind::Otp),
     ];
 
     let items = build_quick_access_items(&entries);
@@ -251,13 +278,7 @@ fn quick_access_entries_show_kind_icons() {
 
 #[test]
 fn quick_access_colors_entry_locations() {
-    let entries = vec![PassEntry {
-        display_name: "mail/work/github".to_string(),
-        secret_key: Some("mail/work/github".to_string()),
-        otp_key: None,
-        secret_path: None,
-        otp_path: None,
-    }];
+    let entries = vec![pass_entry("mail/work/github", EntryKind::Password)];
 
     let items = build_quick_access_items(&entries);
     let mail = crate::ui::catppuccin::format_with_color("mail/", location_color("mail"));
@@ -269,13 +290,7 @@ fn quick_access_colors_entry_locations() {
 
 #[test]
 fn tree_browser_root_shows_folder_nodes() {
-    let entries = vec![PassEntry {
-        display_name: "mail/work".to_string(),
-        secret_key: Some("mail/work".to_string()),
-        otp_key: None,
-        secret_path: None,
-        otp_path: None,
-    }];
+    let entries = vec![pass_entry("mail/work", EntryKind::Password)];
 
     let items = build_browser_menu_items(&entries, &[]).unwrap();
 
@@ -288,13 +303,7 @@ fn tree_browser_root_shows_folder_nodes() {
 
 #[test]
 fn tree_browser_colors_folder_locations() {
-    let entries = vec![PassEntry {
-        display_name: "mail/work".to_string(),
-        secret_key: Some("mail/work".to_string()),
-        otp_key: None,
-        secret_path: None,
-        otp_path: None,
-    }];
+    let entries = vec![pass_entry("mail/work", EntryKind::Password)];
 
     let items = build_browser_menu_items(&entries, &[]).unwrap();
     let folder_item = items
@@ -308,18 +317,12 @@ fn tree_browser_colors_folder_locations() {
 
 #[test]
 fn tree_browser_uses_distinct_icon_for_file_entries() {
-    let entries = vec![PassEntry {
-        display_name: "docs/contract.file".to_string(),
-        secret_key: Some("docs/contract.file".to_string()),
-        otp_key: None,
-        secret_path: None,
-        otp_path: None,
-    }];
+    let entries = vec![pass_entry("docs/contract.file", EntryKind::File)];
 
     let items = build_browser_menu_items(&entries, &["docs".to_string()]).unwrap();
     let file_item = items
         .iter()
-        .find(|item| matches!(item.kind, BrowserItemKind::Entry(ref key) if key == "docs/contract.file"))
+        .find(|item| matches!(item.kind, BrowserItemKind::Entry { ref key, .. } if key == "docs/contract.file"))
         .unwrap();
 
     assert!(
@@ -344,6 +347,20 @@ fn load_entries_keeps_standalone_otp_suffix_visible() {
 }
 
 #[test]
+fn load_entries_classifies_file_entries() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("docs")).unwrap();
+    fs::write(temp.path().join("docs/contract.file.gpg"), b"file").unwrap();
+
+    let entries = load_entries(temp.path()).unwrap();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].display_name, "docs/contract.file");
+    assert_eq!(entries[0].kind, EntryKind::File);
+    assert_eq!(entries[0].kind_label(), "file");
+}
+
+#[test]
 fn load_entries_keeps_password_and_otp_as_separate_entries() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(temp.path().join("paypal.gpg"), b"secret").unwrap();
@@ -361,20 +378,8 @@ fn load_entries_keeps_password_and_otp_as_separate_entries() {
 #[test]
 fn resolve_entry_by_name_prefers_exact_otp_match() {
     let entries = vec![
-        PassEntry {
-            display_name: "paypal".to_string(),
-            secret_key: Some("paypal".to_string()),
-            otp_key: None,
-            secret_path: None,
-            otp_path: None,
-        },
-        PassEntry {
-            display_name: "paypal.otp".to_string(),
-            secret_key: None,
-            otp_key: Some("paypal.otp".to_string()),
-            secret_path: None,
-            otp_path: None,
-        },
+        pass_entry("paypal", EntryKind::Password),
+        pass_entry("paypal.otp", EntryKind::Otp),
     ];
 
     let resolved = resolve_entry_by_name(&entries, "paypal.otp", true).unwrap();

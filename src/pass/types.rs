@@ -33,43 +33,57 @@ pub(super) static PASS_OTP_DEP: Dependency = Dependency {
     }],
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EntryKind {
+    Password,
+    Otp,
+    File,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PassEntry {
     pub display_name: String,
-    pub secret_key: Option<String>,
-    pub otp_key: Option<String>,
-    pub secret_path: Option<PathBuf>,
-    pub otp_path: Option<PathBuf>,
+    pub path: PathBuf,
+    pub kind: EntryKind,
 }
 
 impl PassEntry {
-    pub fn is_file_entry(&self) -> bool {
-        self.display_name.ends_with(".file")
+    pub(super) fn new(
+        display_name: impl Into<String>,
+        path: impl Into<PathBuf>,
+        kind: EntryKind,
+    ) -> Self {
+        Self {
+            display_name: display_name.into(),
+            path: path.into(),
+            kind,
+        }
     }
 
-    pub fn is_otp_entry(&self) -> bool {
-        self.has_otp() && !self.has_secret()
+    #[cfg(test)]
+    pub(super) fn test_entry(display_name: &str, kind: EntryKind) -> Self {
+        Self::new(display_name, PathBuf::new(), kind)
+    }
+
+    pub fn is_file_entry(&self) -> bool {
+        self.kind == EntryKind::File
     }
 
     /// Icon representing the entry's primary kind in menu rows.
     pub fn icon(&self) -> NerdFont {
-        if self.is_file_entry() {
-            NerdFont::File
-        } else if self.is_otp_entry() {
-            NerdFont::Clock
-        } else {
-            NerdFont::Key
+        match self.kind {
+            EntryKind::File => NerdFont::File,
+            EntryKind::Otp => NerdFont::Clock,
+            EntryKind::Password => NerdFont::Key,
         }
     }
 
     /// Badge color matching [`Self::icon`].
     pub fn icon_color(&self) -> &'static str {
-        if self.is_file_entry() {
-            colors::LAVENDER
-        } else if self.is_otp_entry() {
-            colors::TEAL
-        } else {
-            colors::GREEN
+        match self.kind {
+            EntryKind::File => colors::LAVENDER,
+            EntryKind::Otp => colors::TEAL,
+            EntryKind::Password => colors::GREEN,
         }
     }
 
@@ -100,41 +114,41 @@ impl PassEntry {
     }
 
     pub fn kind_label(&self) -> &'static str {
-        match (self.secret_key.is_some(), self.otp_key.is_some()) {
-            (true, true) => "password + otp",
-            (true, false) => "password",
-            (false, true) => "otp",
-            (false, false) => "empty",
+        match self.kind {
+            EntryKind::Password => "password",
+            EntryKind::Otp => "otp",
+            EntryKind::File => "file",
         }
     }
 
     pub fn primary_action_label(&self) -> &'static str {
-        if self.is_file_entry() {
-            "Export file"
-        } else if self.secret_key.is_some() {
-            "Copy password"
-        } else {
-            "Copy OTP code"
+        match self.kind {
+            EntryKind::File => "Export file",
+            EntryKind::Password => "Copy password",
+            EntryKind::Otp => "Copy OTP code",
         }
     }
 
     pub fn has_secret(&self) -> bool {
-        self.secret_key.is_some()
+        matches!(self.kind, EntryKind::Password | EntryKind::File)
     }
 
     pub fn has_otp(&self) -> bool {
-        self.otp_key.is_some()
+        self.kind == EntryKind::Otp
     }
 
-    pub fn primary_key(&self) -> Result<&str> {
-        self.secret_key
-            .as_deref()
-            .or(self.otp_key.as_deref())
-            .ok_or_else(|| anyhow!("Entry '{}' has no secret or OTP data", self.display_name))
+    pub fn primary_key(&self) -> &str {
+        &self.display_name
     }
 
-    pub fn primary_file_path(&self) -> Option<&Path> {
-        self.secret_path.as_deref().or(self.otp_path.as_deref())
+    pub fn otp_key(&self) -> Result<&str> {
+        self.has_otp()
+            .then_some(self.display_name.as_str())
+            .ok_or_else(|| anyhow!("Entry '{}' has no OTP data", self.display_name))
+    }
+
+    pub fn primary_file_path(&self) -> &Path {
+        &self.path
     }
 
     pub fn preview(&self) -> FzfPreview {
@@ -167,10 +181,8 @@ impl PassEntry {
     }
 
     pub fn should_offer_export(&self) -> bool {
-        self.display_name.ends_with(".file")
-            || self
-                .primary_file_path()
-                .and_then(|path| fs::metadata(path).ok())
+        self.is_file_entry()
+            || fs::metadata(self.primary_file_path())
                 .map(|metadata| metadata.len() as usize > EXPORT_THRESHOLD_BYTES)
                 .unwrap_or(false)
     }
@@ -198,12 +210,6 @@ pub(super) fn location_color(path: &str) -> &'static str {
     });
 
     PALETTE[(hash % PALETTE.len() as u64) as usize]
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DeleteMode {
-    Secret,
-    Otp,
 }
 
 #[derive(Default, Clone)]
@@ -255,7 +261,7 @@ pub(super) struct EditActionItem {
 #[derive(Debug, Clone)]
 pub(super) enum BrowserItemKind {
     Folder(String),
-    Entry(String),
+    Entry { key: String, kind: EntryKind },
     Menu,
     Add,
     Back,

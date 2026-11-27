@@ -21,7 +21,9 @@ use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
-use super::utils::{ensure_core_dependencies, password_store_dir, run_pass_status};
+use super::dependencies::ensure_core_dependencies;
+use super::pass_cli::run_status;
+use super::store::password_store_dir;
 
 #[derive(Debug, PartialEq, Eq)]
 enum StoreState {
@@ -537,7 +539,7 @@ fn initialize_store(store_dir: &Path, key: &SecretKey) -> Result<()> {
             StoreState::Existing => return Err(existing_store_error(store_dir)),
             StoreState::New => {}
         }
-        run_pass_status(["init", &key.fingerprint])?;
+        run_status(["init", &key.fingerprint])?;
         if store_state(store_dir)? != StoreState::Configured(key.fingerprint.clone()) {
             bail!("`pass init` did not configure the selected recipient");
         }

@@ -9,8 +9,10 @@ use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder}
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 
+use super::super::dependencies::maybe_notify;
+use super::super::pass_cli::run_status;
+use super::super::prompts::prompt_text_value;
 use super::super::types::PassEntry;
-use super::super::utils::{maybe_notify, prompt_text_value, run_pass_status};
 
 #[derive(Clone)]
 enum Destination {
@@ -43,7 +45,7 @@ impl FzfSelectable for Destination {
 }
 
 pub(super) fn run(store: &Path, entry: &PassEntry) -> Result<Option<String>> {
-    let key = entry.primary_key()?;
+    let key = entry.primary_key();
     let (source, name) = key.rsplit_once('/').unwrap_or(("", key));
     let source = Path::new(source);
     let mut folder = source.to_path_buf();
@@ -173,10 +175,10 @@ fn create_folder(store: &Path, folder: &Path, name: &str) -> Result<()> {
 }
 
 fn move_to_folder(store: &Path, entry: &PassEntry, folder: &Path, name: &str) -> Result<String> {
-    let key = entry.primary_key()?;
+    let key = entry.primary_key();
     let source = Path::new(key).parent().context("Invalid entry path")?;
     let source_file = checked_folder(store, source)?.join(format!("{name}.gpg"));
-    if entry.primary_file_path() != Some(source_file.as_path())
+    if entry.primary_file_path() != source_file.as_path()
         || !source_file
             .symlink_metadata()
             .is_ok_and(|metadata| metadata.is_file())
@@ -201,7 +203,7 @@ fn move_to_folder(store: &Path, entry: &PassEntry, folder: &Path, name: &str) ->
         }
     }
 
-    run_pass_status(["mv", "--", key, target])?;
+    run_status(["mv", "--", key, target])?;
     Ok(target.to_owned())
 }
 
@@ -209,7 +211,7 @@ fn move_to_folder(store: &Path, entry: &PassEntry, folder: &Path, name: &str) ->
 mod tests {
     use super::*;
     use crate::menu_utils::{MockQueue, scripted_responses_remaining};
-    use crate::pass::utils::load_entries;
+    use crate::pass::store::load_entries;
 
     #[test]
     fn picker_can_create_a_folder_and_cancel_the_move() -> Result<()> {

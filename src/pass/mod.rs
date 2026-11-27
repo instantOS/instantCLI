@@ -2,13 +2,19 @@ use anyhow::Result;
 use clap::Subcommand;
 
 pub mod browser;
+mod clipboard;
+mod content;
+mod dependencies;
 pub mod menu;
+mod names;
 pub mod operations;
+mod pass_cli;
+mod prompts;
 mod setup;
 mod sort;
+mod store;
 pub mod totp;
 pub mod types;
-pub mod utils;
 
 #[cfg(test)]
 mod tests;
@@ -72,6 +78,7 @@ pub enum PassCommands {
         path: Option<String>,
     },
 }
+use dependencies::{ensure_core_dependencies, ensure_otp_dependency};
 use menu::{
     interactive_pass_menu, interactive_pass_menu_instantmenu, interactive_pass_menu_server,
     interactive_pass_tree_menu,
@@ -80,11 +87,10 @@ use operations::{
     copy_otp_flow, delete_entry_flow, export_entry_flow, generate_password_entry, insert_otp_entry,
     insert_password_entry,
 };
-use utils::ensure_otp_dependency;
-use utils::{ensure_core_dependencies, ensure_password_store_dir, load_entries};
+use store::{ensure_password_store_dir, load_entries, password_store_dir};
 
 pub fn pass_entry_names() -> Vec<String> {
-    let Ok(store_dir) = utils::password_store_dir() else {
+    let Ok(store_dir) = password_store_dir() else {
         return Vec::new();
     };
     let Ok(entries) = load_entries(&store_dir) else {

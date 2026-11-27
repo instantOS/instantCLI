@@ -10,8 +10,8 @@ use anyhow::Result;
 use crate::menu_utils::{MenuSort, compare_names};
 use crate::ui::nerd_font::NerdFont;
 
+use super::store::frecency_scores;
 use super::types::PassEntry;
-use super::utils::frecency_scores;
 
 /// How pass entries are ordered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,7 +120,7 @@ fn sort_by_modified(entries: &mut [PassEntry]) {
     let modified: HashMap<String, SystemTime> = entries
         .iter()
         .filter_map(|entry| {
-            let time = fs::metadata(entry.primary_file_path()?)
+            let time = fs::metadata(entry.primary_file_path())
                 .and_then(|metadata| metadata.modified())
                 .ok()?;
             Some((entry.display_name.clone(), time))
@@ -148,16 +148,11 @@ mod tests {
 
     use tempfile::tempdir;
 
+    use super::super::types::EntryKind;
     use super::*;
 
     fn entry(name: &str) -> PassEntry {
-        PassEntry {
-            display_name: name.to_string(),
-            secret_key: Some(name.to_string()),
-            otp_key: None,
-            secret_path: None,
-            otp_path: None,
-        }
+        PassEntry::test_entry(name, EntryKind::Password)
     }
 
     fn names(entries: &[PassEntry]) -> Vec<&str> {
@@ -195,10 +190,8 @@ mod tests {
         set_modified(&old_path, 100)?;
         set_modified(&new_path, 200)?;
 
-        let mut old = entry("old");
-        old.secret_path = Some(old_path);
-        let mut new = entry("new");
-        new.secret_path = Some(new_path);
+        let old = PassEntry::new("old", old_path, EntryKind::Password);
+        let new = PassEntry::new("new", new_path, EntryKind::Password);
 
         let mut entries = vec![old, entry("missing"), new];
         sort_entries(&mut entries, PassSort::Modified)?;

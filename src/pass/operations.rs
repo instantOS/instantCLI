@@ -8,8 +8,21 @@ use crate::menu_utils::{
     ConfirmResult, DialogOutcome, FilePickerBuilder, FilePickerScope, FzfWrapper,
 };
 
-use super::types::{DeleteMode, PassEntry};
-use super::utils::*;
+use super::clipboard::copy_secret_to_clipboard;
+use super::content::{first_secret_line, should_export_output, write_export_file};
+use super::dependencies::{ensure_clipboard_dependencies, ensure_otp_dependency, maybe_notify};
+use super::names::{
+    normalize_file_entry_name, normalize_otp_name, sanitize_entry_name, suggested_file_entry_name,
+    suggested_otp_entry_name,
+};
+use super::pass_cli::{run_status, run_status_with_input, run_stdout};
+use super::prompts::{
+    confirm_export_instead, maybe_confirm_overwrite, prompt_export_destination,
+    prompt_password_with_confirmation, prompt_text_value, resolve_entry_name,
+    resolve_entry_name_with_suggestion,
+};
+use super::store::{ensure_password_store_dir, load_entries, record_frecency};
+use super::types::{EntryKind, PassEntry};
 
 pub(super) fn insert_password_entry(name: Option<String>) -> Result<()> {
     insert_password_entry_with_prefix(name, None)
@@ -43,7 +56,7 @@ pub(super) fn generate_password_entry_with_prefix(
     maybe_confirm_overwrite(&entry_name)?;
 
     let len = length.to_string();
-    run_pass_status(["generate", "-f", &entry_name, &len])?;
+    run_status(["generate", "-f", &entry_name, &len])?;
 
     maybe_notify(
         "Pass",
@@ -100,7 +113,7 @@ pub(super) fn insert_otp_entry_from_clipboard_with_prefix(
 fn store_otp_entry(raw_name: &str, entry_name: &str, otp_uri: &str) -> Result<()> {
     // `pass otp insert` reads the URI from stdin; it does not accept it as an
     // argument (extra positional arguments are ignored, leaving the URI empty).
-    run_pass_status_with_input(["otp", "insert", "-f", entry_name], otp_uri)?;
+    run_status_with_input(["otp", "insert", "-f", entry_name], otp_uri)?;
 
     maybe_notify("Pass", &format!("Stored OTP entry for {raw_name}"));
     Ok(())
@@ -131,23 +144,19 @@ pub(super) fn insert_file_entry_with_prefix(prefix: Option<&str>) -> Result<()> 
 }
 
 pub(super) fn copy_primary_entry(entry: &PassEntry) -> Result<()> {
-    if entry.is_file_entry() {
-        export_entry(entry, None)
-    } else if entry.has_secret() {
-        copy_password_entry(entry)
-    } else {
-        copy_otp_entry(entry)
+    match entry.kind {
+        EntryKind::File => export_entry(entry, None),
+        EntryKind::Password => copy_password_entry(entry),
+        EntryKind::Otp => copy_otp_entry(entry),
     }
 }
 
 pub(super) fn copy_password_entry(entry: &PassEntry) -> Result<()> {
-    ensure_clipboard_dependencies()?;
-
-    let key = entry
-        .secret_key
-        .as_deref()
-        .ok_or_else(|| anyhow!("Entry '{}' has no password data", entry.display_name))?;
-    let output = run_pass_stdout(["show", key])?;
+    if !entry.has_secret() {
+        bail!("Entry '{}' has no password data", entry.display_name);
+    }
+    let key = entry.primary_key();
+    let output = run_stdout(["show", key])?;
 
     if should_export_output(entry, &output) && confirm_export_instead(&entry.display_name)? {
         let destination = prompt_export_destination(&entry.display_name, None)?;
@@ -163,6 +172,7 @@ pub(super) fn copy_password_entry(entry: &PassEntry) -> Result<()> {
         return Ok(());
     }
 
+    ensure_clipboard_dependencies()?;
     let secret = first_secret_line(&output).ok_or_else(|| {
         anyhow!(
             "Entry '{}' does not contain a password line",
@@ -179,15 +189,14 @@ pub(super) fn copy_password_entry(entry: &PassEntry) -> Result<()> {
 }
 
 pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
-    ensure_clipboard_dependencies()?;
-
-    let otp_key = resolve_otp_key(entry)?;
-    let code = generate_otp_code(entry, &otp_key)?;
+    let otp_key = entry.otp_key()?;
+    let code = generate_otp_code(entry, otp_key)?;
 
     if code.is_empty() {
         bail!("OTP output for '{}' was empty", entry.display_name);
     }
 
+    ensure_clipboard_dependencies()?;
     copy_secret_to_clipboard(code.as_bytes())?;
     maybe_notify(
         "Pass",
@@ -203,7 +212,7 @@ pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
 /// 6/7/8-digit tokens are delegated to `pass otp` to preserve existing
 /// behaviour. If the stored URI cannot be parsed, we fall back to `pass otp`.
 fn generate_otp_code(entry: &PassEntry, otp_key: &str) -> Result<String> {
-    let raw = run_pass_stdout(["show", otp_key])?;
+    let raw = run_stdout(["show", otp_key])?;
     let uri = first_secret_line(&raw);
 
     if let Some(uri) = uri.as_deref()
@@ -216,7 +225,7 @@ fn generate_otp_code(entry: &PassEntry, otp_key: &str) -> Result<String> {
     }
 
     ensure_otp_dependency()?;
-    let output = run_pass_stdout(otp_command_args(otp_key))?;
+    let output = run_stdout(otp_command_args(otp_key))?;
     Ok(String::from_utf8(output)
         .context("OTP output is not valid UTF-8")?
         .trim()
@@ -247,8 +256,8 @@ pub(super) fn export_entry_flow(name: Option<String>, path: Option<String>) -> R
 }
 
 pub(super) fn export_entry(entry: &PassEntry, path: Option<String>) -> Result<()> {
-    let key = entry.primary_key()?.to_string();
-    let output = run_pass_stdout(["show", &key])?;
+    let key = entry.primary_key();
+    let output = run_stdout(["show", key])?;
     let destination = prompt_export_destination(&entry.display_name, path)?;
     write_export_file(&destination, &output)?;
 
@@ -267,11 +276,14 @@ pub(super) fn delete_entry_flow(name: Option<String>) -> Result<()> {
     let store_dir = ensure_password_store_dir()?;
     let entries = load_entries(&store_dir)?;
     let entry = select_entry(name, &entries, false)?.ok_or_else(|| anyhow!("Delete cancelled"))?;
+    delete_entry(&entry)
+}
 
-    let mode = choose_delete_mode(&entry)?;
-    let confirm_message = match mode {
-        DeleteMode::Secret => format!("Delete password entry '{}'?", entry.display_name),
-        DeleteMode::Otp => format!("Delete OTP entry '{}'?", entry.display_name),
+pub(super) fn delete_entry(entry: &PassEntry) -> Result<()> {
+    let confirm_message = match entry.kind {
+        EntryKind::Password => format!("Delete password entry '{}'?", entry.display_name),
+        EntryKind::Otp => format!("Delete OTP entry '{}'?", entry.display_name),
+        EntryKind::File => format!("Delete file entry '{}'?", entry.display_name),
     };
 
     if !matches!(
@@ -284,38 +296,14 @@ pub(super) fn delete_entry_flow(name: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    match mode {
-        DeleteMode::Secret => {
-            let key = entry
-                .secret_key
-                .as_deref()
-                .ok_or_else(|| anyhow!("Entry '{}' has no password data", entry.display_name))?;
-            remove_pass_entry(key)?;
-        }
-        DeleteMode::Otp => {
-            let key = resolve_otp_key(&entry)?;
-            remove_pass_entry(&key)?;
-        }
-    }
+    remove_pass_entry(entry.primary_key())?;
 
     maybe_notify("Pass", &format!("Deleted '{}'", entry.display_name));
     Ok(())
 }
 
-fn choose_delete_mode(entry: &PassEntry) -> Result<DeleteMode> {
-    match (entry.has_secret(), entry.has_otp()) {
-        (true, false) => Ok(DeleteMode::Secret),
-        (false, true) => Ok(DeleteMode::Otp),
-        (true, true) => bail!(
-            "Entry '{}' unexpectedly contains both password and OTP data",
-            entry.display_name
-        ),
-        (false, false) => bail!("Entry '{}' has nothing to delete", entry.display_name),
-    }
-}
-
 pub(super) fn remove_pass_entry(key: &str) -> Result<()> {
-    run_pass_status(["rm", "-f", key])
+    run_status(["rm", "-f", key])
 }
 
 pub(super) fn select_entry(
@@ -370,13 +358,6 @@ pub(super) fn resolve_entry_by_name(
     entries
         .iter()
         .find(|entry| entry.display_name == exact && (!otp_required || entry.has_otp()))
-        .or_else(|| {
-            entries.iter().find(|entry| {
-                let matches_name = entry.secret_key.as_deref() == Some(exact)
-                    || entry.otp_key.as_deref() == Some(exact);
-                matches_name && (!otp_required || entry.has_otp())
-            })
-        })
         .cloned()
         .ok_or_else(|| anyhow!("No pass entry matched '{}'", exact))
 }
@@ -391,23 +372,33 @@ pub(super) fn rename_entry_interactive(entry: &PassEntry) -> Result<()> {
     )?
     .ok_or_else(|| anyhow!("Rename cancelled"))?;
 
-    let new_name = sanitize_entry_name(&new_name)?;
-    if new_name == entry.display_name {
-        return Ok(());
+    if let Some(target) = rename_entry(entry, &new_name)? {
+        maybe_notify(
+            "Pass",
+            &format!("Renamed '{}' to '{}'", entry.display_name, target),
+        );
     }
-
-    if let Some(secret_key) = &entry.secret_key {
-        move_pass_entry(secret_key, &new_name)?;
-    } else if let Some(otp_key) = &entry.otp_key {
-        let target = normalize_otp_name(&new_name);
-        move_pass_entry(otp_key, &target)?;
-    }
-
-    maybe_notify(
-        "Pass",
-        &format!("Renamed '{}' to '{}'", entry.display_name, new_name),
-    );
     Ok(())
+}
+
+pub(super) fn rename_target(entry: &PassEntry, new_name: &str) -> Result<String> {
+    let new_name = sanitize_entry_name(new_name)?;
+    Ok(match entry.kind {
+        EntryKind::Password => new_name,
+        EntryKind::Otp => normalize_otp_name(&new_name),
+        EntryKind::File => normalize_file_entry_name(&new_name),
+    })
+}
+
+pub(super) fn rename_entry(entry: &PassEntry, new_name: &str) -> Result<Option<String>> {
+    let target = rename_target(entry, new_name)?;
+    if target == entry.display_name {
+        return Ok(None);
+    }
+
+    maybe_confirm_overwrite(&target)?;
+    move_pass_entry(&entry.display_name, &target)?;
+    Ok(Some(target))
 }
 
 pub(super) fn upsert_otp_entry_interactive(entry: &PassEntry) -> Result<()> {
@@ -428,19 +419,20 @@ pub(super) fn upsert_otp_entry_interactive(entry: &PassEntry) -> Result<()> {
         bail!("OTP entries must start with `otpauth://`");
     }
 
-    let key = entry
-        .otp_key
-        .clone()
-        .unwrap_or_else(|| normalize_otp_name(&entry.display_name));
+    let key = if entry.has_otp() {
+        entry.display_name.clone()
+    } else {
+        normalize_otp_name(&entry.display_name)
+    };
 
-    run_pass_status_with_input(["otp", "insert", "-f", &key], &otp_uri)?;
+    run_status_with_input(["otp", "insert", "-f", &key], &otp_uri)?;
 
     maybe_notify("Pass", &format!("Updated OTP for {}", entry.display_name));
     Ok(())
 }
 
 pub(super) fn move_pass_entry(from: &str, to: &str) -> Result<()> {
-    run_pass_status(["mv", "-f", from, to])
+    run_status(["mv", "-f", from, to])
 }
 
 pub(super) fn open_store_lazygit(store_dir: &Path) -> Result<()> {
@@ -476,10 +468,10 @@ pub(super) fn pass_edit_was_unchanged(status: std::process::ExitStatus) -> bool 
 }
 
 pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
-    let key = entry
-        .secret_key
-        .as_deref()
-        .ok_or_else(|| anyhow!("Entry '{}' has no password data", entry.display_name))?;
+    if !entry.has_secret() {
+        bail!("Entry '{}' has no password data", entry.display_name);
+    }
+    let key = entry.primary_key();
 
     let status = Command::new("pass")
         .args(["edit", key])
