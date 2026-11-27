@@ -100,14 +100,16 @@ def respond():
         if 'Sort Notifications' in plain(header):
             records = text.split('\0')
             if count == 1:
-                # The chooser opens on the current order.
-                assert 'Newest first' in records[0] and 'current' in records[0], text
-                assert position == ['load:pos(1)'], args
-                print('submit\n2')  # Unread first
+                # Back leads the chooser; it opens on the current order.
+                assert 'Back' in records[0], records[0]
+                assert 'Newest first' in records[1] and 'current' in records[1], text
+                assert position == ['load:pos(2)'], args
+                print('submit\n3')  # Unread first
             else:
-                assert 'Unread first' in records[2] and 'current' in records[2], text
-                assert position == ['load:pos(3)'], args
-                print('submit\n3')  # By application
+                assert 'Back' in records[0], records[0]
+                assert 'Unread first' in records[3] and 'current' in records[3], text
+                assert position == ['load:pos(4)'], args
+                print('submit\n4')  # By application
         elif 'Back' in text:
             print('submit\n0')  # notification details: back
         else:

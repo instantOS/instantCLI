@@ -496,10 +496,10 @@ mod tests {
         let mut sort = NotifySort::default();
         // Rows: three fixed entries, then Spotify, Discord, Discord, Slack.
         // Spotify is focused when the sort key is pressed; Unread first is the
-        // third option.
+        // fourth row of the sort chooser, after Back.
         let _mock = MockQueue::new()
             .keybind_action("ctrl-s", vec![3])
-            .select_index(2)
+            .select_index(3)
             .select_index(5)
             .guard();
 
@@ -516,11 +516,11 @@ mod tests {
         let (_dir, db) = populated_db()?;
         let mut cursor = MenuCursor::new();
         let mut sort = NotifySort::default();
-        // By application groups Discord above Slack, so Slack moves from row 6
-        // to row 5.
+        // By application is the fifth row of the sort chooser, after Back.
+        // It groups Discord above Slack, so Slack moves from row 6 to row 5.
         let _mock = MockQueue::new()
             .keybind_action("ctrl-s", vec![6])
-            .select_index(3)
+            .select_index(4)
             .cancel_selection()
             .guard();
 
@@ -530,6 +530,26 @@ mod tests {
         assert_eq!(sort, NotifySort::Application);
         let (items, _) = build_main_items(&db, false, sort)?;
         assert_eq!(cursor.initial_index(&items), Some(5));
+        assert_eq!(scripted_responses_remaining(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn choosing_back_in_the_sort_chooser_keeps_the_order() -> Result<()> {
+        let (_dir, db) = populated_db()?;
+        let mut cursor = MenuCursor::new();
+        let mut sort = NotifySort::default();
+        // Back is the first row of the sort chooser.
+        let _mock = MockQueue::new()
+            .keybind_action("ctrl-s", vec![3])
+            .select_index(0)
+            .select_index(3)
+            .guard();
+
+        let action = run_main_menu(&db, false, &mut cursor, &mut sort)?;
+
+        assert!(matches!(action, MenuAction::OpenNotification { id: 4, .. }));
+        assert_eq!(sort, NotifySort::Newest);
         assert_eq!(scripted_responses_remaining(), 0);
         Ok(())
     }

@@ -584,10 +584,11 @@ mod tests {
         let mut cursor = MenuCursor::new();
         let mut sort = GameSort::default();
         // Rows: six actions, then Zeta (played) and Alpha. Zeta is focused
-        // when the sort key is pressed; Alphabetical is the third option.
+        // when the sort key is pressed; Alphabetical is the fourth row of the
+        // sort chooser, after Back.
         let _mock = MockQueue::new()
             .keybind_action("ctrl-s", vec![6])
-            .select_index(2)
+            .select_index(3)
             .select_index(6)
             .guard();
 
@@ -606,10 +607,11 @@ mod tests {
         record_launch("Zeta");
         let mut cursor = MenuCursor::new();
         let mut sort = GameSort::default();
-        // Installed puts Alpha first, so Zeta moves from row 6 to row 7.
+        // Installed is the third row of the sort chooser, after Back. It puts
+        // Alpha first, so Zeta moves from row 6 to row 7.
         let _mock = MockQueue::new()
             .keybind_action("ctrl-s", vec![6])
-            .select_index(1)
+            .select_index(2)
             .cancel_selection()
             .guard();
 

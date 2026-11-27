@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 
 use anyhow::Result;
 
-use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -60,18 +60,13 @@ pub fn sort_keybind() -> Result<MenuKeybind<SortRequested>> {
 
 /// Let the user choose the order of a menu's rows.
 ///
-/// Returns `None` when the chooser is dismissed, which keeps `current`.
+/// The chooser opens on `current`. Choosing Back, or dismissing the chooser,
+/// returns `None`, which keeps `current`.
 pub fn choose_sort<S: MenuSort>(current: S) -> Result<Option<S>> {
-    let options = S::ALL
+    let choices = choices(current);
+    let initial = choices
         .iter()
-        .map(|&sort| SortOption {
-            sort,
-            current: sort == current,
-        })
-        .collect::<Vec<_>>();
-    let initial = options
-        .iter()
-        .position(|option| option.current)
+        .position(|choice| matches!(choice, SortChoice::Order(option) if option.current))
         .unwrap_or_default();
     let selection = FzfWrapper::builder()
         .header(
@@ -82,13 +77,25 @@ pub fn choose_sort<S: MenuSort>(current: S) -> Result<Option<S>> {
         .prompt("Sort by")
         .responsive_layout()
         .initial_index(initial)
-        .items(options)
+        .items(choices)
         .padded()
         .select_one()?;
     Ok(match selection {
-        DialogOutcome::Submitted(option) => Some(option.sort),
-        DialogOutcome::Cancelled => None,
+        DialogOutcome::Submitted(SortChoice::Order(option)) => Some(option.sort),
+        DialogOutcome::Submitted(SortChoice::Back) | DialogOutcome::Cancelled => None,
     })
+}
+
+/// The chooser's rows: the way back out, then every order.
+fn choices<S: MenuSort>(current: S) -> Vec<SortChoice<S>> {
+    let mut choices = vec![SortChoice::Back];
+    choices.extend(S::ALL.iter().map(|&sort| {
+        SortChoice::Order(SortOption {
+            sort,
+            current: sort == current,
+        })
+    }));
+    choices
 }
 
 /// Compare two names letter by letter, ignoring case, without allocating.
@@ -102,6 +109,41 @@ pub fn compare_names(left: &str, right: &str) -> Ordering {
 
 fn ignore_case(text: &str) -> impl Iterator<Item = char> + '_ {
     text.chars().flat_map(char::to_lowercase)
+}
+
+/// One row of the sort chooser: the way back out, or an order to switch to.
+#[derive(Clone)]
+enum SortChoice<S> {
+    /// Leave the chooser without changing the order.
+    Back,
+    /// Switch to this order.
+    Order(SortOption<S>),
+}
+
+impl<S: MenuSort> FzfSelectable for SortChoice<S> {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            Self::Back => format!("{} Back", format_back_icon()),
+            Self::Order(option) => option.fzf_display_text(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            Self::Back => "__back__".to_string(),
+            Self::Order(option) => option.fzf_key(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            Self::Back => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Go Back")
+                .text("Keep the current order.")
+                .build(),
+            Self::Order(option) => option.fzf_preview(),
+        }
+    }
 }
 
 /// One selectable order in the sort chooser.
@@ -231,10 +273,12 @@ mod tests {
 
     #[test]
     fn chooser_returns_the_picked_order_and_nothing_when_dismissed() {
+        // Rows: Back, then the three orders.
         let _guard = MockQueue::new()
+            .select_index(1)
             .select_index(0)
             .cancel_selection()
-            .select_index(2)
+            .select_index(3)
             .guard();
 
         assert_eq!(
@@ -242,11 +286,38 @@ mod tests {
             Some(TestSort::First)
         );
         assert_eq!(choose_sort(TestSort::Second).unwrap(), None);
+        assert_eq!(choose_sort(TestSort::Second).unwrap(), None);
         assert_eq!(
             choose_sort(TestSort::Second).unwrap(),
             Some(TestSort::Third)
         );
         assert_eq!(scripted_responses_remaining(), 0);
+    }
+
+    #[test]
+    fn chooser_offers_back_before_every_order() {
+        let rows = choices(TestSort::Second);
+
+        assert_eq!(rows.len(), 4);
+        assert!(matches!(rows[0], SortChoice::Back));
+        assert!(rows[0].fzf_display_text().contains("Back"));
+        assert_eq!(rows[0].fzf_key(), "__back__");
+        let FzfPreview::Text(preview) = rows[0].fzf_preview() else {
+            panic!("the back row should have a text preview");
+        };
+        assert!(preview.contains("Keep the current order."));
+        assert!(matches!(
+            &rows[1],
+            SortChoice::Order(option) if option.sort == TestSort::First && !option.current
+        ));
+        assert!(matches!(
+            &rows[2],
+            SortChoice::Order(option) if option.sort == TestSort::Second && option.current
+        ));
+        assert!(matches!(
+            &rows[3],
+            SortChoice::Order(option) if option.sort == TestSort::Third && !option.current
+        ));
     }
 
     #[test]
