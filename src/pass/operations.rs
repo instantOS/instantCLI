@@ -423,7 +423,7 @@ pub(super) fn move_pass_entry(from: &str, to: &str) -> Result<()> {
 pub(super) fn open_store_lazygit(store_dir: &Path) -> Result<()> {
     if !store_dir.join(".git").exists() {
         FzfWrapper::message(
-            "The password store is not a Git repository.\n\nInitialize it with `pass git init` to use LazyGit.",
+            "Run `ins pass setup` to create a Git repository for your password store and use LazyGit.",
         )?;
         return Ok(());
     }

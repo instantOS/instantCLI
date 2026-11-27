@@ -16,7 +16,7 @@ use anyhow::{Context, Result, bail};
 use walkdir::WalkDir;
 
 use crate::common::commands::command_exists;
-use crate::menu_utils::{DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder};
+use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfSelectable, FzfWrapper, HeaderBuilder};
 use crate::ui::catppuccin::{colors, format_icon_colored, format_with_color};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -65,6 +65,9 @@ fn run_setup_inner() -> Result<bool> {
     let store_dir = password_store_dir()?;
     match store_state(&store_dir)? {
         StoreState::Configured(recipient) => {
+            if store_dir.is_dir() {
+                offer_git_setup(&store_dir)?;
+            }
             message(
                 "INS Pass Is Already Set Up",
                 &format!("Store: {}\nRecipient: {recipient}", store_dir.display()),
@@ -528,11 +531,7 @@ fn initialize_store(store_dir: &Path, key: &SecretKey) -> Result<()> {
             .mode(0o700)
             .create(store_dir)
             .with_context(|| format!("Failed to create {}", store_dir.display()))?;
-        // Serialize the final check and initialization across INS setup processes.
-        let store = File::open(store_dir).context("Failed to open the password store")?;
-        store
-            .lock()
-            .context("Failed to lock the password store for setup")?;
+        let _store = lock_store(store_dir)?;
         match store_state(store_dir)? {
             StoreState::Configured(_) => bail!("The password store was configured during setup"),
             StoreState::Existing => return Err(existing_store_error(store_dir)),
@@ -544,6 +543,7 @@ fn initialize_store(store_dir: &Path, key: &SecretKey) -> Result<()> {
         }
     }
 
+    offer_git_setup(store_dir)?;
     message(
         "INS Pass Is Ready",
         &format!(
@@ -557,6 +557,82 @@ fn initialize_store(store_dir: &Path, key: &SecretKey) -> Result<()> {
             key.fingerprint
         ),
     )
+}
+
+// Serialize final checks and initialization across INS setup processes.
+fn lock_store(store_dir: &Path) -> Result<File> {
+    let store = File::open(store_dir).context("Failed to open the password store")?;
+    store
+        .lock()
+        .context("Failed to lock the password store for setup")?;
+    Ok(store)
+}
+
+fn offer_git_setup(store_dir: &Path) -> Result<()> {
+    let git_dir = store_dir.join(".git");
+    if git_dir.exists()
+        || FzfWrapper::builder()
+            .confirm(
+                "Create a local Git repository for this password store?\n\n\
+                 Git will track the current store contents and enable Ctrl+G to open LazyGit.",
+            )
+            .title("Set Up Git for INS Pass")
+            .yes_text("Create Git repository")
+            .no_text("Skip Git setup")
+            .confirm_dialog()?
+            != ConfirmResult::Yes
+    {
+        return Ok(());
+    }
+
+    let _store = lock_store(store_dir)?;
+    if git_dir.exists() {
+        return Ok(());
+    }
+
+    // pass can leave an empty repository if its initial commits fail.
+    for identity in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
+        let output = Command::new("git")
+            .current_dir(store_dir)
+            .args(["var", identity])
+            .output()
+            .context("Failed to run Git for password-store setup")?;
+        if !output.status.success() {
+            bail!(
+                "Could not determine a Git commit identity. Configure Git and rerun `ins pass setup`.\n{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+    }
+
+    // pass stages the store path from inside the new repository.
+    let absolute_store = store_dir
+        .canonicalize()
+        .context("Failed to resolve the password store path")?;
+    let output = Command::new("pass")
+        .args(["git", "init"])
+        .env("PASSWORD_STORE_DIR", absolute_store)
+        .output()
+        .context("Failed to run `pass git init`")?;
+    if !output.status.success() {
+        bail!(
+            "`pass git init` exited with {}.\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let initial_commit = Command::new("git")
+        .current_dir(store_dir)
+        .args(["rev-parse", "--verify", "HEAD"])
+        .output()
+        .context("Failed to check the password-store Git repository")?;
+    if !git_dir.exists() || !initial_commit.status.success() {
+        bail!(
+            "`pass git init` did not create an initial commit.\n{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
 }
 
 fn gpg_command() -> Result<Command> {

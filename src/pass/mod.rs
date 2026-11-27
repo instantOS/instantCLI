@@ -15,7 +15,7 @@ mod tests;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PassCommands {
-    /// Create or choose a GPG key and initialize the password store
+    /// Set up the password store and optionally initialize Git
     Setup,
     /// Interactive pass menu (browse, copy, edit passwords)
     Menu {
