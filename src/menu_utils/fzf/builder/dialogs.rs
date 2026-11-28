@@ -1,5 +1,7 @@
-use anyhow::Result;
+use std::io::IsTerminal;
 use std::process::{Command, Stdio};
+
+use anyhow::Result;
 
 use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
@@ -98,7 +100,11 @@ impl PasswordBuilder {
         let header_str = self.shared.header.as_ref().map(|h| h.to_fzf_string());
 
         loop {
-            let pass1 = run_password_prompt(prompt.as_deref(), header_str.as_deref())?;
+            let pass1 = run_password_prompt(
+                prompt.as_deref(),
+                header_str.as_deref(),
+                self.unlimited_length,
+            )?;
 
             if !confirm {
                 return Ok(pass1);
@@ -109,7 +115,7 @@ impl PasswordBuilder {
                 _ => return Ok(pass1),
             };
 
-            let pass2 = run_password_prompt(Some("Confirm password"), None)?;
+            let pass2 = run_password_prompt(Some("Confirm password"), None, self.unlimited_length)?;
 
             let pass2_str = match pass2 {
                 DialogOutcome::Submitted(s) => s,
@@ -128,9 +134,13 @@ impl PasswordBuilder {
 fn run_password_prompt(
     prompt: Option<&str>,
     header: Option<&str>,
+    unlimited_length: bool,
 ) -> Result<DialogOutcome<String>> {
     let mut cmd = Command::new("gum");
     cmd.arg("input").arg("--password");
+    if unlimited_length {
+        cmd.args(["--char-limit", "0"]);
+    }
 
     if let Some(p) = prompt {
         cmd.arg("--prompt").arg(format!("{p} "));
@@ -200,7 +210,10 @@ fn fallback_password_input(
         // No TTY (piped scripts, tests): fall back to plain stdin read where
         // echo suppression is irrelevant. Strip only the line ending so edge
         // spaces in secrets survive.
-        Err(dialoguer::Error::IO(error)) if error.kind() == std::io::ErrorKind::NotConnected => {
+        Err(dialoguer::Error::IO(error))
+            if error.kind() == std::io::ErrorKind::NotConnected
+                && !std::io::stdin().is_terminal() =>
+        {
             use std::io::Write as _;
 
             // `label` may already end in ':' (e.g. default "Enter password:").

@@ -6,7 +6,8 @@ use super::names::{
     apply_prefix_to_entry_name, entry_name_prefill, sanitize_entry_name, suggested_export_filename,
 };
 use super::store::ensure_password_store_dir;
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu::protocol::InputOptions;
+use crate::menu_utils::{ConfirmResult, DialogOutcome, FzfWrapper};
 
 pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> {
     let password = match FzfWrapper::builder()
@@ -24,6 +25,24 @@ pub(super) fn prompt_password_with_confirmation(prompt: &str) -> Result<String> 
     }
 
     Ok(password)
+}
+
+pub(super) fn prompt_otp_uri(prompt: &str) -> Result<Option<String>> {
+    let options = InputOptions::password(prompt).with_placeholder("Paste an otpauth:// URI");
+    let DialogOutcome::Submitted(value) = FzfWrapper::password_builder(&options)
+        .without_length_limit()
+        .password_dialog()?
+    else {
+        return Ok(None);
+    };
+    let uri = value.trim();
+    if uri.is_empty() {
+        return Ok(None);
+    }
+    if !uri.starts_with("otpauth://") {
+        bail!("OTP entries must start with `otpauth://`");
+    }
+    Ok(Some(uri.to_owned()))
 }
 
 pub(super) fn prompt_text_value(

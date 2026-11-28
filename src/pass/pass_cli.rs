@@ -44,6 +44,10 @@ fn run_output_with_input<const N: usize>(args: [&str; N], input: Option<&[u8]>) 
     };
 
     if !output.status.success() {
+        // pass-otp can include the supplied URI and seed in its error output.
+        if input.is_some() {
+            bail!("`pass {display_cmd}` failed with status {}", output.status);
+        }
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
             bail!("`pass {display_cmd}` failed");

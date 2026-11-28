@@ -66,7 +66,9 @@ pub(super) fn run(entry: &PassEntry) -> Result<Option<String>> {
                         }
                     }
                     EditAction::EditPassword => {
-                        edit_password_entry(&current_entry)?;
+                        if let Err(error) = edit_password_entry(&current_entry) {
+                            FzfWrapper::message(&format!("{error:#}"))?;
+                        }
                     }
                     EditAction::GeneratePassword => {
                         generate_password_entry(
@@ -171,7 +173,7 @@ fn build_items(entry: &PassEntry) -> Vec<EditActionItem> {
             ),
             preview: PreviewBuilder::new()
                 .header(NerdFont::Key, "Edit Password")
-                .text("Open the entry in `pass edit` using `nvim --clean`.")
+                .text("Open the entry in Neovim with swap files disabled.")
                 .build(),
             action: EditAction::EditPassword,
         });

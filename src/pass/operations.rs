@@ -17,7 +17,7 @@ use super::names::{
 };
 use super::pass_cli::{run_status, run_status_with_input, run_stdout};
 use super::prompts::{
-    confirm_export_instead, maybe_confirm_overwrite, prompt_export_destination,
+    confirm_export_instead, maybe_confirm_overwrite, prompt_export_destination, prompt_otp_uri,
     prompt_password_with_confirmation, prompt_text_value, resolve_entry_name,
     resolve_entry_name_with_suggestion,
 };
@@ -77,18 +77,8 @@ pub(super) fn insert_otp_entry_with_prefix(
     let entry_name = normalize_otp_name(&raw_name);
     maybe_confirm_overwrite(&entry_name)?;
 
-    let otp_uri = prompt_text_value(
-        "OTP URI",
-        Some("Paste an otpauth:// URI"),
-        false,
-        Some("otpauth://totp/example?secret=..."),
-        None,
-    )?
-    .ok_or_else(|| anyhow!("OTP creation cancelled"))?;
-
-    if !otp_uri.starts_with("otpauth://") {
-        bail!("OTP entries must start with `otpauth://`");
-    }
+    let otp_uri =
+        prompt_otp_uri("New OTP URI")?.ok_or_else(|| anyhow!("OTP creation cancelled"))?;
 
     store_otp_entry(&raw_name, &entry_name, &otp_uri)
 }
@@ -402,22 +392,12 @@ pub(super) fn rename_entry(entry: &PassEntry, new_name: &str) -> Result<Option<S
 }
 
 pub(super) fn upsert_otp_entry_interactive(entry: &PassEntry) -> Result<()> {
-    let otp_uri = prompt_text_value(
-        "OTP URI",
-        Some(if entry.has_otp() {
-            "Edit OTP URI"
-        } else {
-            "Create OTP URI"
-        }),
-        false,
-        Some("otpauth://totp/example?secret=..."),
-        None,
-    )?
+    let otp_uri = prompt_otp_uri(if entry.has_otp() {
+        "Edit OTP URI"
+    } else {
+        "Create OTP URI"
+    })?
     .ok_or_else(|| anyhow!("OTP edit cancelled"))?;
-
-    if !otp_uri.starts_with("otpauth://") {
-        bail!("OTP entries must start with `otpauth://`");
-    }
 
     let key = if entry.has_otp() {
         entry.display_name.clone()
@@ -460,11 +440,12 @@ pub(super) fn open_store_lazygit(store_dir: &Path) -> Result<()> {
 }
 
 pub(super) fn pass_edit_editor() -> &'static str {
-    "nvim --clean"
+    "nvim --clean -n"
 }
 
-pub(super) fn pass_edit_was_unchanged(status: std::process::ExitStatus) -> bool {
-    status.code() == Some(1)
+pub(super) fn pass_edit_was_unchanged(status: std::process::ExitStatus, stderr: &str) -> bool {
+    // pass also exits with 1 for decryption and other failures.
+    status.code() == Some(1) && stderr.trim() == "Password unchanged."
 }
 
 pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
@@ -473,16 +454,22 @@ pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
     }
     let key = entry.primary_key();
 
-    let status = Command::new("pass")
+    let output = Command::new("pass")
         .args(["edit", key])
         .env("EDITOR", pass_edit_editor())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
+        .stderr(Stdio::piped())
+        .output()
         .with_context(|| format!("Failed to launch `pass edit` for '{key}'"))?;
+    let status = output.status;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let diagnostic = stderr.trim();
 
     if status.success() {
+        if !diagnostic.is_empty() {
+            eprintln!("{diagnostic}");
+        }
         maybe_notify(
             "Pass",
             &format!("Updated password for {}", entry.display_name),
@@ -490,14 +477,14 @@ pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
         return Ok(());
     }
 
-    if pass_edit_was_unchanged(status) {
+    if pass_edit_was_unchanged(status, diagnostic) {
         return Ok(());
     }
 
-    if !status.success() {
+    if diagnostic.is_empty() {
         bail!("`pass edit` failed for '{key}' with status {status}");
     }
-    Ok(())
+    bail!("`pass edit` failed for '{key}': {diagnostic}");
 }
 
 pub(super) fn insert_password(key: &str, password: &str) -> Result<()> {

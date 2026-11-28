@@ -1,5 +1,5 @@
 use super::browser::{build_browser_menu_items, build_quick_access_items};
-use super::content::first_secret_line;
+use super::content::{first_secret_line, write_export_file};
 use super::names::{
     entry_name_prefill, normalize_file_entry_name, normalize_otp_name, sanitize_entry_name,
     suggested_export_filename, suggested_file_entry_name, suggested_otp_entry_name,
@@ -9,6 +9,7 @@ use super::operations::{
     resolve_entry_by_name,
 };
 use super::pass_cli::run_status_with_input;
+use super::prompts::prompt_otp_uri;
 use super::store::load_entries;
 use super::types::{BrowserItemKind, BrowserMenuItem, EntryKind, PassEntry, location_color};
 use super::{PassCommands, auto_setup_applies};
@@ -65,7 +66,7 @@ fn suggests_otp_entry_names_from_the_issuer() {
 
 #[cfg(unix)]
 #[test]
-fn pass_input_goes_to_stdin_instead_of_arguments() {
+fn pass_input_stays_out_of_arguments_and_errors() {
     use std::env;
     use std::ffi::OsString;
     use std::os::unix::fs::PermissionsExt;
@@ -88,7 +89,7 @@ fn pass_input_goes_to_stdin_instead_of_arguments() {
     let args_path = temp.path().join("args");
     let stdin_path = temp.path().join("stdin");
     let script = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ncat > '{}'\n",
+        "#!/bin/sh\nif [ \"$1\" = reject ]; then cat >&2; exit 1; fi\nprintf '%s\\n' \"$@\" > '{}'\ncat > '{}'\n",
         args_path.display(),
         stdin_path.display()
     );
@@ -113,6 +114,62 @@ fn pass_input_goes_to_stdin_instead_of_arguments() {
         "otp\ninsert\n-f\ndemo.otp\n"
     );
     assert_eq!(fs::read_to_string(&stdin_path).unwrap(), format!("{uri}\n"));
+
+    let error = run_status_with_input(["reject"], uri).unwrap_err();
+    assert!(!error.to_string().contains(uri));
+}
+
+#[test]
+fn manual_otp_prompt_uses_masked_input() -> anyhow::Result<()> {
+    use crate::menu_utils::MockQueue;
+
+    let uri = "otpauth://totp/test?secret=JBSWY3DPEHPK3PXP";
+    let _mock = MockQueue::new()
+        .password(format!("  {uri}  "))
+        .password_cancelled()
+        .guard();
+    assert_eq!(prompt_otp_uri("New OTP URI")?.as_deref(), Some(uri));
+    assert_eq!(prompt_otp_uri("Edit OTP URI")?, None);
+    Ok(())
+}
+
+#[test]
+fn plaintext_exports_are_private_on_create_and_overwrite() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    use crate::menu_utils::MockQueue;
+
+    let directory = tempfile::tempdir()?;
+    let destination = directory.path().join("exports/password");
+    write_export_file(&destination, b"first")?;
+    assert_eq!(
+        fs::metadata(&destination)?.permissions().mode() & 0o777,
+        0o600
+    );
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o644))?;
+
+    let _mock = MockQueue::new().confirm_yes().guard();
+    write_export_file(&destination, b"second")?;
+    assert_eq!(
+        fs::metadata(&destination)?.permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(fs::read(&destination)?, b"second");
+    Ok(())
+}
+
+#[test]
+fn plaintext_export_rejects_a_symlink_destination() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let target = directory.path().join("existing");
+    let destination = directory.path().join("export");
+    fs::write(&target, b"original")?;
+    std::os::unix::fs::symlink(&target, &destination)?;
+
+    let _mock = crate::menu_utils::MockQueue::new().confirm_yes().guard();
+    assert!(write_export_file(&destination, b"replacement").is_err());
+    assert_eq!(fs::read(&target)?, b"original");
+    Ok(())
 }
 
 #[test]
@@ -394,22 +451,27 @@ fn otp_command_uses_plain_pass_otp_invocation() {
 }
 
 #[test]
-fn password_edit_uses_clean_nvim() {
-    assert_eq!(pass_edit_editor(), "nvim --clean");
+fn password_edit_uses_clean_nvim_without_swap() {
+    assert_eq!(pass_edit_editor(), "nvim --clean -n");
 }
 
 #[test]
 fn unchanged_pass_edit_exit_is_treated_as_noop() {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        assert!(pass_edit_was_unchanged(std::process::ExitStatus::from_raw(
-            1 << 8
-        )));
-        assert!(!pass_edit_was_unchanged(
-            std::process::ExitStatus::from_raw(0)
-        ));
-    }
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    let status = ExitStatus::from_raw(1 << 8);
+    assert!(pass_edit_was_unchanged(status, "Password unchanged.\n"));
+    assert!(!pass_edit_was_unchanged(status, ""));
+    assert!(!pass_edit_was_unchanged(status, "gpg: decryption failed\n"));
+    assert!(!pass_edit_was_unchanged(
+        status,
+        "nvim: command not found\nPassword unchanged.\n"
+    ));
+    assert!(!pass_edit_was_unchanged(
+        ExitStatus::from_raw(2 << 8),
+        "Password unchanged.\n"
+    ));
 }
 
 #[test]

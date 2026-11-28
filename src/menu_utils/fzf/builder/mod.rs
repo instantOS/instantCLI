@@ -140,6 +140,7 @@ pub struct InputBuilder {
 pub struct PasswordBuilder {
     pub(crate) shared: SharedConfig,
     pub(crate) confirm: bool,
+    pub(crate) unlimited_length: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -351,6 +352,7 @@ impl FzfBuilder {
         PasswordBuilder {
             shared,
             confirm: false,
+            unlimited_length: false,
         }
     }
 
@@ -474,6 +476,11 @@ impl InputBuilder {
 // ---------------------------------------------------------------------------
 
 impl PasswordBuilder {
+    pub(crate) fn without_length_limit(mut self) -> Self {
+        self.unlimited_length = true;
+        self
+    }
+
     pub fn with_confirmation(mut self) -> Self {
         self.confirm = true;
         self
