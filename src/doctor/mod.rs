@@ -17,6 +17,8 @@ pub enum DoctorCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::check_name_completion))]
         name: String,
     },
+    /// Open the interactive diagnostics menu
+    Menu,
     /// Apply fix for a specific health check
     Fix {
         /// Name of the check to fix
@@ -28,9 +30,6 @@ pub enum DoctorCommands {
         /// Fix all failing checks
         #[arg(long, conflicts_with = "name")]
         all: bool,
-        /// Interactive mode: choose which fixes to apply
-        #[arg(long, conflicts_with = "name", conflicts_with = "all")]
-        choose: bool,
         /// Internal: Comma-separated list of check IDs to fix (used for batch mode after escalation)
         ///
         /// Note: when restarted with sudo, the original `NAME` argument may still be present;
@@ -397,9 +396,10 @@ fn print_check_list_text(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
     println!();
     let bin = env!("CARGO_BIN_NAME");
     println!("Usage:");
-    println!("  {bin} doctor run <id>    Run a specific check");
-    println!("  {bin} doctor fix <id>    Apply fix for a specific check");
-    println!("  {bin} doctor             Run all checks");
+    println!("  {bin} doctor menu       Open the interactive diagnostics menu");
+    println!("  {bin} doctor run <id>   Run a specific check");
+    println!("  {bin} doctor fix <id>   Apply fix for a specific check");
+    println!("  {bin} doctor            Run all checks and print the results");
 }
 
 pub fn print_results_table(results: &[CheckResult]) {

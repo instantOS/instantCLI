@@ -563,11 +563,11 @@ pub async fn fix_all_checks(max_concurrency: usize) -> Result<()> {
     execute_fix_plan(plan, is_root).await
 }
 
-/// Interactive fix mode: show menu of fixable issues and apply selected fixes.
+/// Interactive doctor menu: show detected issues, apply fixes, and refresh.
 ///
 /// The menu stays alive across fixes: after each run the checks are executed
 /// again, the outcome is shown in a dialog, and a refreshed menu is displayed.
-pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
+pub async fn run_doctor_menu(max_concurrency: usize) -> Result<()> {
     use super::ui::run_success_menu;
 
     let mut results = run_all_checks(REGISTRY.all_checks(), max_concurrency).await;

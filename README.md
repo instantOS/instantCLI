@@ -261,7 +261,8 @@ ins video --help
 | Command | What it does |
 | --- | --- |
 | `ins dot` | Manage and apply dotfile repositories |
-| `ins doctor` | Check for system problems and offer fixes |
+| `ins doctor` | Check for system problems and print a diagnostic report |
+| `ins doctor menu` | Open the interactive diagnostics and fix menu |
 | `ins settings` | Browse desktop and system settings |
 | `ins game` | Back up and sync game saves |
 | `ins pass` | Pick passwords and generate one-time codes |

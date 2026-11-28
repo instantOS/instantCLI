@@ -223,7 +223,7 @@ impl Setting for AboutSystem {
     }
 }
 
-// System Doctor (runs ins doctor fix --choose for interactive diagnostics)
+// System Doctor (runs ins doctor menu for interactive diagnostics)
 
 pub struct SystemDoctor;
 
@@ -249,11 +249,11 @@ impl Setting for SystemDoctor {
             "Running system diagnostics...",
         );
 
-        // Simply call the new doctor fix --choose command
-        // It handles everything: diagnosis, interactive menu, and fixes
-        cmd!(env!("CARGO_BIN_NAME"), "doctor", "fix", "--choose")
+        // The doctor menu owns diagnosis, interactive selection, fixes, and
+        // refreshing the results after each fix.
+        cmd!(env!("CARGO_BIN_NAME"), "doctor", "menu")
             .run()
-            .context("running interactive doctor fix")?;
+            .context("running interactive doctor menu")?;
 
         ctx.notify("System Diagnostics", "Diagnostic session completed.");
         Ok(())
