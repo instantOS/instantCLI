@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -443,9 +444,36 @@ pub(super) fn pass_edit_editor() -> &'static str {
     "nvim --clean -n"
 }
 
+const PASS_EDIT_UNCHANGED: &str = "Password unchanged.\n";
+
 pub(super) fn pass_edit_was_unchanged(status: std::process::ExitStatus, stderr: &str) -> bool {
     // pass also exits with 1 for decryption and other failures.
-    status.code() == Some(1) && stderr.trim() == "Password unchanged."
+    status.code() == Some(1) && stderr.trim() == PASS_EDIT_UNCHANGED.trim_end()
+}
+
+pub(super) fn read_pass_edit_stderr(
+    mut stderr: impl Read,
+    mut terminal: impl Write,
+) -> io::Result<Vec<u8>> {
+    let mut output = Vec::new();
+    let mut forwarded = 0;
+    let mut buffer = [0; 4096];
+
+    loop {
+        let count = match stderr.read(&mut buffer) {
+            Ok(0) => return Ok(output),
+            Ok(count) => count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        output.extend_from_slice(&buffer[..count]);
+
+        // Keep pass's interactive retry prompt visible even without a newline.
+        if !PASS_EDIT_UNCHANGED.as_bytes().starts_with(&output) {
+            let _ = terminal.write_all(&output[forwarded..]);
+            forwarded = output.len();
+        }
+    }
 }
 
 pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
@@ -454,22 +482,25 @@ pub(super) fn edit_password_entry(entry: &PassEntry) -> Result<()> {
     }
     let key = entry.primary_key();
 
-    let output = Command::new("pass")
+    let mut child = Command::new("pass")
         .args(["edit", key])
         .env("EDITOR", pass_edit_editor())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .with_context(|| format!("Failed to launch `pass edit` for '{key}'"))?;
-    let status = output.status;
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = child
+        .stderr
+        .take()
+        .context("Failed to capture `pass edit` stderr")?;
+    let output = read_pass_edit_stderr(stderr, io::stderr());
+    let status = child.wait().context("Failed to wait for `pass edit`")?;
+    let output = output.context("Failed to read `pass edit` diagnostics")?;
+    let stderr = String::from_utf8_lossy(&output);
     let diagnostic = stderr.trim();
 
     if status.success() {
-        if !diagnostic.is_empty() {
-            eprintln!("{diagnostic}");
-        }
         maybe_notify(
             "Pass",
             &format!("Updated password for {}", entry.display_name),
@@ -505,7 +536,6 @@ fn insert_entry_bytes(key: &str, data: &[u8], append_newline: bool) -> Result<()
         .with_context(|| format!("Failed to start `pass insert` for '{key}'"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        use std::io::Write;
         stdin
             .write_all(data)
             .context("Failed to write entry data to `pass insert`")?;

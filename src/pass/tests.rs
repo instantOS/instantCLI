@@ -5,8 +5,8 @@ use super::names::{
     suggested_export_filename, suggested_file_entry_name, suggested_otp_entry_name,
 };
 use super::operations::{
-    otp_command_args, pass_edit_editor, pass_edit_was_unchanged, rename_entry, rename_target,
-    resolve_entry_by_name,
+    otp_command_args, pass_edit_editor, pass_edit_was_unchanged, read_pass_edit_stderr,
+    rename_entry, rename_target, resolve_entry_by_name,
 };
 use super::pass_cli::run_status_with_input;
 use super::prompts::prompt_otp_uri;
@@ -472,6 +472,22 @@ fn unchanged_pass_edit_exit_is_treated_as_noop() {
         ExitStatus::from_raw(2 << 8),
         "Password unchanged.\n"
     ));
+}
+
+#[test]
+fn pass_edit_shows_retry_prompt_and_suppresses_unchanged_message() -> anyhow::Result<()> {
+    let mut terminal = Vec::new();
+    let unchanged = b"Password unchanged.\n";
+    assert_eq!(
+        read_pass_edit_stderr(&unchanged[..], &mut terminal)?,
+        unchanged
+    );
+    assert!(terminal.is_empty());
+
+    let prompt = b"GPG encryption failed. Would you like to try again? [y/N] ";
+    assert_eq!(read_pass_edit_stderr(&prompt[..], &mut terminal)?, prompt);
+    assert_eq!(terminal, prompt);
+    Ok(())
 }
 
 #[test]
