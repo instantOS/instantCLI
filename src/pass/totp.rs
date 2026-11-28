@@ -47,7 +47,9 @@ impl OtpAuth {
         let mut secret: Option<Vec<u8>> = None;
         let mut digits: u32 = 6;
         let mut period: u64 = 30;
-        let mut steam = false;
+        let mut steam = label_issuer
+            .as_deref()
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("steam"));
 
         for pair in query.split('&') {
             if pair.is_empty() {
@@ -60,7 +62,10 @@ impl OtpAuth {
                 "digits" => {
                     digits = value
                         .parse()
-                        .map_err(|_| anyhow!("Invalid digits value in otpauth URI: {value}"))?
+                        .map_err(|_| anyhow!("Invalid digits value in otpauth URI: {value}"))?;
+                    if !(1..=9).contains(&digits) {
+                        bail!("Unsupported digits value in otpauth URI: {digits}");
+                    }
                 }
                 "period" => {
                     period = value
@@ -159,21 +164,54 @@ fn steam_encode(mut full: u32) -> String {
     code
 }
 
+/// Validate an `otpauth://` URI before it is stored.
+///
+/// TOTP entries are parsed fully so invalid secrets and parameters are rejected
+/// before they reach `pass otp`. HOTP entries are left to `pass-otp`, which
+/// supports them but is not implemented locally.
+pub(super) fn validate_otp_uri(uri: &str) -> Result<()> {
+    let uri = uri.trim();
+    if uri.starts_with("otpauth://totp/") {
+        OtpAuth::parse(uri).map(|_| ())
+    } else if uri.starts_with("otpauth://hotp/") {
+        Ok(())
+    } else {
+        bail!("OTP entries must start with `otpauth://totp/` or `otpauth://hotp/`")
+    }
+}
+
 fn hmac_sha1(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut mac = Hmac::<Sha1>::new_from_slice(key).expect("HMAC accepts keys of any size");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }
 
-/// Decode RFC 4648 base32 (no padding required, case-insensitive).
+/// Decode RFC 4648 base32 (case-insensitive, padding optional but validated).
+///
+/// Spaces and hyphens are ignored so human-formatted secrets still work. A
+/// secret must still be a structurally valid base32 string: 6 characters, for
+/// example, cannot encode a whole number of bytes and is rejected by
+/// `oathtool`.
 fn base32_decode(input: &str) -> Result<Vec<u8>> {
     let mut buffer: u32 = 0;
     let mut bits: u32 = 0;
+    let mut data_chars = 0usize;
+    let mut padding = 0usize;
+    let mut padding_started = false;
     let mut output = Vec::new();
 
     for ch in input.chars() {
-        if ch == '=' || ch == ' ' || ch == '-' {
-            continue;
+        match ch {
+            ' ' | '-' => continue,
+            '=' => {
+                padding_started = true;
+                padding += 1;
+                continue;
+            }
+            _ => {}
+        }
+        if padding_started {
+            bail!("Invalid base32 secret in otpauth URI: padding must be at the end");
         }
         let value = match ch {
             'A'..='Z' => ch as u32 - 'A' as u32,
@@ -181,12 +219,29 @@ fn base32_decode(input: &str) -> Result<Vec<u8>> {
             '2'..='7' => ch as u32 - '2' as u32 + 26,
             _ => bail!("Invalid base32 character in secret: {ch:?}"),
         };
+        data_chars += 1;
         buffer = (buffer << 5) | value;
         bits += 5;
         if bits >= 8 {
             bits -= 8;
             output.push((buffer >> bits) as u8);
         }
+    }
+
+    let expected_padding = match data_chars % 8 {
+        0 => 0,
+        2 => 6,
+        4 => 4,
+        5 => 3,
+        7 => 1,
+        _ => bail!(
+            "Invalid base32 secret in otpauth URI: {data_chars} characters is not a valid base32 length"
+        ),
+    };
+    if padding != 0 && padding != expected_padding {
+        bail!(
+            "Invalid base32 secret in otpauth URI: expected {expected_padding} padding characters, found {padding}"
+        );
     }
 
     Ok(output)
@@ -262,6 +317,24 @@ mod tests {
     }
 
     #[test]
+    fn steam_label_without_issuer_parameter_is_still_steam() {
+        let auth =
+            OtpAuth::parse(&format!("otpauth://totp/Steam:user?secret={RFC_SECRET}")).unwrap();
+        assert!(auth.steam);
+        assert!(!auth.oathtool_supported());
+        assert_eq!(auth.generate_at(1111111111), "5PP3V");
+    }
+
+    #[test]
+    fn standard_steam_guard_uri_is_valid() {
+        let uri = format!("otpauth://totp/Steam:johndoe?secret={RFC_SECRET}&issuer=Steam");
+        assert!(validate_otp_uri(&uri).is_ok());
+        let auth = OtpAuth::parse(&uri).unwrap();
+        assert!(auth.steam);
+        assert!(!auth.oathtool_supported());
+    }
+
+    #[test]
     fn standard_entry_is_oathtool_supported() {
         let auth = OtpAuth::parse(&format!("otpauth://totp/test?secret={RFC_SECRET}")).unwrap();
         assert!(auth.oathtool_supported());
@@ -287,6 +360,65 @@ mod tests {
     #[test]
     fn base32_decodes_lowercase_and_spaces() {
         assert_eq!(base32_decode("gezd gnbv").unwrap(), b"12345");
+    }
+
+    #[test]
+    fn base32_accepts_all_valid_unpadded_lengths() {
+        for secret in ["MZ", "MZXW", "MZXW6", "MZXW6YT", "MZXW6YTB"] {
+            assert!(
+                base32_decode(secret).is_ok(),
+                "expected {secret:?} to be valid base32"
+            );
+        }
+    }
+
+    #[test]
+    fn base32_accepts_valid_padding() {
+        assert_eq!(base32_decode("MZXW6===").unwrap(), b"foo");
+        assert_eq!(base32_decode("MZXW6YQ=").unwrap(), b"foob");
+        assert_eq!(base32_decode("MZXW6YTB").unwrap(), b"fooba");
+    }
+
+    #[test]
+    fn rejects_base32_secrets_with_invalid_lengths() {
+        for secret in ["A", "ABC", "263636", "MZXW6Y"] {
+            let uri = format!("otpauth://totp/test?secret={secret}");
+            let error = OtpAuth::parse(&uri).unwrap_err();
+            assert!(
+                error.to_string().contains("not a valid base32 length"),
+                "unexpected error for {secret:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_base32_padding() {
+        for secret in ["MZXW6==MZXW6", "MZ====", "MZXW6Y=="] {
+            let uri = format!("otpauth://totp/test?secret={secret}");
+            assert!(
+                OtpAuth::parse(&uri).is_err(),
+                "{secret:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_digit_counts() {
+        for digits in ["0", "10"] {
+            let uri = format!("otpauth://totp/test?secret={RFC_SECRET}&digits={digits}");
+            assert!(
+                OtpAuth::parse(&uri).is_err(),
+                "digits={digits} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validates_otp_uris_before_storage() {
+        assert!(validate_otp_uri(&format!("otpauth://totp/test?secret={RFC_SECRET}")).is_ok());
+        assert!(validate_otp_uri("otpauth://hotp/test?secret=JBSWY3DPEHPK3PXP&counter=1").is_ok());
+        assert!(validate_otp_uri("otpauth://totp/test?secret=263636").is_err());
+        assert!(validate_otp_uri("https://example.com").is_err());
     }
 
     #[test]

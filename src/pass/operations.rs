@@ -10,7 +10,9 @@ use crate::menu_utils::{
 };
 
 use super::clipboard::copy_secret_to_clipboard;
-use super::content::{first_secret_line, should_export_output, write_export_file};
+use super::content::{
+    find_otp_uri_line, first_secret_line, should_export_output, write_export_file,
+};
 use super::dependencies::{ensure_clipboard_dependencies, ensure_otp_dependency, maybe_notify};
 use super::names::{
     normalize_file_entry_name, normalize_otp_name, sanitize_entry_name, suggested_file_entry_name,
@@ -102,6 +104,7 @@ pub(super) fn insert_otp_entry_from_clipboard_with_prefix(
 }
 
 fn store_otp_entry(raw_name: &str, entry_name: &str, otp_uri: &str) -> Result<()> {
+    super::totp::validate_otp_uri(otp_uri)?;
     // `pass otp insert` reads the URI from stdin; it does not accept it as an
     // argument (extra positional arguments are ignored, leaving the URI empty).
     run_status_with_input(["otp", "insert", "-f", entry_name], otp_uri)?;
@@ -201,18 +204,25 @@ pub(super) fn copy_otp_entry(entry: &PassEntry) -> Result<()> {
 /// Steam Guard and other non-standard tokens (5-digit, custom encoder) are
 /// generated locally because `oathtool`/`pass otp` cannot handle them. Standard
 /// 6/7/8-digit tokens are delegated to `pass otp` to preserve existing
-/// behaviour. If the stored URI cannot be parsed, we fall back to `pass otp`.
+/// behaviour. TOTP URIs are still parsed first so a malformed secret produces a
+/// clear error instead of an `oathtool` base32 failure.
 fn generate_otp_code(entry: &PassEntry, otp_key: &str) -> Result<String> {
     let raw = run_stdout(["show", otp_key])?;
-    let uri = first_secret_line(&raw);
 
-    if let Some(uri) = uri.as_deref()
-        && let Ok(auth) = super::totp::OtpAuth::parse(uri)
-        && !auth.oathtool_supported()
+    if let Some(uri) = find_otp_uri_line(&raw)
+        && uri.starts_with("otpauth://totp/")
     {
-        return auth
-            .generate()
-            .with_context(|| format!("Failed to generate OTP code for '{}'", entry.display_name));
+        let auth = super::totp::OtpAuth::parse(uri).with_context(|| {
+            format!(
+                "OTP entry '{}' contains an invalid TOTP URI",
+                entry.display_name
+            )
+        })?;
+        if !auth.oathtool_supported() {
+            return auth.generate().with_context(|| {
+                format!("Failed to generate OTP code for '{}'", entry.display_name)
+            });
+        }
     }
 
     ensure_otp_dependency()?;

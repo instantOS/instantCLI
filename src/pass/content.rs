@@ -19,6 +19,16 @@ pub(super) fn first_secret_line(output: &[u8]) -> Option<String> {
         .map(|line| line.to_string())
 }
 
+/// Find the `otpauth://` line in a pass entry, matching `pass otp`'s behavior
+/// of scanning the whole entry rather than only the password line.
+pub(super) fn find_otp_uri_line(output: &[u8]) -> Option<&str> {
+    std::str::from_utf8(output)
+        .ok()?
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("otpauth://"))
+}
+
 pub(super) fn should_export_output(entry: &PassEntry, output: &[u8]) -> bool {
     if entry.should_offer_export() {
         return true;

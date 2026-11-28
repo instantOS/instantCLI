@@ -1,5 +1,5 @@
 use super::browser::{build_browser_menu_items, build_quick_access_items};
-use super::content::{first_secret_line, write_export_file};
+use super::content::{find_otp_uri_line, first_secret_line, write_export_file};
 use super::names::{
     entry_name_prefill, normalize_file_entry_name, normalize_otp_name, sanitize_entry_name,
     suggested_export_filename, suggested_file_entry_name, suggested_otp_entry_name,
@@ -134,6 +134,17 @@ fn manual_otp_prompt_uses_masked_input() -> anyhow::Result<()> {
 }
 
 #[test]
+fn manual_otp_prompt_rejects_invalid_secret() {
+    use crate::menu_utils::MockQueue;
+
+    let _mock = MockQueue::new()
+        .password("otpauth://totp/instantos%20test?secret=263636&issuer=instantos")
+        .guard();
+    let error = prompt_otp_uri("New OTP URI").unwrap_err();
+    assert!(error.to_string().contains("not a valid base32 length"));
+}
+
+#[test]
 fn plaintext_exports_are_private_on_create_and_overwrite() -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -176,6 +187,15 @@ fn plaintext_export_rejects_a_symlink_destination() -> anyhow::Result<()> {
 fn first_secret_line_uses_first_nonempty_line_only() {
     let output = b"topsecret\nusername: demo\n";
     assert_eq!(first_secret_line(output).as_deref(), Some("topsecret"));
+}
+
+#[test]
+fn finds_otp_uri_on_any_entry_line() {
+    let output = b"topsecret\nusername: demo\n  otpauth://totp/test?secret=JBSWY3DPEHPK3PXP  \n";
+    assert_eq!(
+        find_otp_uri_line(output),
+        Some("otpauth://totp/test?secret=JBSWY3DPEHPK3PXP")
+    );
 }
 
 #[test]

@@ -42,6 +42,7 @@ pub(super) fn prompt_otp_uri(prompt: &str) -> Result<Option<String>> {
     if !uri.starts_with("otpauth://") {
         bail!("OTP entries must start with `otpauth://`");
     }
+    super::totp::validate_otp_uri(uri)?;
     Ok(Some(uri.to_owned()))
 }
 
