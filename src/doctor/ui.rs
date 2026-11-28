@@ -25,11 +25,98 @@ impl std::fmt::Display for MenuAction {
     }
 }
 
+/// Counts used by the doctor menu header.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DoctorSummary {
+    pub passed: usize,
+    pub failures: usize,
+    pub warnings: usize,
+    pub fixable: usize,
+    pub manual: usize,
+    pub skipped: usize,
+}
+
+impl DoctorSummary {
+    pub fn from_results(results: &[CheckResult]) -> Self {
+        let mut summary = Self::default();
+
+        for result in results {
+            match &result.status {
+                CheckStatus::Pass(_) => summary.passed += 1,
+                CheckStatus::Fail { fixable, .. } => {
+                    summary.failures += 1;
+                    if *fixable {
+                        summary.fixable += 1;
+                    } else {
+                        summary.manual += 1;
+                    }
+                }
+                CheckStatus::Warning { fixable, .. } => {
+                    summary.warnings += 1;
+                    if *fixable {
+                        summary.fixable += 1;
+                    } else {
+                        summary.manual += 1;
+                    }
+                }
+                CheckStatus::Skipped(_) => summary.skipped += 1,
+            }
+        }
+
+        summary
+    }
+
+    pub fn is_healthy(&self) -> bool {
+        self.failures == 0 && self.warnings == 0
+    }
+
+    fn status_line(&self) -> String {
+        let passed = format_with_color(&format!("{} passed", self.passed), colors::GREEN);
+        let failures = if self.failures > 0 {
+            format_with_color(&format!("{} failures", self.failures), colors::RED)
+        } else {
+            format_with_color("0 failures", colors::GREEN)
+        };
+        let warnings = if self.warnings > 0 {
+            format_with_color(&format!("{} warnings", self.warnings), colors::YELLOW)
+        } else {
+            format_with_color("0 warnings", colors::GREEN)
+        };
+        let fixable = if self.fixable > 0 {
+            format_with_color(&format!("{} fixable", self.fixable), colors::BLUE)
+        } else {
+            format_with_color("0 fixable", colors::OVERLAY1)
+        };
+        let manual = if self.manual > 0 {
+            format_with_color(&format!("{} manual", self.manual), colors::PEACH)
+        } else {
+            format_with_color("0 manual", colors::OVERLAY1)
+        };
+        let skipped = format_with_color(&format!("{} skipped", self.skipped), colors::OVERLAY1);
+
+        format!("{passed} · {failures} · {warnings} · {fixable} · {manual} · {skipped}")
+    }
+}
+
+/// Build the standard doctor menu header with the status summary.
+pub fn doctor_header(
+    icon: NerdFont,
+    summary: &DoctorSummary,
+    title: impl AsRef<str>,
+    subtitle: impl AsRef<str>,
+) -> crate::menu_utils::Header {
+    HeaderBuilder::new(icon, title)
+        .field("Status", summary.status_line())
+        .subtitle(subtitle)
+        .build()
+}
+
 /// Wrapper enum for menu items that can be either an action or an issue
 #[derive(Clone)]
 pub enum DoctorMenuItem {
     Action(MenuAction),
     Issue(FixableIssue),
+    Manual(FixableIssue),
 }
 
 impl DoctorMenuItem {
@@ -59,7 +146,9 @@ impl DoctorMenuItem {
     pub fn is_action(&self, action: MenuAction) -> bool {
         match self {
             DoctorMenuItem::Action(a) => *a == action,
-            DoctorMenuItem::Issue(issue) => issue.action == Some(action),
+            DoctorMenuItem::Issue(issue) | DoctorMenuItem::Manual(issue) => {
+                issue.action == Some(action)
+            }
         }
     }
 }
@@ -85,6 +174,11 @@ impl FzfSelectable for DoctorMenuItem {
                 }
             },
             DoctorMenuItem::Issue(issue) => issue.fzf_display_text(),
+            DoctorMenuItem::Manual(issue) => format!(
+                "{} {}",
+                issue.fzf_display_text(),
+                format_with_color("(manual)", colors::OVERLAY1)
+            ),
         }
     }
 
@@ -108,13 +202,14 @@ impl FzfSelectable for DoctorMenuItem {
                 }
             }
             DoctorMenuItem::Issue(issue) => issue.fzf_preview(),
+            DoctorMenuItem::Manual(issue) => issue.manual_preview(),
         }
     }
 
     fn fzf_key(&self) -> String {
         match self {
             DoctorMenuItem::Action(action) => action.to_string(),
-            DoctorMenuItem::Issue(issue) => issue.fzf_key(),
+            DoctorMenuItem::Issue(issue) | DoctorMenuItem::Manual(issue) => issue.fzf_key(),
         }
     }
 }
@@ -140,6 +235,60 @@ impl FixableIssue {
             message: result.status.message().to_string(),
             fix_message: result.fix_message.clone(),
         }
+    }
+
+    fn preview(&self, manual: bool) -> FzfPreview {
+        use crate::ui::preview::PreviewBuilder;
+
+        let icon = match self.status.as_str() {
+            "FAIL" => NerdFont::CrossCircle,
+            "WARN" => NerdFont::Warning,
+            "ALL" => NerdFont::CheckCircle,
+            "INFO" => NerdFont::Info,
+            _ => NerdFont::Info,
+        };
+
+        let title = if manual {
+            format!("{} {} (manual)", self.status, self.name)
+        } else {
+            format!("{} {}", self.status, self.name)
+        };
+        let mut builder = PreviewBuilder::new().header(icon, &title);
+
+        if self.action == Some(MenuAction::ViewAll) {
+            builder = builder.text(&self.message);
+        } else {
+            builder = builder.field("Current Status", &self.message);
+
+            if let Some(fix_msg) = &self.fix_message {
+                let label = if manual {
+                    "Manual remediation:"
+                } else {
+                    "Available Fix:"
+                };
+                builder = builder
+                    .blank()
+                    .line(colors::MAUVE, None, label)
+                    .text(fix_msg);
+            } else if self.action != Some(MenuAction::FixAll) {
+                builder = builder
+                    .blank()
+                    .subtext("No automatic fix available")
+                    .subtext("Manual intervention may be required");
+            }
+
+            if self.action != Some(MenuAction::FixAll)
+                && let Some(ref id) = self.check_id
+            {
+                builder = builder.blank().subtext(&format!("ID: {}", id));
+            }
+        }
+
+        builder.build()
+    }
+
+    pub fn manual_preview(&self) -> FzfPreview {
+        self.preview(true)
     }
 }
 
@@ -180,44 +329,7 @@ impl FzfSelectable for FixableIssue {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        use crate::ui::preview::PreviewBuilder;
-
-        let icon = match self.status.as_str() {
-            "FAIL" => NerdFont::CrossCircle,
-            "WARN" => NerdFont::Warning,
-            "ALL" => NerdFont::CheckCircle,
-            "INFO" => NerdFont::Info,
-            _ => NerdFont::Info,
-        };
-
-        let mut builder =
-            PreviewBuilder::new().header(icon, &format!("{} {}", self.status, self.name));
-
-        if self.action == Some(MenuAction::ViewAll) {
-            builder = builder.text(&self.message);
-        } else {
-            builder = builder.field("Current Status", &self.message);
-
-            if let Some(fix_msg) = &self.fix_message {
-                builder = builder
-                    .blank()
-                    .line(colors::MAUVE, None, "Available Fix:")
-                    .text(fix_msg);
-            } else if self.action != Some(MenuAction::FixAll) {
-                builder = builder
-                    .blank()
-                    .subtext("No automatic fix available")
-                    .subtext("Manual intervention may be required");
-            }
-
-            if self.action != Some(MenuAction::FixAll)
-                && let Some(ref id) = self.check_id
-            {
-                builder = builder.blank().subtext(&format!("ID: {}", id));
-            }
-        }
-
-        builder.build()
+        self.preview(false)
     }
 
     fn fzf_key(&self) -> String {
@@ -237,6 +349,7 @@ pub struct ViewableCheck {
     pub status: String,
     pub message: String,
     pub details: Option<String>,
+    pub fix_message: Option<String>,
 }
 
 impl ViewableCheck {
@@ -247,7 +360,32 @@ impl ViewableCheck {
             status: result.status.status_text().to_string(),
             message: result.status.message().to_string(),
             details: result.details.clone(),
+            fix_message: result.fix_message.clone(),
         }
+    }
+
+    fn detail_text(&self) -> String {
+        let mut lines = vec![
+            format!("{} {}", self.status, self.name),
+            String::new(),
+            format!("Status: {}", self.message),
+        ];
+
+        if let Some(details) = &self.details {
+            lines.push(String::new());
+            lines.push(details.clone());
+        }
+
+        if let Some(fix_message) = &self.fix_message {
+            lines.push(String::new());
+            lines.push("Remediation:".to_string());
+            lines.push(fix_message.clone());
+        }
+
+        lines.push(String::new());
+        lines.push(format!("ID: {}", self.check_id));
+
+        lines.join("\n")
     }
 }
 
@@ -287,6 +425,13 @@ impl FzfSelectable for ViewableCheck {
 
         if let Some(details) = &self.details {
             builder = builder.text(details).blank();
+        }
+
+        if let Some(fix_message) = &self.fix_message {
+            builder = builder
+                .line(colors::MAUVE, None, "Remediation:")
+                .text(fix_message)
+                .blank();
         }
 
         builder.subtext(&format!("ID: {}", self.check_id)).build()
@@ -413,18 +558,34 @@ pub fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
         .iter()
         .map(ViewableCheck::from_check_result)
         .collect();
+    let summary = DoctorSummary::from_results(results);
+    let mut cursor = MenuCursor::new();
 
-    FzfWrapper::builder()
-        .prompt("View results:")
-        .header(
-            HeaderBuilder::new(NerdFont::List, "All Check Results")
-                .subtitle("Use arrow keys to navigate; Esc returns")
-                .build(),
-        )
-        .items(viewable)
-        .select_one()?;
+    loop {
+        let mut builder = FzfWrapper::builder()
+            .prompt("View results:")
+            .header(doctor_header(
+                NerdFont::List,
+                &summary,
+                "All Check Results",
+                "Use arrow keys to navigate; Enter shows details, Esc returns",
+            ));
 
-    Ok(())
+        if let Some(index) = cursor.initial_index(&viewable) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.items(viewable.clone()).select_one_with_back()? {
+            crate::menu_utils::DialogOutcome::Submitted(item) => {
+                cursor.update(&item, &viewable);
+                let _ = FzfWrapper::builder()
+                    .message(item.detail_text())
+                    .title("Check Result")
+                    .message_dialog();
+            }
+            crate::menu_utils::DialogOutcome::Cancelled => return Ok(()),
+        }
+    }
 }
 
 /// Ask user if they want to escalate privileges for a fix
@@ -443,11 +604,18 @@ pub fn should_escalate(check: &dyn super::DoctorCheck) -> Result<bool> {
     }
 }
 
-/// Build menu items for the interactive fix menu when there are fixable issues
-pub fn build_fix_menu_items(fixable_issues: Vec<FixableIssue>) -> Vec<DoctorMenuItem> {
+/// Build menu items for the interactive doctor menu.
+pub fn build_fix_menu_items(
+    fixable_issues: Vec<FixableIssue>,
+    manual_issues: Vec<FixableIssue>,
+) -> Vec<DoctorMenuItem> {
     let count = fixable_issues.len();
-    let mut menu_items = vec![DoctorMenuItem::view_all(), DoctorMenuItem::fix_all(count)];
+    let mut menu_items = vec![DoctorMenuItem::view_all()];
+    if count > 0 {
+        menu_items.push(DoctorMenuItem::fix_all(count));
+    }
     menu_items.extend(fixable_issues.into_iter().map(DoctorMenuItem::Issue));
+    menu_items.extend(manual_issues.into_iter().map(DoctorMenuItem::Manual));
     menu_items.push(DoctorMenuItem::back());
     menu_items
 }
@@ -459,24 +627,26 @@ pub fn build_success_menu_items() -> Vec<DoctorMenuItem> {
 
 /// Run the interactive menu for when all checks pass
 pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
-    let success_count = results.iter().filter(|r| r.status.is_success()).count();
-    let skipped_count = results.iter().filter(|r| r.status.is_skipped()).count();
+    let summary = DoctorSummary::from_results(results);
+    let healthy = summary.is_healthy();
+    let (title, icon) = if healthy {
+        ("All Systems Operational", NerdFont::CheckCircle)
+    } else {
+        ("Diagnostics Complete", NerdFont::Info)
+    };
 
     let menu_items = build_success_menu_items();
     let mut cursor = MenuCursor::new();
 
     loop {
-        let mut builder = FzfWrapper::builder().prompt("Select:").header(
-            HeaderBuilder::new(NerdFont::CheckCircle, "All Systems Operational")
-                .status(
-                    NerdFont::Check,
-                    format!("{success_count} checks passed"),
-                    colors::GREEN,
-                )
-                .field("Skipped", skipped_count.to_string())
-                .subtitle("Select an option or press Esc to exit")
-                .build(),
-        );
+        let subtitle = if healthy {
+            "Select an option or press Esc to exit"
+        } else {
+            "Review the results or press Esc to exit"
+        };
+        let mut builder = FzfWrapper::builder()
+            .prompt("Select:")
+            .header(doctor_header(icon, &summary, title, subtitle));
 
         if let Some(index) = cursor.initial_index(&menu_items) {
             builder = builder.initial_index(index);
@@ -496,5 +666,84 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
             crate::menu_utils::DialogOutcome::Cancelled => {}
         }
         return Ok(());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn result(check_id: &str, status: CheckStatus) -> CheckResult {
+        CheckResult {
+            name: check_id.to_string(),
+            check_id: check_id.to_string(),
+            status,
+            fix_message: None,
+            details: None,
+        }
+    }
+
+    #[test]
+    fn summary_counts_failures_warnings_fixable_manual_and_skipped() {
+        let results = vec![
+            result("pass", CheckStatus::Pass("ok".to_string())),
+            result(
+                "fixable-fail",
+                CheckStatus::Fail {
+                    message: "broken".to_string(),
+                    fixable: true,
+                },
+            ),
+            result(
+                "manual-warning",
+                CheckStatus::Warning {
+                    message: "manual".to_string(),
+                    fixable: false,
+                },
+            ),
+            result("skip", CheckStatus::Skipped("not applicable".to_string())),
+        ];
+
+        let summary = DoctorSummary::from_results(&results);
+
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failures, 1);
+        assert_eq!(summary.warnings, 1);
+        assert_eq!(summary.fixable, 1);
+        assert_eq!(summary.manual, 1);
+        assert_eq!(summary.skipped, 1);
+        assert!(!summary.is_healthy());
+    }
+
+    #[test]
+    fn summary_is_healthy_with_only_passes_and_skips() {
+        let results = vec![
+            result("pass", CheckStatus::Pass("ok".to_string())),
+            result("skip", CheckStatus::Skipped("not applicable".to_string())),
+        ];
+
+        assert!(DoctorSummary::from_results(&results).is_healthy());
+    }
+
+    #[test]
+    fn issue_menu_includes_manual_issues_without_fix_all_when_none_are_fixable() {
+        let manual = FixableIssue::from_check_result(&result(
+            "manual",
+            CheckStatus::Fail {
+                message: "needs manual work".to_string(),
+                fixable: false,
+            },
+        ));
+
+        let items = build_fix_menu_items(Vec::new(), vec![manual]);
+
+        assert!(items.iter().any(|item| item.is_action(MenuAction::ViewAll)));
+        assert!(items.iter().any(|item| item.is_action(MenuAction::Close)));
+        assert!(!items.iter().any(|item| item.is_action(MenuAction::FixAll)));
+        assert!(
+            items
+                .iter()
+                .any(|item| matches!(item, DoctorMenuItem::Manual(_)))
+        );
     }
 }

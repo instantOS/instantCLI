@@ -174,9 +174,32 @@ pub fn handle_trait_setting(
         }
     }
 
-    // Apply the setting
-    setting.apply(ctx)?;
-    ctx.persist()?;
+    // Persist pending changes before running an action that may take over the
+    // terminal (or fail) so earlier edits in this settings session are not lost.
+    if let Err(err) = ctx.persist() {
+        ctx.show_message(&format!(
+            "Failed to save settings before running '{}':\n\n{err}",
+            setting.metadata().title
+        ));
+        return Ok(());
+    }
+
+    // Action settings can launch external programs or interactive menus.
+    // A failure should return to the settings menu instead of terminating it.
+    if let Err(err) = setting.apply(ctx) {
+        ctx.show_message(&format!(
+            "Failed to run '{}':\n\n{err}",
+            setting.metadata().title
+        ));
+        return Ok(());
+    }
+
+    if let Err(err) = ctx.persist() {
+        ctx.show_message(&format!(
+            "Failed to save settings after running '{}':\n\n{err}",
+            setting.metadata().title
+        ));
+    }
 
     Ok(())
 }

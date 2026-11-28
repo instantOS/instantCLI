@@ -34,8 +34,11 @@ pub fn skip_reason_for_privilege_level(
     }
 }
 
-/// Escalate privileges and fix a batch of checks
-/// Replaces the current process with sudo, passing check IDs as arguments
+/// Escalate privileges and fix a batch of checks.
+///
+/// This runs a separate privileged process and waits for it to finish. It
+/// deliberately does not exit the current process, so interactive doctor
+/// sessions can refresh their results and return to the menu afterwards.
 pub fn escalate_for_fix(check_ids: Vec<String>) -> Result<(), anyhow::Error> {
     use std::process::Command;
 
@@ -55,8 +58,17 @@ pub fn escalate_for_fix(check_ids: Vec<String>) -> Result<(), anyhow::Error> {
         .status()
         .map_err(|e| anyhow::anyhow!("Failed to execute sudo: {}", e))?;
 
-    // Exit with the same code as the sudo command
-    std::process::exit(status.code().unwrap_or(1));
+    if !status.success() {
+        let detail = status
+            .code()
+            .map(|code| format!("exit code {code}"))
+            .unwrap_or_else(|| "terminated by a signal".to_string());
+        return Err(anyhow::anyhow!(
+            "Privileged fixes were cancelled or failed ({detail})"
+        ));
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Error)]

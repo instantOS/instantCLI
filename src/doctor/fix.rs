@@ -1,11 +1,11 @@
 use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
 use super::registry::REGISTRY;
 use super::ui::{
-    DoctorMenuItem, FixableIssue, MenuAction, build_fix_menu_items, should_escalate,
-    show_all_check_results,
+    DoctorMenuItem, DoctorSummary, FixableIssue, MenuAction, build_fix_menu_items, doctor_header,
+    should_escalate, show_all_check_results,
 };
-use super::{CheckStatus, DoctorCheck, PrivilegeLevel, run_all_checks};
-use crate::menu_utils::FzfWrapper;
+use super::{CheckResult, CheckStatus, DoctorCheck, PrivilegeLevel, run_all_checks};
+use crate::menu_utils::{FzfWrapper, MenuCursor};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -149,7 +149,7 @@ pub async fn fix_single_check(check_id: &str) -> Result<()> {
 
         if should_escalate(check.as_ref())? {
             escalate_for_fix(vec![check_id.to_string()])?;
-            unreachable!("Process should restart with sudo")
+            return Ok(());
         } else {
             emit(
                 Level::Info,
@@ -281,7 +281,17 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &st
             let after_status = after_result.status_text().to_string();
 
             super::print_fix_summary_table(check_name, before_status, &after_status);
-            Ok(())
+
+            if after_result.is_success() {
+                Ok(())
+            } else {
+                bail!(
+                    "Fix for '{}' completed, but the check still reports {}: {}",
+                    check_name,
+                    after_status,
+                    after_result.message()
+                )
+            }
         }
         Err(e) => {
             emit(
@@ -415,7 +425,16 @@ async fn execute_fix_plan(plan: FixPlan, is_root: bool) -> Result<()> {
                 .map(|target| target.check_id)
                 .collect(),
         )?;
-        unreachable!("Process should restart with sudo");
+        emit(
+            Level::Success,
+            "doctor.fix.plan.root_complete",
+            &format!(
+                "{} Privileged fixes completed.",
+                char::from(NerdFont::Check)
+            ),
+            None,
+        );
+        return Ok(());
     }
 
     emit_fix_summary(summary);
@@ -544,39 +563,89 @@ pub async fn fix_all_checks(max_concurrency: usize) -> Result<()> {
     execute_fix_plan(plan, is_root).await
 }
 
-/// Interactive fix mode: show menu of fixable issues and apply selected fixes
+/// Interactive fix mode: show menu of fixable issues and apply selected fixes.
+///
+/// The menu stays alive across fixes: after each run the checks are executed
+/// again, the outcome is shown in a dialog, and a refreshed menu is displayed.
 pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
     use super::ui::run_success_menu;
 
-    let checks = REGISTRY.all_checks();
-    let results = run_all_checks(checks, max_concurrency).await;
-
-    let fixable_issues: Vec<_> = results
-        .iter()
-        .filter(|r| {
-            r.status.is_fixable()
-                && (matches!(r.status, CheckStatus::Fail { .. })
-                    || matches!(r.status, CheckStatus::Warning { .. }))
-        })
-        .map(FixableIssue::from_check_result)
-        .collect();
-
-    if fixable_issues.is_empty() {
-        return run_success_menu(&results).await;
-    }
+    let mut results = run_all_checks(REGISTRY.all_checks(), max_concurrency).await;
+    let mut cursor = MenuCursor::new();
 
     loop {
-        let menu_items = build_fix_menu_items(fixable_issues.clone());
+        let summary = DoctorSummary::from_results(&results);
+        let fixable_issues: Vec<_> = results
+            .iter()
+            .filter(|r| {
+                r.status.is_fixable()
+                    && (matches!(r.status, CheckStatus::Fail { .. })
+                        || matches!(r.status, CheckStatus::Warning { .. }))
+            })
+            .map(FixableIssue::from_check_result)
+            .collect();
+        let manual_issues: Vec<_> = results
+            .iter()
+            .filter(|r| {
+                !r.status.is_fixable()
+                    && (matches!(r.status, CheckStatus::Fail { .. })
+                        || matches!(r.status, CheckStatus::Warning { .. }))
+            })
+            .map(FixableIssue::from_check_result)
+            .collect();
 
-        match FzfWrapper::builder()
+        if fixable_issues.is_empty() && manual_issues.is_empty() {
+            return run_success_menu(&results).await;
+        }
+
+        let all_issues = fixable_issues.clone();
+        let menu_items = build_fix_menu_items(fixable_issues, manual_issues);
+        let subtitle = if summary.fixable > 0 {
+            "Select issues to fix, or press Esc to go back"
+        } else {
+            "No automatic fixes available; review manual issues or press Esc to go back"
+        };
+
+        let mut builder = FzfWrapper::builder()
             .prompt("Select issues to fix:")
-            .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
-            .responsive_layout()
-            .items(menu_items)
-            .select_many()?
-        {
+            .header(doctor_header(
+                NerdFont::ShieldCheck,
+                &summary,
+                "System Diagnostics",
+                subtitle,
+            ))
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&menu_items) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.items(menu_items.clone()).select_many()? {
             crate::menu_utils::DialogOutcome::Submitted(sel) => {
                 let selected = sel.items;
+
+                if let Some(item) = selected.first() {
+                    cursor.update(item, &menu_items);
+                }
+
+                // Handle Back before filtering down to issue items. Otherwise
+                // selecting Back produces an empty fix plan and an error.
+                if selected
+                    .iter()
+                    .any(|item| item.is_action(MenuAction::Close))
+                {
+                    emit(
+                        Level::Info,
+                        "doctor.fix_choose.back",
+                        &format!(
+                            "{} Returning to the previous menu",
+                            char::from(NerdFont::Info)
+                        ),
+                        None,
+                    );
+                    return Ok(());
+                }
+
                 if selected.is_empty() {
                     emit(
                         Level::Info,
@@ -593,36 +662,170 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
                 }
 
                 if selected.iter().any(|i| i.is_action(MenuAction::FixAll)) {
-                    return fix_all_checks(max_concurrency).await;
+                    let before = results.clone();
+                    let fix_result = fix_selected_checks(all_issues).await;
+                    results = run_all_checks(REGISTRY.all_checks(), max_concurrency).await;
+                    let fix_error = fix_result.err();
+                    show_fix_result_dialog(&before, &results, fix_error.as_ref());
+                    continue;
                 }
 
-                let issues: Vec<FixableIssue> = selected
-                    .into_iter()
-                    .filter_map(|item| {
-                        if let DoctorMenuItem::Issue(issue) = item
-                            && issue.check_id.is_some() {
-                                return Some(issue);
-                            }
-                        None
-                    })
-                    .collect();
+                let mut issues = Vec::new();
+                let mut selected_manual = Vec::new();
+                for item in selected {
+                    match item {
+                        DoctorMenuItem::Issue(issue) if issue.check_id.is_some() => {
+                            issues.push(issue);
+                        }
+                        DoctorMenuItem::Manual(issue) => selected_manual.push(issue),
+                        _ => {}
+                    }
+                }
 
-                return fix_selected_checks(issues).await;
+                if issues.is_empty() {
+                    if selected_manual.is_empty() {
+                        // Only action rows were selected. Treat this like Back
+                        // instead of failing with an empty fix plan.
+                        return Ok(());
+                    }
+                    show_manual_issues(&selected_manual);
+                    continue;
+                }
+
+                let before = results.clone();
+                let fix_result = fix_selected_checks(issues).await;
+                results = run_all_checks(REGISTRY.all_checks(), max_concurrency).await;
+                let fix_error = fix_result.err();
+                show_fix_result_dialog(&before, &results, fix_error.as_ref());
+
+                if !selected_manual.is_empty() {
+                    show_manual_issues(&selected_manual);
+                }
             }
             crate::menu_utils::DialogOutcome::Cancelled => {
                 emit(
                     Level::Info,
                     "doctor.fix_choose.cancelled",
-                    &format!(
-                        "{} Fix selection cancelled",
-                        char::from(NerdFont::Info)
-                    ),
+                    &format!("{} Fix selection cancelled", char::from(NerdFont::Info)),
                     None,
                 );
                 return Ok(());
             }
         }
     }
+}
+
+fn fix_result_summary(
+    before: &[CheckResult],
+    after: &[CheckResult],
+    error: Option<&anyhow::Error>,
+) -> String {
+    let before_by_id: std::collections::HashMap<&str, &CheckStatus> = before
+        .iter()
+        .map(|result| (result.check_id.as_str(), &result.status))
+        .collect();
+
+    let resolved_checks: Vec<_> = after
+        .iter()
+        .filter(|result| {
+            result.status.is_success()
+                && before_by_id
+                    .get(result.check_id.as_str())
+                    .is_some_and(|status| !status.is_success() && !status.is_skipped())
+        })
+        .collect();
+    let remaining_checks: Vec<_> = after
+        .iter()
+        .filter(|result| {
+            matches!(
+                result.status,
+                CheckStatus::Fail { .. } | CheckStatus::Warning { .. }
+            )
+        })
+        .collect();
+    let remaining_failures = after
+        .iter()
+        .filter(|result| matches!(result.status, CheckStatus::Fail { .. }))
+        .count();
+    let remaining_warnings = after
+        .iter()
+        .filter(|result| matches!(result.status, CheckStatus::Warning { .. }))
+        .count();
+    let skipped = after
+        .iter()
+        .filter(|result| result.status.is_skipped())
+        .count();
+
+    let mut lines = vec![
+        "Fix run finished.".to_string(),
+        format!("Resolved: {}", resolved_checks.len()),
+    ];
+    for result in resolved_checks.iter().take(5) {
+        lines.push(format!("  ✓ {}", result.name));
+    }
+    if resolved_checks.len() > 5 {
+        lines.push(format!("  … and {} more", resolved_checks.len() - 5));
+    }
+
+    lines.push(format!("Remaining failures: {remaining_failures}"));
+    lines.push(format!("Remaining warnings: {remaining_warnings}"));
+    if !remaining_checks.is_empty() {
+        lines.push("Still needs attention:".to_string());
+        for result in remaining_checks.iter().take(5) {
+            lines.push(format!(
+                "  {} {}: {}",
+                result.status.status_text(),
+                result.name,
+                result.status.message()
+            ));
+        }
+        if remaining_checks.len() > 5 {
+            lines.push(format!("  … and {} more", remaining_checks.len() - 5));
+        }
+    }
+
+    if skipped > 0 {
+        lines.push(format!("Skipped: {skipped}"));
+    }
+    if let Some(error) = error {
+        lines.push(format!("Fix error: {error}"));
+    }
+    lines.push("Returning to refreshed diagnostics...".to_string());
+
+    lines.join("\n")
+}
+
+fn show_fix_result_dialog(
+    before: &[CheckResult],
+    after: &[CheckResult],
+    error: Option<&anyhow::Error>,
+) {
+    let message = fix_result_summary(before, after, error);
+    let _ = FzfWrapper::builder()
+        .message(message)
+        .title("Diagnostic Fix Result")
+        .message_dialog();
+}
+
+fn show_manual_issues(issues: &[FixableIssue]) {
+    let mut lines = vec!["These issues need manual attention:".to_string()];
+
+    for issue in issues {
+        lines.push(String::new());
+        lines.push(format!(
+            "{} {}: {}",
+            issue.status, issue.name, issue.message
+        ));
+        if let Some(fix_message) = &issue.fix_message {
+            lines.push(String::new());
+            lines.push(fix_message.clone());
+        }
+    }
+
+    let _ = FzfWrapper::builder()
+        .message(lines.join("\n"))
+        .title("Manual Attention Required")
+        .message_dialog();
 }
 
 /// Fix a list of selected checks with proper privilege handling
@@ -769,5 +972,59 @@ mod tests {
                 failed: 5,
             }
         );
+    }
+
+    #[test]
+    fn fix_result_summary_counts_resolved_and_remaining_issues() {
+        let before = vec![
+            result(
+                "resolved",
+                CheckStatus::Fail {
+                    message: "broken".to_string(),
+                    fixable: true,
+                },
+            ),
+            result(
+                "still-broken",
+                CheckStatus::Warning {
+                    message: "degraded".to_string(),
+                    fixable: true,
+                },
+            ),
+            result("already-fine", CheckStatus::Pass("ok".to_string())),
+        ];
+        let after = vec![
+            result("resolved", CheckStatus::Pass("fixed".to_string())),
+            result(
+                "still-broken",
+                CheckStatus::Fail {
+                    message: "still broken".to_string(),
+                    fixable: true,
+                },
+            ),
+            result("already-fine", CheckStatus::Pass("ok".to_string())),
+        ];
+
+        let summary = fix_result_summary(&before, &after, None);
+
+        assert!(summary.contains("Resolved: 1"));
+        assert!(summary.contains("Remaining failures: 1"));
+        assert!(summary.contains("Remaining warnings: 0"));
+    }
+
+    #[test]
+    fn fix_result_summary_includes_fix_errors() {
+        let before = vec![result(
+            "broken",
+            CheckStatus::Fail {
+                message: "broken".to_string(),
+                fixable: true,
+            },
+        )];
+        let error = anyhow::anyhow!("sudo was cancelled");
+
+        let summary = fix_result_summary(&before, &before, Some(&error));
+
+        assert!(summary.contains("Fix error: sudo was cancelled"));
     }
 }
