@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0](https://github.com/instantOS/instantCLI/compare/v0.17.0...v0.18.0) - 2026-11-28
+
+### Added
+
+- offer Git initialization during setup
+- add OTP entries from clipboard
+- add flat-list shortcuts and rename tree view
+
+### Changed
+
+- call usage-based ranking "Smart"
+- split menu code and fix rename safety
+- rename primary entry action
+
+### Fixed
+
+- keep diagnostics menu alive and clarify results
+- reject invalid OTP secrets before storing them
+- add explicit interactive menu command
+
+### Other
+
+- fix pass otp input
+- ins pass settings niceties
+- detect unchanged passwords
+
 ## [0.17.0](https://github.com/instantOS/instantCLI/compare/v0.16.0...v0.17.0) - 2026-11-27
 
 ### Added
